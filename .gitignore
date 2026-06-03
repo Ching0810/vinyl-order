@@ -21,6 +21,9 @@ out/
 build
 dist/
 
+# generated code (Prisma client, etc. — regenerated from schema)
+generated/
+
 # misc
 .DS_Store
 *.pem
