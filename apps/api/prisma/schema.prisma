@@ -5,7 +5,7 @@
 
 generator client {
   provider     = "prisma-client"
-  output       = "../generated/prisma"
+  output       = "../src/generated/prisma"
   moduleFormat = "cjs"
 }
 
@@ -13,12 +13,17 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Role {
+  customer
+  admin
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
   passwordHash String
   name         String?
-  role         String   @default("customer")
+  role         Role     @default(customer)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }

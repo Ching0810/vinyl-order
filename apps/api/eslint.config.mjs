@@ -11,7 +11,7 @@ export default tseslint.config(
       'lint-staged.config.js',
       'dist/**',
       'node_modules/**',
-      'generated/**',
+      '**/generated/**',
     ],
   },
   eslint.configs.recommended,

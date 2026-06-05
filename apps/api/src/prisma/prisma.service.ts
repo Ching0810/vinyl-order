@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 
-import { PrismaClient } from '../../generated/prisma/client';
+import { PrismaClient } from '../generated/prisma/client';
 
 /**
  * Wraps the generated Prisma Client as an injectable Nest provider.
