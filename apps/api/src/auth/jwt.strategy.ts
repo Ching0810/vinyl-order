@@ -2,9 +2,11 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import type { PublicUser, Role } from '@vinyl-order/shared';
+import type { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
 import { UsersService } from '../users/users.service';
+import { ACCESS_TOKEN_COOKIE } from './auth.cookie';
 
 /** Shape of the signed JWT payload. `sub` is the user id (JWT convention). */
 export interface JwtPayload {
@@ -12,6 +14,12 @@ export interface JwtPayload {
   email: string;
   role: Role;
 }
+
+/** Pull the JWT from the httpOnly cookie (set by AuthController on login). */
+const cookieExtractor = (req: Request): string | null => {
+  const cookies = req.cookies as Record<string, string> | undefined;
+  return cookies?.[ACCESS_TOKEN_COOKIE] ?? null;
+};
 
 /**
  * Validates incoming `Authorization: Bearer <token>` requests.
@@ -28,7 +36,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly users: UsersService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      // Cookie first (browser clients); Bearer header as a fallback (API tools).
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        cookieExtractor,
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ]),
       ignoreExpiration: false,
       secretOrKey: config.getOrThrow<string>('JWT_SECRET'),
     });

@@ -19,7 +19,14 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/assets/*": ["./app/_assets/*"],
+      "@/components/*": ["./app/_components/*"],
+      "@/contexts/*": ["./app/_contexts/*"],
+      "@/hooks/*": ["./app/_hooks/*"],
+      "@/lib/*": ["./app/_lib/*"],
+      "@/store/*": ["./app/_store/*"],
+      "@/services/*": ["./app/_services/*"],
+      "@/actions/*": ["./app/_actions/*"]
     }
   },
   "include": [

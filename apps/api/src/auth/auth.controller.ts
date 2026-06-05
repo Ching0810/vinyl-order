@@ -5,14 +5,22 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Res,
   UseGuards,
   UsePipes,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import type { PublicUser } from '@vinyl-order/shared';
+import type { Response } from 'express';
 import { ZodValidationPipe } from 'nestjs-zod';
 
-import { AuthService, type AuthResponse } from './auth.service';
+import {
+  ACCESS_TOKEN_COOKIE,
+  ACCESS_TOKEN_MAX_AGE_MS,
+  accessTokenCookieOptions,
+} from './auth.cookie';
+import { AuthService } from './auth.service';
 import { CurrentUser } from './current-user.decorator';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -20,29 +28,60 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 
 /**
  * HTTP boundary for auth.
- * - ZodValidationPipe validates each @Body against its DTO's shared schema;
- *   on failure it throws a 400 automatically.
- * - Thin by design: parse/guard here, delegate all logic to AuthService.
+ * - ZodValidationPipe validates each @Body against its DTO's shared schema.
+ * - The JWT is delivered as an httpOnly cookie (never in the JSON body), so the
+ *   browser sends it automatically and JS can't read it. Responses return just
+ *   the user.
  */
 @Controller('auth')
 @UsePipes(ZodValidationPipe)
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly config: ConfigService,
+  ) {}
 
-  // Tighter limit than the global default: blunt mass-signup abuse.
-  @Throttle({ default: { ttl: 60_000, limit: 5 } })
-  @Post('register')
-  register(@Body() dto: RegisterDto): Promise<AuthResponse> {
-    return this.auth.register(dto);
+  private get isProd(): boolean {
+    return this.config.get<string>('NODE_ENV') === 'production';
   }
 
-  // Tighter limit than the global default: blunt password brute-forcing.
+  private setAuthCookie(res: Response, token: string): void {
+    res.cookie(ACCESS_TOKEN_COOKIE, token, {
+      ...accessTokenCookieOptions(this.isProd),
+      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
+    });
+  }
+
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @Post('register')
+  async register(
+    @Body() dto: RegisterDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ user: PublicUser }> {
+    const { accessToken, user } = await this.auth.register(dto);
+    this.setAuthCookie(res, accessToken);
+    return { user };
+  }
+
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   // Login doesn't create a resource, so override Nest's default POST 201 -> 200.
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  login(@Body() dto: LoginDto): Promise<AuthResponse> {
-    return this.auth.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ user: PublicUser }> {
+    const { accessToken, user } = await this.auth.login(dto);
+    this.setAuthCookie(res, accessToken);
+    return { user };
+  }
+
+  @HttpCode(HttpStatus.OK)
+  @Post('logout')
+  logout(@Res({ passthrough: true }) res: Response): { success: true } {
+    // Options must match those used to set the cookie, or the browser won't clear it.
+    res.clearCookie(ACCESS_TOKEN_COOKIE, accessTokenCookieOptions(this.isProd));
+    return { success: true };
   }
 
   @UseGuards(JwtAuthGuard)

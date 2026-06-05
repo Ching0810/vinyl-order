@@ -33,6 +33,11 @@ export default defineConfig([
         ...globals.browser,
         ...globals.node,
       },
+      // Pin the TS project root so typescript-eslint doesn't have to guess
+      // between apps/api and apps/web when ESLint sees the whole monorepo.
+      parserOptions: {
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
 
     // Note: the `import` plugin is already registered by eslint-config-next,

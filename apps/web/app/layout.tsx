@@ -1,6 +1,6 @@
-import './globals.css';
-
 import type { Metadata } from 'next';
+
+import AppProviders from './app-providers';
 
 export const metadata: Metadata = {
   title: 'Vinyl Order',
@@ -8,8 +8,10 @@ export const metadata: Metadata = {
 };
 
 const RootLayout = ({ children }: Readonly<{ children: React.ReactNode }>) => (
-  <html lang="en">
-    <body>{children}</body>
+  <html lang="en" suppressHydrationWarning>
+    <body>
+      <AppProviders>{children}</AppProviders>
+    </body>
   </html>
 );
 

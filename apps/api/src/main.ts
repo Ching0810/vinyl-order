@@ -1,11 +1,15 @@
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import cookieParser from 'cookie-parser';
 
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
+
+  // Parse the Cookie header into req.cookies (JwtStrategy reads the JWT cookie).
+  app.use(cookieParser());
 
   // Browser allowlist: only these origins may make cross-origin calls and read
   // responses. Comma-separated, e.g. WEB_ORIGIN=http://localhost:3000
