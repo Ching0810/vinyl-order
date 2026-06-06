@@ -27,3 +27,22 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+/// A vinyl product the store sells. Metadata is usually imported from Discogs
+/// (discogsReleaseId), but price/stock/image are owned by us. Money is stored as
+/// integer cents to avoid floating-point rounding.
+model Product {
+  id               String   @id @default(uuid())
+  discogsReleaseId Int?     @unique
+  title            String
+  artist           String
+  year             Int?
+  genres           String[]
+  format           String[]
+  imageUrl         String?
+  priceCents       Int
+  currency         String   @default("TWD")
+  stock            Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

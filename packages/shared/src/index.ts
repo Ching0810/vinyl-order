@@ -2,3 +2,5 @@
 // Imported by both apps/web and apps/api. Add your shared schemas/types here.
 
 export * from './auth';
+export * from './discogs';
+export * from './product';

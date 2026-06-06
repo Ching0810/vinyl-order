@@ -7,6 +7,8 @@ import { AuthModule } from './auth/auth.module';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ProductsModule } from './products/products.module';
+import { StorageModule } from './storage/storage.module';
 import { UsersModule } from './users/users.module';
 
 const NODE_ENV = process.env.NODE_ENV ?? 'development';
@@ -29,6 +31,8 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
     PrismaModule,
     UsersModule,
     AuthModule,
+    ProductsModule,
+    StorageModule,
     HealthModule,
   ],
   providers: [
