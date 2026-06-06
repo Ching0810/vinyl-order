@@ -13,6 +13,7 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main.js",
+    "studio": "prisma studio --port 5555",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests",

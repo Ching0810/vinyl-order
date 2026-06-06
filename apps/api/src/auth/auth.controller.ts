@@ -54,12 +54,10 @@ export class AuthController {
 
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post('register')
-  async register(
-    @Body() dto: RegisterDto,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<{ user: PublicUser }> {
-    const { accessToken, user } = await this.auth.register(dto);
-    this.setAuthCookie(res, accessToken);
+  async register(@Body() dto: RegisterDto): Promise<{ user: PublicUser }> {
+    // Register creates the account but does NOT start a session (no cookie) —
+    // the client redirects to /login afterward.
+    const { user } = await this.auth.register(dto);
     return { user };
   }
 

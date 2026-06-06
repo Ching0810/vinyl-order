@@ -6,6 +6,7 @@
     "dev": "pnpm -r --parallel dev",
     "dev:web": "pnpm --filter web dev",
     "dev:api": "pnpm --filter api start:dev",
+    "studio:api": "pnpm --filter api studio",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",

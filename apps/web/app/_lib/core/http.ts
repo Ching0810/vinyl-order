@@ -25,10 +25,11 @@ type QueryParams = Record<string, string | number | boolean | undefined>;
 const request = async <T>(path: string, init: RequestInit): Promise<T> => {
   const response = await fetch(new URL(path, BASE_URL), {
     ...init,
+    // Send/receive the httpOnly auth cookie on cross-origin requests.
+    // (The API's CORS allowlist + credentials:true makes this work.)
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      // Auth seam: attach `Authorization: Bearer <token>` here when wiring
-      // authenticated requests (e.g. GET /auth/me).
       ...init.headers,
     },
   });
