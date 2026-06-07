@@ -25,6 +25,8 @@ export const productSchema = z.object({
   /** ISO 4217 currency code, e.g. "TWD". */
   currency: z.string(),
   stock: z.number().int(),
+  /** Featured in the storefront "hot" section. */
+  isHot: z.boolean(),
 });
 export type Product = z.infer<typeof productSchema>;
 
@@ -43,6 +45,7 @@ export const createProductSchema = z.object({
   priceCents: z.number().int().nonnegative(),
   currency: z.string().min(1).default('TWD'),
   stock: z.number().int().nonnegative().default(0),
+  isHot: z.boolean().default(false),
 });
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
@@ -61,5 +64,6 @@ export const updateProductSchema = z.object({
   priceCents: z.number().int().nonnegative().optional(),
   currency: z.string().min(1).optional(),
   stock: z.number().int().nonnegative().optional(),
+  isHot: z.boolean().optional(),
 });
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;

@@ -3,4 +3,5 @@
 
 export * from './auth';
 export * from './discogs';
+export * from './pagination';
 export * from './product';

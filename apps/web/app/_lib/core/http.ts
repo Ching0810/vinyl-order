@@ -23,13 +23,17 @@ export class HttpError extends Error {
 type QueryParams = Record<string, string | number | boolean | undefined>;
 
 const request = async <T>(path: string, init: RequestInit): Promise<T> => {
+  // For FormData (file uploads) the browser must set Content-Type itself so it
+  // can add the multipart boundary — so we only force JSON for non-FormData bodies.
+  const isFormData = init.body instanceof FormData;
+
   const response = await fetch(new URL(path, BASE_URL), {
     ...init,
     // Send/receive the httpOnly auth cookie on cross-origin requests.
     // (The API's CORS allowlist + credentials:true makes this work.)
     credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...init.headers,
     },
   });
@@ -62,5 +66,18 @@ export const http = {
       method: 'POST',
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+  },
+  patch<T>(path: string, body?: unknown): Promise<T> {
+    return request<T>(path, {
+      method: 'PATCH',
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  },
+  delete<T>(path: string): Promise<T> {
+    return request<T>(path, { method: 'DELETE' });
+  },
+  /** POST a multipart body (file uploads). Pass a FormData; no JSON header. */
+  postForm<T>(path: string, form: FormData): Promise<T> {
+    return request<T>(path, { method: 'POST', body: form });
   },
 };

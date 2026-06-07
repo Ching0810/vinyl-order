@@ -9,10 +9,11 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
   UsePipes,
 } from '@nestjs/common';
-import type { Product } from '@vinyl-order/shared';
+import type { Connection, Product } from '@vinyl-order/shared';
 import { ZodValidationPipe } from 'nestjs-zod';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -32,10 +33,36 @@ import { ProductsService } from './products.service';
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
-  /** GET /products — list products, newest first. Public. */
+  /**
+   * GET /products — cursor-paginated catalog (Relay connection). Public.
+   * Forward: `?first=&after=`; backward: `?last=&before=`. Defaults to first 10.
+   */
   @Get()
-  list(): Promise<Product[]> {
-    return this.products.findAll();
+  list(
+    @Query('first') first?: string,
+    @Query('after') after?: string,
+    @Query('last') last?: string,
+    @Query('before') before?: string,
+  ): Promise<Connection<Product>> {
+    return this.products.paginate({
+      first: first === undefined ? undefined : Number(first),
+      after,
+      last: last === undefined ? undefined : Number(last),
+      before,
+    });
+  }
+
+  /** GET /products/hot — featured products for the storefront hot section. Public. */
+  @Get('hot')
+  hot(): Promise<Product[]> {
+    return this.products.findHot();
+  }
+
+  /** GET /products/search?q= — search the catalog by title/artist. Public. */
+  @Get('search')
+  search(@Query('q') q?: string): Promise<Product[]> {
+    // Empty query → no results (avoids returning the whole catalog by accident).
+    return q && q.trim() ? this.products.search(q.trim()) : Promise.resolve([]);
   }
 
   /** GET /products/:id — a single product, 404 if not found. Public. */

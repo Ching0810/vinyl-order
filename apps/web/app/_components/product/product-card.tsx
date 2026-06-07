@@ -1,4 +1,4 @@
-import { Box, Stack, Text } from '@chakra-ui/react';
+import { Badge, Box, Stack, Text } from '@chakra-ui/react';
 import type { Product } from '@vinyl-order/shared';
 import Image from 'next/image';
 
@@ -22,6 +22,11 @@ const ProductCard = ({ product }: { product: Product }) => (
           sizes="(max-width: 768px) 50vw, 25vw"
           style={{ objectFit: 'cover' }}
         />
+      ) : null}
+      {product.isHot ? (
+        <Badge position="absolute" top="2" insetStart="2" colorPalette="red">
+          HOT
+        </Badge>
       ) : null}
     </Box>
     <Stack gap="1" p="3">

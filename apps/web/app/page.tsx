@@ -2,27 +2,33 @@ import { Box, Container, Heading, Text } from '@chakra-ui/react';
 
 import Header from '@/components/layout/header';
 import ProductGrid from '@/components/product/product-grid';
-import { getProducts } from '@/services/api/products/list';
+import ProductSearch from '@/components/product/product-search';
+import { getHotProducts } from '@/services/api/products/hot';
 
 /**
- * Public storefront home. An async Server Component: the product grid is
+ * Public storefront home. An async Server Component: the hot-products grid is
  * fetched and rendered on the server (good for SEO + fast first paint), while
- * the <Header/> is a client island for the per-user auth state and cart.
+ * <Header/> and <ProductSearch/> are client islands for per-user auth/cart and
+ * the live search dropdown. The full catalog is reachable via search, not listed.
  */
 const HomePage = async () => {
-  const products = await getProducts();
+  const hotProducts = await getHotProducts();
 
   return (
     <Box>
       <Header />
       <Container maxW="6xl" py="8">
+        <Box mb="10">
+          <ProductSearch />
+        </Box>
+
         <Heading size="xl" mb="6">
-          New Vinyl
+          Hot Right Now
         </Heading>
-        {products.length === 0 ? (
-          <Text color="fg.muted">No vinyl found.</Text>
+        {hotProducts.length === 0 ? (
+          <Text color="fg.muted">No hot products yet.</Text>
         ) : (
-          <ProductGrid products={products} />
+          <ProductGrid products={hotProducts} />
         )}
       </Container>
     </Box>
