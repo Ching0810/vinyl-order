@@ -13,7 +13,6 @@
     "target": "ES2023",
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
     "incremental": true,
     // Keep the incremental cache inside dist so `deleteOutDir` clears it along
     // with the output. Otherwise a stale cache at the project root makes
