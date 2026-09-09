@@ -27,3 +27,19 @@ export const UserIcon = (props: SVGProps<SVGSVGElement>) => (
     <circle cx="12" cy="7" r="4" />
   </svg>
 );
+
+export const SearchIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <circle cx="11" cy="11" r="8" />
+    <path d="m21 21-4.35-4.35" />
+  </svg>
+);
+
+/** Record mark used as the wordmark glyph. */
+export const DiscIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="4" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" />
+  </svg>
+);

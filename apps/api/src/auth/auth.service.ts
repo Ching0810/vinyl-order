@@ -17,10 +17,7 @@ const SALT_ROUNDS = 10;
  */
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync('no-such-user', SALT_ROUNDS);
 
-/**
- * What auth endpoints return: a signed token plus the safe user shape.
- * (Could move to @vinyl-order/shared later so the web can type its responses.)
- */
+/** What auth endpoints return: a signed token plus the safe user shape. */
 export interface AuthResponse {
   accessToken: string;
   user: PublicUser;

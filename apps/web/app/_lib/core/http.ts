@@ -1,10 +1,8 @@
 /**
  * Minimal typed HTTP client for talking to the API.
  *
- * Mirrors the call surface of cola-twtrip's client (http.get / http.post)
- * without the middleware framework — grow into interceptors only if a real
- * need appears. On any non-2xx it throws an HttpError carrying the parsed body,
- * so React Query and form handlers can react to 401/409 etc.
+ * On any non-2xx it throws an HttpError carrying the parsed body, so React
+ * Query and form handlers can react to 401/409 etc.
  */
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';

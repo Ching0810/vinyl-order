@@ -15,8 +15,9 @@ interface CartState {
 }
 
 /**
- * Client-only cart state. Browser-side for now (no persistence/checkout yet) —
- * the header reads the count, and add-to-cart UI will call `addItem` later.
+ * Client-only cart state, held in memory for the life of the page — it is not
+ * persisted or synced to the server. The header reads the count via
+ * `useCartCount`.
  */
 export const useCart = create<CartState>((set) => {
   return {

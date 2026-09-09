@@ -16,11 +16,8 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
-    // Chakra UI v3 runs on Emotion. Without this, Emotion's global styles
-    // (`css-global`) are injected on the client but not emitted during SSR,
-    // causing a hydration mismatch (server `<main>` vs client `<style>`).
-    // Optimizing the barrel import fixes the SSR style ordering.
-    // Mirrors apps/web's sibling project cola-twtrip-temp.
+    // @chakra-ui/react is a large barrel export; this loads only the modules
+    // actually imported, cutting bundle size and dev compile time.
     optimizePackageImports: ['@chakra-ui/react'],
   },
 };

@@ -11,7 +11,7 @@ import { useMe } from '@/services/queries/auth/use-me';
  * redirects non-admins home. This is UX only — the API enforces real security
  * via JwtAuthGuard + RolesGuard, so a determined user gains nothing by bypassing it.
  */
-const AdminGuard = ({ children }: { children: ReactNode }) => {
+const Guard = ({ children }: { children: ReactNode }) => {
   const { data: user, isPending } = useMe();
   const router = useRouter();
 
@@ -32,4 +32,4 @@ const AdminGuard = ({ children }: { children: ReactNode }) => {
   return <>{children}</>;
 };
 
-export default AdminGuard;
+export default Guard;

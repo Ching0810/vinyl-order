@@ -5,7 +5,7 @@ import type { Product } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
-import AdminGuard from '@/components/admin/admin-guard';
+import Guard from '@/components/admin/guard';
 import ProductForm from '@/components/admin/product-form';
 import type { ProductFormValues } from '@/components/admin/product-form-fields';
 import { HttpError } from '@/lib/core/http';
@@ -87,9 +87,9 @@ const EditProductPage = () => {
   const params = useParams<{ id: string }>();
 
   return (
-    <AdminGuard>
+    <Guard>
       <EditProductForm id={params.id} />
-    </AdminGuard>
+    </Guard>
   );
 };
 

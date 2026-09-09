@@ -7,8 +7,8 @@ const DISCOGS_API = 'https://api.discogs.com';
 /**
  * How long a search response stays cached. Discogs allows ~60 req/min for an
  * authenticated token; server-rendering the catalog on every page view would
- * burn through that quickly, so we memoize per query. In-memory (per instance)
- * for now — move to Redis (already reserved in infra) when running >1 instance.
+ * burn through that quickly, so we memoize per query. The store is in-memory,
+ * so the cache is per API instance.
  */
 const CACHE_TTL_MS = 5 * 60 * 1000;
 

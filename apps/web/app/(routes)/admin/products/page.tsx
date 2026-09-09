@@ -2,8 +2,10 @@
 
 import {
   Badge,
+  Box,
   Button,
   Container,
+  Flex,
   HStack,
   Heading,
   Image,
@@ -15,15 +17,12 @@ import type { PageArgs } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 import { useState } from 'react';
 
-import AdminGuard from '@/components/admin/admin-guard';
+import Guard from '@/components/admin/guard';
+import { formatPrice } from '@/lib/utils/currency';
 import { useDeleteProduct } from '@/services/queries/products/use-delete-product';
 import { useProducts } from '@/services/queries/products/use-products';
 
 const PAGE_SIZE = 10;
-
-/** Formats integer cents back into a currency string for display. */
-const formatPrice = (priceCents: number, currency: string) =>
-  new Intl.NumberFormat('zh-TW', { style: 'currency', currency }).format(priceCents / 100);
 
 const AdminProductList = () => {
   // Cursor window into the catalog; `pageNum` is display-only (cursor paging has
@@ -50,18 +49,26 @@ const AdminProductList = () => {
   };
 
   return (
-    <Container maxW="6xl" py="8">
-      <HStack justify="space-between" mb="6">
-        <Heading size="lg">Products</Heading>
+    <Container maxW="6xl" px={{ base: '4', md: '8' }} py={{ base: '6', md: '10' }}>
+      <Flex
+        justify="space-between"
+        align={{ base: 'stretch', sm: 'center' }}
+        direction={{ base: 'column', sm: 'row' }}
+        gap="4"
+        mb="6"
+      >
+        <Heading size={{ base: 'md', md: 'lg' }} letterSpacing="display">
+          Products
+        </Heading>
         <HStack gap="2">
-          <Button asChild variant="ghost">
+          <Button asChild variant="ghost" size="sm">
             <NextLink href="/">Back to store</NextLink>
           </Button>
-          <Button asChild>
+          <Button asChild size="sm">
             <NextLink href="/admin/products/new">Add product</NextLink>
           </Button>
         </HStack>
-      </HStack>
+      </Flex>
 
       {isPending ? (
         <Spinner />
@@ -69,65 +76,70 @@ const AdminProductList = () => {
         <Text color="fg.muted">No products yet. Add your first one.</Text>
       ) : (
         <>
-          <Table.Root size="sm" variant="line" tableLayout="fixed">
-            <Table.Header>
-              <Table.Row>
-                <Table.ColumnHeader w="20">Cover</Table.ColumnHeader>
-                <Table.ColumnHeader w="35">Title</Table.ColumnHeader>
-                <Table.ColumnHeader w="30">Artist</Table.ColumnHeader>
-                <Table.ColumnHeader w="35">Price</Table.ColumnHeader>
-                <Table.ColumnHeader w="30">Stock</Table.ColumnHeader>
-                <Table.ColumnHeader w="30">Hot</Table.ColumnHeader>
-                <Table.ColumnHeader w="44">Actions</Table.ColumnHeader>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {products.map((product) => (
-                <Table.Row key={product.id}>
-                  <Table.Cell>
-                    {product.imageUrl ? (
-                      <Image
-                        src={product.imageUrl}
-                        alt=""
-                        boxSize="10"
-                        objectFit="cover"
-                        borderRadius="sm"
-                      />
-                    ) : null}
-                  </Table.Cell>
-                  <Table.Cell truncate>{product.title}</Table.Cell>
-                  <Table.Cell truncate>{product.artist}</Table.Cell>
-                  <Table.Cell>{formatPrice(product.priceCents, product.currency)}</Table.Cell>
-                  <Table.Cell>{product.stock}</Table.Cell>
-                  <Table.Cell>
-                    {product.isHot ? (
-                      <Badge colorPalette="red">Hot</Badge>
-                    ) : (
-                      <Text color="fg.subtle">—</Text>
-                    )}
-                  </Table.Cell>
-                  <Table.Cell>
-                    <HStack gap="2" justify="start">
-                      <Button asChild size="xs" variant="outline">
-                        <NextLink href={`/admin/products/${product.id}/edit`}>Edit</NextLink>
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        colorPalette="red"
-                        loading={
-                          !!deleteMutation.isPending && deleteMutation.variables === product.id
-                        }
-                        onClick={() => deleteMutation.mutate(product.id)}
-                      >
-                        Delete
-                      </Button>
-                    </HStack>
-                  </Table.Cell>
+          {/* Seven fixed-width columns can't compress onto a phone, so the table
+              keeps its natural width and scrolls sideways inside this box
+              rather than squeezing the cells illegibly. */}
+          <Box overflowX="auto" mx={{ base: '-4', md: '0' }} px={{ base: '4', md: '0' }}>
+            <Table.Root size="sm" variant="line" tableLayout="fixed" minW="3xl">
+              <Table.Header>
+                <Table.Row>
+                  <Table.ColumnHeader w="20">Cover</Table.ColumnHeader>
+                  <Table.ColumnHeader w="35">Title</Table.ColumnHeader>
+                  <Table.ColumnHeader w="30">Artist</Table.ColumnHeader>
+                  <Table.ColumnHeader w="35">Price</Table.ColumnHeader>
+                  <Table.ColumnHeader w="30">Stock</Table.ColumnHeader>
+                  <Table.ColumnHeader w="30">Hot</Table.ColumnHeader>
+                  <Table.ColumnHeader w="44">Actions</Table.ColumnHeader>
                 </Table.Row>
-              ))}
-            </Table.Body>
-          </Table.Root>
+              </Table.Header>
+              <Table.Body>
+                {products.map((product) => (
+                  <Table.Row key={product.id}>
+                    <Table.Cell>
+                      {product.imageUrl ? (
+                        <Image
+                          src={product.imageUrl}
+                          alt=""
+                          boxSize="10"
+                          objectFit="cover"
+                          borderRadius="sm"
+                        />
+                      ) : null}
+                    </Table.Cell>
+                    <Table.Cell truncate>{product.title}</Table.Cell>
+                    <Table.Cell truncate>{product.artist}</Table.Cell>
+                    <Table.Cell>{formatPrice(product.priceCents, product.currency)}</Table.Cell>
+                    <Table.Cell>{product.stock}</Table.Cell>
+                    <Table.Cell>
+                      {product.isHot ? (
+                        <Badge colorPalette="red">Hot</Badge>
+                      ) : (
+                        <Text color="fg.subtle">—</Text>
+                      )}
+                    </Table.Cell>
+                    <Table.Cell>
+                      <HStack gap="2" justify="start">
+                        <Button asChild size="xs" variant="outline">
+                          <NextLink href={`/admin/products/${product.id}/edit`}>Edit</NextLink>
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          colorPalette="red"
+                          loading={
+                            !!deleteMutation.isPending && deleteMutation.variables === product.id
+                          }
+                          onClick={() => deleteMutation.mutate(product.id)}
+                        >
+                          Delete
+                        </Button>
+                      </HStack>
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Root>
+          </Box>
 
           <HStack justify="center" gap="4" mt="6">
             <Button
@@ -157,9 +169,9 @@ const AdminProductList = () => {
 };
 
 const AdminProductsPage = () => (
-  <AdminGuard>
+  <Guard>
     <AdminProductList />
-  </AdminGuard>
+  </Guard>
 );
 
 export default AdminProductsPage;

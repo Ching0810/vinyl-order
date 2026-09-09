@@ -1,5 +1,4 @@
 // ESLint Flat Config for the Next.js (TypeScript) web app.
-// Ported from the cola-twtrip work config, adapted for TypeScript.
 
 import js from '@eslint/js';
 import { defineConfig } from 'eslint/config';
