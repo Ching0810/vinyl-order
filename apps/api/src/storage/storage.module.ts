@@ -5,9 +5,9 @@ import { LocalStorageService, StorageService } from './storage.service';
 import { UploadsController } from './uploads.controller';
 
 /**
- * Provides the StorageService implementation chosen by STORAGE_DRIVER. Only
- * 'local' exists today; 'gcs' (production) is added later without touching
- * callers. Exports StorageService so other modules can inject it.
+ * Provides the StorageService implementation chosen by STORAGE_DRIVER, so
+ * callers depend on the interface rather than a specific backend. Exports
+ * StorageService so other modules can inject it.
  */
 @Module({
   controllers: [UploadsController],

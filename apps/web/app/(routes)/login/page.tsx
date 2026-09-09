@@ -40,8 +40,18 @@ const LoginPage = () => {
   })();
 
   return (
-    <Box maxW="sm" mx="auto" mt="20" p="6">
-      <Heading size="lg" mb="6">
+    <Box
+      maxW="sm"
+      mx="auto"
+      my={{ base: '10', md: '20' }}
+      p={{ base: '6', md: '8' }}
+      bg="bg.panel"
+      borderWidth={{ base: '0', sm: '1px' }}
+      borderColor="border.muted"
+      borderRadius="card"
+      boxShadow={{ base: 'none', sm: 'card' }}
+    >
+      <Heading size={{ base: 'md', md: 'lg' }} letterSpacing="display" mb="6">
         Sign in
       </Heading>
 

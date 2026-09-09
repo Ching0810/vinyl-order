@@ -3,7 +3,7 @@
 import { Button, Container, HStack, Heading, Text } from '@chakra-ui/react';
 import NextLink from 'next/link';
 
-import AdminGuard from '@/components/admin/admin-guard';
+import Guard from '@/components/admin/guard';
 import ProductForm, { blankProductForm } from '@/components/admin/product-form';
 import { HttpError } from '@/lib/core/http';
 import { useCreateProduct } from '@/services/queries/products/use-create-product';
@@ -54,9 +54,9 @@ const NewProductForm = () => {
 };
 
 const NewProductPage = () => (
-  <AdminGuard>
+  <Guard>
     <NewProductForm />
-  </AdminGuard>
+  </Guard>
 );
 
 export default NewProductPage;

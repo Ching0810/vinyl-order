@@ -5,13 +5,12 @@ import type { PublicUser } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 import { useRouter } from 'next/navigation';
 
-import { UserIcon } from '@/components/icons';
+import { UserIcon } from '@/components/ui/icons';
 import { useLogout } from '@/services/queries/auth/use-logout';
 
 /**
  * Logged-in account dropdown: the trigger shows the user's name; the menu holds
  * their identity + role, navigation (Account, Admin for admins), and Logout.
- * Consolidates what used to be three separate header buttons.
  */
 const UserMenu = ({ user }: { user: PublicUser }) => {
   const router = useRouter();
