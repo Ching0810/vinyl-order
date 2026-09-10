@@ -104,6 +104,20 @@ export class ProductsService {
     });
   }
 
+  /**
+   * Products featured in the hero carousel, in display order.
+   *
+   * `slideOrder` defaults to 0, so several slides commonly tie; createdAt
+   * breaks the tie deterministically. Without it Postgres is free to return
+   * tied rows in any order and the carousel would reshuffle between requests.
+   */
+  findSlides(): Promise<Product[]> {
+    return this.prisma.product.findMany({
+      where: { isSlide: true },
+      orderBy: [{ slideOrder: 'asc' }, { createdAt: 'desc' }],
+    });
+  }
+
   /** Search the whole catalog by title or artist (case-insensitive). */
   search(q: string): Promise<Product[]> {
     return this.prisma.product.findMany({

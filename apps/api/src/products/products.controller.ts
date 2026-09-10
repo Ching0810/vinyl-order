@@ -58,6 +58,15 @@ export class ProductsController {
     return this.products.findHot();
   }
 
+  /**
+   * GET /products/slides — products featured in the hero carousel. Public.
+   * Declared above `:id` so the literal path wins the route match.
+   */
+  @Get('slides')
+  slides(): Promise<Product[]> {
+    return this.products.findSlides();
+  }
+
   /** GET /products/search?q= — search the catalog by title/artist. Public. */
   @Get('search')
   search(@Query('q') q?: string): Promise<Product[]> {
