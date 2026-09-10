@@ -1,8 +1,10 @@
 'use client';
 
-import { Field, Image, Input, SimpleGrid, Stack, Switch, Text } from '@chakra-ui/react';
+import { Field, Image, Input, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
-import { type Control, Controller, type FieldErrors, type UseFormRegister } from 'react-hook-form';
+import type { Control, FieldErrors, UseFormRegister } from 'react-hook-form';
+
+import MerchandisingFields from '@/components/admin/merchandising-fields';
 
 /**
  * Product form state. Numbers/lists are edited as UI-friendly shapes (price in
@@ -22,6 +24,8 @@ export interface ProductFormValues {
   currency: string;
   stock: number;
   isHot: boolean;
+  isSlide: boolean;
+  slideOrder: number;
 }
 
 interface Props {
@@ -132,21 +136,7 @@ const ProductFormFields = ({
       </Stack>
     </Field.Root>
 
-    {/* Feature flag — Switch is a controlled Chakra composite, so it goes via Controller. */}
-    <Controller
-      control={control}
-      name="isHot"
-      render={({ field }) => (
-        <Switch.Root
-          checked={field.value}
-          onCheckedChange={(details) => field.onChange(details.checked)}
-        >
-          <Switch.HiddenInput onBlur={field.onBlur} />
-          <Switch.Control />
-          <Switch.Label>Hot product (feature on the home page)</Switch.Label>
-        </Switch.Root>
-      )}
-    />
+    <MerchandisingFields control={control} register={register} />
   </Stack>
 );
 

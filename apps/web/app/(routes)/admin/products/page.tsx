@@ -89,6 +89,7 @@ const AdminProductList = () => {
                   <Table.ColumnHeader w="35">Price</Table.ColumnHeader>
                   <Table.ColumnHeader w="30">Stock</Table.ColumnHeader>
                   <Table.ColumnHeader w="30">Hot</Table.ColumnHeader>
+                  <Table.ColumnHeader w="34">Carousel</Table.ColumnHeader>
                   <Table.ColumnHeader w="44">Actions</Table.ColumnHeader>
                 </Table.Row>
               </Table.Header>
@@ -113,6 +114,15 @@ const AdminProductList = () => {
                     <Table.Cell>
                       {product.isHot ? (
                         <Badge colorPalette="red">Hot</Badge>
+                      ) : (
+                        <Text color="fg.subtle">—</Text>
+                      )}
+                    </Table.Cell>
+                    <Table.Cell>
+                      {product.isSlide ? (
+                        // Position matters more than the flag here — it's what an
+                        // editor needs to see to reorder the carousel.
+                        <Badge colorPalette="brand">#{product.slideOrder}</Badge>
                       ) : (
                         <Text color="fg.subtle">—</Text>
                       )}

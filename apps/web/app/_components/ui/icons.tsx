@@ -35,6 +35,18 @@ export const SearchIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const ChevronLeftIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <path d="m15 18-6-6 6-6" />
+  </svg>
+);
+
+export const ChevronRightIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <path d="m9 18 6-6-6-6" />
+  </svg>
+);
+
 /** Record mark used as the wordmark glyph. */
 export const DiscIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...props}>

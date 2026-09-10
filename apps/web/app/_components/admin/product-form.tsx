@@ -83,6 +83,8 @@ const ProductForm = ({ initialValues, submitLabel, submitting, errorMessage, onS
         currency: values.currency,
         stock: values.stock,
         isHot: values.isHot,
+        isSlide: values.isSlide,
+        slideOrder: values.slideOrder,
       },
       { reset: () => reset() },
     );
@@ -127,6 +129,8 @@ export const blankProductForm: ProductFormValues = {
   currency: 'TWD',
   stock: 0,
   isHot: false,
+  isSlide: false,
+  slideOrder: 0,
 };
 
 export default ProductForm;

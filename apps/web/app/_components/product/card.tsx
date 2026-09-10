@@ -19,6 +19,7 @@ import { formatPrice } from '@/lib/utils/currency';
 const Card = ({ product, eager = false }: { product: Product; eager?: boolean }) => (
   <Stack
     className="group"
+    cursor="pointer"
     gap="0"
     borderRadius="card"
     overflow="hidden"

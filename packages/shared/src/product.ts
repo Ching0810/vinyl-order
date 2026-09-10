@@ -27,6 +27,10 @@ export const productSchema = z.object({
   stock: z.number().int(),
   /** Featured in the storefront "hot" section. */
   isHot: z.boolean(),
+  /** Featured in the storefront hero carousel. */
+  isSlide: z.boolean(),
+  /** Position in the carousel, ascending. Only read when isSlide is true. */
+  slideOrder: z.number().int(),
 });
 export type Product = z.infer<typeof productSchema>;
 
@@ -46,6 +50,8 @@ export const createProductSchema = z.object({
   currency: z.string().min(1).default('TWD'),
   stock: z.number().int().nonnegative().default(0),
   isHot: z.boolean().default(false),
+  isSlide: z.boolean().default(false),
+  slideOrder: z.number().int().default(0),
 });
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
@@ -65,5 +71,7 @@ export const updateProductSchema = z.object({
   currency: z.string().min(1).optional(),
   stock: z.number().int().nonnegative().optional(),
   isHot: z.boolean().optional(),
+  isSlide: z.boolean().optional(),
+  slideOrder: z.number().int().optional(),
 });
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;

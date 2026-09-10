@@ -26,6 +26,8 @@ const toFormValues = (product: Product): ProductFormValues => {
     currency: product.currency,
     stock: product.stock,
     isHot: product.isHot,
+    isSlide: product.isSlide,
+    slideOrder: product.slideOrder,
   };
 };
 
