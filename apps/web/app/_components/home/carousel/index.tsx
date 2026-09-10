@@ -1,127 +1,130 @@
 'use client';
 
-import { Box, Button, Flex, HStack, IconButton } from '@chakra-ui/react';
+import { Box, Flex } from '@chakra-ui/react';
 import type { Product } from '@vinyl-order/shared';
-import { useEffect, useState } from 'react';
+import Autoplay from 'embla-carousel-autoplay';
+import Fade from 'embla-carousel-fade';
+import useEmblaCarousel from 'embla-carousel-react';
+import { useEffect, useMemo } from 'react';
 
-import { ChevronLeftIcon, ChevronRightIcon } from '@/components/ui/icons';
-
+import Controls from './_components/controls';
 import Slide from './_components/slide';
+import { type CarouselApi, useCarouselControls } from './_hooks/use-carousel-controls';
+
+export type { CarouselApi };
 
 /** Dwell time per slide before advancing. */
-const ROTATE_MS = 6000;
+const DEFAULT_DELAY_MS = 6000;
 
 /**
- * Hero carousel. Slides are stacked and cross-faded rather than translated, so
- * every panel occupies the same box and the section never changes height as it
- * rotates.
+ * Hero carousel, built on Embla.
  *
- * Autoplay stops while the pointer or keyboard focus is inside the carousel, so
- * it can't move out from under someone reading or tabbing through it, and never
- * starts at all when the visitor has asked for reduced motion.
+ * Embla is headless — it owns gestures, looping and timing while the markup and
+ * styling stay ours. The Fade plugin replaces the default translate with an
+ * opacity cross-fade, so every panel occupies the same box and the section
+ * never changes height as it rotates.
  *
- * @param slides - featured products, already in display order
+ * Autoplay starts disabled and is switched on only after mount, once the motion
+ * preference is known: starting it during render and stopping it afterwards
+ * would animate briefly for someone who asked it not to.
+ *
+ * @param slides - featured products in display order
+ * @param autoplayDelay - ms each slide holds before advancing
+ * @param loop - whether the last slide wraps round to the first
+ * @param onApiReady - receives Embla's instance API (scrollTo, on, plugins, …)
+ *   so a parent can drive the carousel programmatically
  */
-const Carousel = ({ slides }: { slides: Product[] }) => {
-  const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const [reduceMotion, setReduceMotion] = useState(false);
+const Carousel = ({
+  slides,
+  autoplayDelay = DEFAULT_DELAY_MS,
+  loop = true,
+  onApiReady,
+}: {
+  slides: Product[];
+  autoplayDelay?: number;
+  loop?: boolean;
+  onApiReady?: (api: CarouselApi) => void;
+}) => {
+  // Plugin instances need a stable identity — a fresh array each render would
+  // make Embla re-initialise on every pass.
+  const plugins = useMemo(
+    () => [
+      Autoplay({
+        delay: autoplayDelay,
+        playOnInit: false,
+        // The plugin handles pausing while the pointer or focus is inside.
+        // `stopOnInteraction: false` lets it resume afterwards rather than
+        // stopping permanently on the first arrow click.
+        stopOnMouseEnter: true,
+        stopOnFocusIn: true,
+        stopOnInteraction: false,
+      }),
+      Fade(),
+    ],
+    [autoplayDelay],
+  );
+
+  const [emblaRef, emblaApi] = useEmblaCarousel({ loop }, plugins);
+  const controls = useCarouselControls(emblaApi);
 
   useEffect(() => {
+    if (emblaApi) onApiReady?.(emblaApi);
+  }, [emblaApi, onApiReady]);
+
+  useEffect(() => {
+    if (!emblaApi) return undefined;
+
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const sync = () => setReduceMotion(query.matches);
+    const sync = () => {
+      const autoplay = emblaApi.plugins().autoplay;
+      if (!autoplay) return;
+      if (query.matches) autoplay.stop();
+      else autoplay.play();
+    };
     sync();
     query.addEventListener('change', sync);
+
     return () => query.removeEventListener('change', sync);
-  }, []);
-
-  useEffect(() => {
-    if (paused || reduceMotion || slides.length < 2) return undefined;
-    const timer = setInterval(() => setIndex((i) => (i + 1) % slides.length), ROTATE_MS);
-    return () => clearInterval(timer);
-  }, [paused, reduceMotion, slides.length]);
-
-  const go = (next: number) => setIndex((next + slides.length) % slides.length);
+  }, [emblaApi]);
 
   return (
     <Box
       position="relative"
-      overflow="hidden"
       borderRadius="panel"
+      overflow="hidden"
       bg="ink.950"
       h={{ base: '400px', md: '520px' }}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
       aria-roledescription="carousel"
     >
-      {slides.map((slide, i) => (
-        <Box
-          key={slide.id}
-          position="absolute"
-          inset="0"
-          opacity={i === index ? 1 : 0}
-          transition="opacity 0.6s ease"
-          // Hidden slides stay in the DOM for the cross-fade, so they must be
-          // taken out of the accessibility tree and the tab order.
-          aria-hidden={i !== index}
-          pointerEvents={i === index ? 'auto' : 'none'}
-        >
-          <Slide product={slide} eager={i === 0} />
-        </Box>
-      ))}
+      <Box ref={emblaRef} h="full" overflow="hidden">
+        <Flex h="full">
+          {slides.map((product, i) => (
+            <Box
+              key={product.id}
+              position="relative"
+              flex="0 0 100%"
+              minW="0"
+              h="full"
+              // Every slide stays mounted for the cross-fade, so the ones not
+              // showing have to leave the accessibility tree.
+              aria-hidden={i !== controls.selectedIndex}
+            >
+              <Slide product={product} eager={i === 0} index={i} total={slides.length} />
+            </Box>
+          ))}
+        </Flex>
+      </Box>
 
       {slides.length > 1 ? (
-        <Flex
-          position="absolute"
-          insetX={{ base: '4', md: '8' }}
-          bottom={{ base: '4', md: '6' }}
-          align="center"
-          justify="space-between"
-          gap="4"
-        >
-          <HStack gap="2">
-            {slides.map((slide, i) => (
-              <Button
-                key={slide.id}
-                aria-label={`Go to slide ${i + 1}`}
-                aria-current={i === index}
-                onClick={() => setIndex(i)}
-                unstyled
-                w={i === index ? '6' : '2'}
-                h="2"
-                minW="0"
-                p="0"
-                borderRadius="full"
-                bg={i === index ? 'brand.400' : 'white/50'}
-                transition="width 0.3s ease, background 0.3s ease"
-                cursor="pointer"
-              />
-            ))}
-          </HStack>
-
-          <HStack gap="2">
-            <IconButton
-              aria-label="Previous slide"
-              size="sm"
-              variant="subtle"
-              borderRadius="full"
-              onClick={() => go(index - 1)}
-            >
-              <ChevronLeftIcon />
-            </IconButton>
-            <IconButton
-              aria-label="Next slide"
-              size="sm"
-              variant="subtle"
-              borderRadius="full"
-              onClick={() => go(index + 1)}
-            >
-              <ChevronRightIcon />
-            </IconButton>
-          </HStack>
-        </Flex>
+        <Controls
+          scrollSnaps={controls.scrollSnaps}
+          selectedIndex={controls.selectedIndex}
+          canScrollPrev={controls.canScrollPrev}
+          canScrollNext={controls.canScrollNext}
+          onDotClick={controls.onDotClick}
+          onPrevClick={controls.onPrevClick}
+          onNextClick={controls.onNextClick}
+        />
       ) : null}
     </Box>
   );
