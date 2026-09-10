@@ -5,9 +5,7 @@ import {
   Box,
   Button,
   Container,
-  Flex,
   HStack,
-  Heading,
   Image,
   Spinner,
   Table,
@@ -17,7 +15,7 @@ import type { PageArgs } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 import { useState } from 'react';
 
-import Guard from '@/components/admin/guard';
+import SectionHeading from '@/components/ui/section-heading';
 import { formatPrice } from '@/lib/utils/currency';
 import { useDeleteProduct } from '@/services/queries/products/use-delete-product';
 import { useProducts } from '@/services/queries/products/use-products';
@@ -50,28 +48,19 @@ const AdminProductList = () => {
 
   return (
     <Container maxW="6xl" px={{ base: '4', md: '8' }} py={{ base: '6', md: '10' }}>
-      <Flex
-        justify="space-between"
-        align={{ base: 'stretch', sm: 'center' }}
-        direction={{ base: 'column', sm: 'row' }}
-        gap="4"
-        mb="6"
-      >
-        <Heading size={{ base: 'md', md: 'lg' }} letterSpacing="display">
-          Products
-        </Heading>
-        <HStack gap="2">
-          <Button asChild variant="ghost" size="sm">
-            <NextLink href="/">Back to store</NextLink>
-          </Button>
-          <Button asChild size="sm">
+      <SectionHeading
+        eyebrow="Catalogue"
+        title="Products"
+        description="Everything in the shop. Edit pricing, stock and where each record is featured."
+        action={
+          <Button asChild size="sm" colorPalette="brand" borderRadius="full">
             <NextLink href="/admin/products/new">Add product</NextLink>
           </Button>
-        </HStack>
-      </Flex>
+        }
+      />
 
       {isPending ? (
-        <Spinner />
+        <Spinner color="fg.muted" />
       ) : products.length === 0 ? (
         <Text color="fg.muted">No products yet. Add your first one.</Text>
       ) : (
@@ -79,7 +68,13 @@ const AdminProductList = () => {
           {/* Seven fixed-width columns can't compress onto a phone, so the table
               keeps its natural width and scrolls sideways inside this box
               rather than squeezing the cells illegibly. */}
-          <Box overflowX="auto" mx={{ base: '-4', md: '0' }} px={{ base: '4', md: '0' }}>
+          <Box
+            overflowX="auto"
+            borderWidth="1px"
+            borderColor="border.muted"
+            borderRadius="card"
+            bg="bg.panel"
+          >
             <Table.Root size="sm" variant="line" tableLayout="fixed" minW="3xl">
               <Table.Header>
                 <Table.Row>
@@ -113,13 +108,13 @@ const AdminProductList = () => {
                     <Table.Cell>{product.stock}</Table.Cell>
                     <Table.Cell>
                       {product.isHot ? (
-                        <Badge colorPalette="red">Hot</Badge>
+                        <Badge colorPalette="brand">Hot</Badge>
                       ) : (
                         <Text color="fg.subtle">—</Text>
                       )}
                     </Table.Cell>
                     <Table.Cell>
-                      {product.isSlide ? (
+                      {product.slideOrder !== null ? (
                         // Position matters more than the flag here — it's what an
                         // editor needs to see to reorder the carousel.
                         <Badge colorPalette="brand">#{product.slideOrder}</Badge>
@@ -178,10 +173,4 @@ const AdminProductList = () => {
   );
 };
 
-const AdminProductsPage = () => (
-  <Guard>
-    <AdminProductList />
-  </Guard>
-);
-
-export default AdminProductsPage;
+export default AdminProductList;

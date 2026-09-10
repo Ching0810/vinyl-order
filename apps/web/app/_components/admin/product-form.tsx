@@ -18,6 +18,12 @@ const splitCsv = (text: string): string[] =>
 interface Props {
   /** Values the form starts with — blank for create, the product for edit. */
   initialValues: ProductFormValues;
+  /**
+   * Show the Discogs lookup. Authoring only: picking a result overwrites
+   * title, artist, year, genres, format and cover, which is what you want when
+   * creating a record and destructive once someone has edited one.
+   */
+  enableDiscogsImport?: boolean;
   submitLabel: string;
   submitting: boolean;
   errorMessage: string | null;
@@ -36,7 +42,14 @@ interface Props {
  * prefill, and image upload; maps the UI-friendly ProductFormValues to the API
  * contract on submit. The page wires the actual create/update mutation via props.
  */
-const ProductForm = ({ initialValues, submitLabel, submitting, errorMessage, onSubmit }: Props) => {
+const ProductForm = ({
+  initialValues,
+  submitLabel,
+  submitting,
+  errorMessage,
+  onSubmit,
+  enableDiscogsImport = false,
+}: Props) => {
   const uploadMutation = useUploadImage();
 
   const {
@@ -83,7 +96,6 @@ const ProductForm = ({ initialValues, submitLabel, submitting, errorMessage, onS
         currency: values.currency,
         stock: values.stock,
         isHot: values.isHot,
-        isSlide: values.isSlide,
         slideOrder: values.slideOrder,
       },
       { reset: () => reset() },
@@ -92,7 +104,7 @@ const ProductForm = ({ initialValues, submitLabel, submitting, errorMessage, onS
 
   return (
     <>
-      <DiscogsImport onPick={prefillFrom} />
+      {enableDiscogsImport ? <DiscogsImport onPick={prefillFrom} /> : null}
 
       <form onSubmit={submit}>
         <Stack gap="4">
@@ -105,7 +117,7 @@ const ProductForm = ({ initialValues, submitLabel, submitting, errorMessage, onS
             uploading={uploadMutation.isPending}
           />
 
-          {errorMessage ? <Text color="red.500">{errorMessage}</Text> : null}
+          {errorMessage ? <Text color="fg.error">{errorMessage}</Text> : null}
 
           <Button type="submit" loading={submitting}>
             {submitLabel}
@@ -129,8 +141,7 @@ export const blankProductForm: ProductFormValues = {
   currency: 'TWD',
   stock: 0,
   isHot: false,
-  isSlide: false,
-  slideOrder: 0,
+  slideOrder: null,
 };
 
 export default ProductForm;

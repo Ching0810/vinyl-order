@@ -107,13 +107,14 @@ export class ProductsService {
   /**
    * Products featured in the hero carousel, in display order.
    *
-   * `slideOrder` defaults to 0, so several slides commonly tie; createdAt
-   * breaks the tie deterministically. Without it Postgres is free to return
-   * tied rows in any order and the carousel would reshuffle between requests.
+   * Null slideOrder means "not in the carousel". Positions are kept unique and
+   * contiguous by placeInCarousel, so the createdAt key is only a backstop
+   * against rows written outside the API — without some tie-break, Postgres may
+   * return equal rows in any order and the carousel would reshuffle per request.
    */
   findSlides(): Promise<Product[]> {
     return this.prisma.product.findMany({
-      where: { isSlide: true },
+      where: { slideOrder: { not: null } },
       orderBy: [{ slideOrder: 'asc' }, { createdAt: 'desc' }],
     });
   }
@@ -135,9 +136,62 @@ export class ProductsService {
     return this.prisma.product.findUnique({ where: { id } });
   }
 
+  /**
+   * Place a product in the carousel at `requested`, or remove it with null,
+   * returning the position actually assigned.
+   *
+   * `slideOrder` is treated as an insertion index rather than a raw value: the
+   * gap at the product's old slot is closed and a slot is opened at the target,
+   * so positions stay contiguous 0..n-1 and two records can never share one.
+   * Enforcing it here rather than with a unique index is deliberate — a partial
+   * unique index cannot be deferred in Postgres, so any swap would trip it
+   * mid-transaction.
+   *
+   * Callers must run this inside a transaction: it issues several dependent
+   * writes, and a concurrent placement between them would corrupt the sequence.
+   */
+  private async placeInCarousel(
+    tx: Prisma.TransactionClient,
+    id: string | null,
+    requested: number | null,
+  ): Promise<number | null> {
+    const from = id
+      ? ((await tx.product.findUnique({ where: { id }, select: { slideOrder: true } }))
+          ?.slideOrder ?? null)
+      : null;
+
+    // Leaving its old slot — close the gap behind it.
+    if (from !== null) {
+      await tx.product.updateMany({
+        where: { slideOrder: { gt: from } },
+        data: { slideOrder: { decrement: 1 } },
+      });
+    }
+
+    if (requested === null) return null;
+
+    // Clamp into the range that exists with this product out of the list, so a
+    // wild number from a form lands at the end instead of leaving a hole.
+    const others = await tx.product.count({
+      where: { slideOrder: { not: null }, ...(id ? { id: { not: id } } : {}) },
+    });
+    const target = Math.min(Math.max(requested, 0), others);
+
+    // Open the slot.
+    await tx.product.updateMany({
+      where: { slideOrder: { gte: target }, ...(id ? { id: { not: id } } : {}) },
+      data: { slideOrder: { increment: 1 } },
+    });
+
+    return target;
+  }
+
   async create(data: CreateProductInput): Promise<Product> {
     try {
-      return await this.prisma.product.create({ data });
+      return await this.prisma.$transaction(async (tx) => {
+        const slideOrder = await this.placeInCarousel(tx, null, data.slideOrder ?? null);
+        return tx.product.create({ data: { ...data, slideOrder } });
+      });
     } catch (error) {
       // P2002 = unique violation; here the discogsReleaseId is already imported.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -149,7 +203,16 @@ export class ProductsService {
 
   async update(id: string, data: UpdateProductInput): Promise<Product> {
     try {
-      return await this.prisma.product.update({ where: { id }, data });
+      // Only re-sequence when the caller actually addressed the carousel;
+      // an ordinary edit must not disturb other records' positions.
+      if (!('slideOrder' in data)) {
+        return await this.prisma.product.update({ where: { id }, data });
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        const slideOrder = await this.placeInCarousel(tx, id, data.slideOrder ?? null);
+        return tx.product.update({ where: { id }, data: { ...data, slideOrder } });
+      });
     } catch (error) {
       // P2025 = record to update not found.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {

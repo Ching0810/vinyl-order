@@ -57,6 +57,12 @@ const Header = () => {
           </HStack>
         </NextLink>
 
+        <HStack as="nav" gap="1" ms={{ base: '2', md: '8' }}>
+          <Button asChild variant="ghost" size="sm" fontWeight="medium">
+            <NextLink href="/products">Shop</NextLink>
+          </Button>
+        </HStack>
+
         <HStack gap="1" ms="auto">
           {isPending ? (
             <Spinner size="sm" color="fg.muted" />
