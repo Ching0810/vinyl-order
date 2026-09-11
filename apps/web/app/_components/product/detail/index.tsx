@@ -3,11 +3,12 @@
 import { Badge, Box, Button, Flex, HStack, Heading, Stack, Text } from '@chakra-ui/react';
 import type { Product } from '@vinyl-order/shared';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 import { CartIcon } from '@/components/ui/icons';
 import { formatPrice } from '@/lib/utils/currency';
 import { useMe } from '@/services/queries/auth/use-me';
-import { useCart } from '@/store/cart';
+import { useAddCartItem } from '@/services/queries/cart/use-cart-mutations';
 
 import AdminPanel from './_components/admin-panel';
 import Related from './_components/related';
@@ -20,11 +21,15 @@ import Related from './_components/related';
  * (stock, feature flags, edit link); customers see only retail information. The
  * split is presentational — the API is what actually enforces it.
  *
+ * Adding to the cart requires a session; a signed-out visitor is sent to log
+ * in rather than shown an error, since there is no guest cart.
+ *
  * @param product - the product to display
  */
 const Detail = ({ product }: { product: Product }) => {
   const { data: user } = useMe();
-  const addItem = useCart((state) => state.addItem);
+  const router = useRouter();
+  const addMutation = useAddCartItem();
   const isAdmin = user?.role === 'admin';
   const inStock = product.stock > 0;
 
@@ -95,7 +100,16 @@ const Detail = ({ product }: { product: Product }) => {
             borderRadius="full"
             alignSelf="start"
             disabled={!inStock}
-            onClick={() => addItem(product)}
+            loading={addMutation.isPending}
+            onClick={() => {
+              // The cart lives on the server and its routes are guarded, so
+              // there is nowhere to put this until they have a session.
+              if (!user) {
+                router.push('/login');
+                return;
+              }
+              addMutation.mutate({ productId: product.id, quantity: 1 });
+            }}
           >
             <CartIcon />
             {inStock ? 'Add to cart' : 'Out of stock'}

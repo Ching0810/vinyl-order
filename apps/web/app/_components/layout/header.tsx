@@ -6,13 +6,13 @@ import NextLink from 'next/link';
 import UserMenu from '@/components/layout/user-menu';
 import { CartIcon, DiscIcon } from '@/components/ui/icons';
 import { useMe } from '@/services/queries/auth/use-me';
-import { useCartCount } from '@/store/cart';
+import { useCart } from '@/services/queries/cart/use-cart';
 
 /**
  * Storefront banner. A client island over the (server-rendered) catalog:
  * - `useMe` decides the auth slot — Login link when logged out, the account
  *   dropdown (UserMenu) when logged in.
- * - the cart icon shows the live count from the zustand store.
+ * - the cart icon shows the server cart's item count, and links to /cart.
  *
  * Sticks to the top over a translucent, blurred backdrop so cover art scrolls
  * beneath it rather than colliding with a solid bar. The outer element spans
@@ -20,7 +20,8 @@ import { useCartCount } from '@/store/cart';
  */
 const Header = () => {
   const { data: user, isPending } = useMe();
-  const cartCount = useCartCount();
+  const { data: cart } = useCart();
+  const cartCount = cart?.itemCount ?? 0;
 
   return (
     <Flex
@@ -74,20 +75,22 @@ const Header = () => {
             </Button>
           )}
 
-          <Button variant="ghost" size="sm" position="relative" aria-label="Cart">
-            <CartIcon />
-            {cartCount > 0 ? (
-              <Badge
-                position="absolute"
-                top="0"
-                insetEnd="0"
-                borderRadius="full"
-                colorPalette="brand"
-                fontSize="2xs"
-              >
-                {cartCount}
-              </Badge>
-            ) : null}
+          <Button asChild variant="ghost" size="sm" position="relative" aria-label="Cart">
+            <NextLink href="/cart">
+              <CartIcon />
+              {cartCount > 0 ? (
+                <Badge
+                  position="absolute"
+                  top="0"
+                  insetEnd="0"
+                  borderRadius="full"
+                  colorPalette="brand"
+                  fontSize="2xs"
+                >
+                  {cartCount}
+                </Badge>
+              ) : null}
+            </NextLink>
           </Button>
         </HStack>
       </Flex>

@@ -26,6 +26,45 @@ model User {
   role         Role     @default(customer)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  cart Cart?
+}
+
+/// A customer's shopping cart. One per user, created lazily on first add.
+///
+/// Holds no prices. A cart shows what the shop charges *now*, so it stores
+/// only what was chosen; the amount actually paid is snapshotted onto the
+/// order at checkout. Keeping a price here would either go stale or duplicate
+/// the snapshot that belongs to the order.
+model Cart {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  items CartItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// One line in a cart: a product and how many copies.
+model CartItem {
+  id     String @id @default(uuid())
+  cartId String
+  cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  quantity Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Adding a record already in the cart must bump its quantity rather than
+  /// create a second line, so the pair is unique.
+  @@unique([cartId, productId])
+  @@index([cartId])
 }
 
 /// A vinyl product the store sells. Metadata is usually imported from Discogs
@@ -57,6 +96,8 @@ model Product {
   /// `genres`, which is descriptive metadata imported from Discogs: a Mandarin
   /// pop record is "Pop" to Discogs with nothing marking it 華語.
   categories Category[]
+
+  cartItems CartItem[]
 
   /// Covers the carousel read: non-null positions, in order.
   @@index([slideOrder])
