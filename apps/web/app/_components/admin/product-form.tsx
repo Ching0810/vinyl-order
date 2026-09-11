@@ -97,6 +97,7 @@ const ProductForm = ({
         stock: values.stock,
         isHot: values.isHot,
         slideOrder: values.slideOrder,
+        categoryIds: values.categoryIds,
       },
       { reset: () => reset() },
     );
@@ -142,6 +143,7 @@ export const blankProductForm: ProductFormValues = {
   stock: 0,
   isHot: false,
   slideOrder: null,
+  categoryIds: [],
 };
 
 export default ProductForm;

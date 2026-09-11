@@ -43,13 +43,17 @@ export class ProductsController {
     @Query('after') after?: string,
     @Query('last') last?: string,
     @Query('before') before?: string,
+    @Query('category') category?: string,
   ): Promise<Connection<Product>> {
-    return this.products.paginate({
-      first: first === undefined ? undefined : Number(first),
-      after,
-      last: last === undefined ? undefined : Number(last),
-      before,
-    });
+    return this.products.paginate(
+      {
+        first: first === undefined ? undefined : Number(first),
+        after,
+        last: last === undefined ? undefined : Number(last),
+        before,
+      },
+      category,
+    );
   }
 
   /** GET /products/hot — featured products for the storefront hot section. Public. */

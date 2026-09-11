@@ -9,6 +9,8 @@
 // Zod v4: string formats are top-level validators (`z.url()`, `z.uuid()`).
 import { z } from 'zod';
 
+import { categorySchema } from './category';
+
 /** A product as returned by the API and shown in the catalog. */
 export const productSchema = z.object({
   id: z.uuid(),
@@ -34,6 +36,12 @@ export const productSchema = z.object({
    * carries both and they cannot disagree.
    */
   slideOrder: z.number().int().nullable(),
+  /**
+   * Navigation tabs this record sits under. Present on the single-product read
+   * and omitted from list reads, which would otherwise pay for a join on every
+   * page of the catalogue to render information the grid doesn't show.
+   */
+  categories: z.array(categorySchema).optional(),
 });
 export type Product = z.infer<typeof productSchema>;
 
@@ -54,6 +62,12 @@ export const createProductSchema = z.object({
   stock: z.number().int().nonnegative().default(0),
   isHot: z.boolean().default(false),
   slideOrder: z.number().int().nullable().default(null),
+  /**
+   * Category ids to file this record under. Optional, and when sent it
+   * replaces the whole set — so a client that doesn't manage categories must
+   * omit it rather than send an empty array, which would clear them.
+   */
+  categoryIds: z.array(z.uuid()).optional(),
 });
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
@@ -74,5 +88,7 @@ export const updateProductSchema = z.object({
   stock: z.number().int().nonnegative().optional(),
   isHot: z.boolean().optional(),
   slideOrder: z.number().int().nullable().optional(),
+  /** Category ids to file this record under; replaces the full set when sent. */
+  categoryIds: z.array(z.uuid()).optional(),
 });
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;

@@ -44,13 +44,17 @@ export class ProductsService {
    * backward with `last`/`before`. Fetches one extra row to determine whether a
    * further page exists in the paging direction.
    */
-  async paginate(args: PageArgs): Promise<Connection<ProductContract>> {
+  async paginate(args: PageArgs, categorySlug?: string): Promise<Connection<ProductContract>> {
     const backward = args.last !== undefined || args.before !== undefined;
+    // `some` reads the join table: keep products having at least one matching
+    // category. Absent slug means the whole catalogue.
+    const where = categorySlug ? { categories: { some: { slug: categorySlug } } } : {};
 
     if (backward) {
       const size = clampSize(args.last, DEFAULT_PAGE_SIZE);
       const beforeId = decodeCursor(args.before);
       const rows = await this.prisma.product.findMany({
+        where,
         orderBy: this.pageOrder,
         // Negative take walks backward from the cursor (rows before it).
         take: -(size + 1),
@@ -68,6 +72,7 @@ export class ProductsService {
     const size = clampSize(args.first, DEFAULT_PAGE_SIZE);
     const afterId = decodeCursor(args.after);
     const rows = await this.prisma.product.findMany({
+      where,
       orderBy: this.pageOrder,
       take: size + 1,
       // skip:1 jumps past the cursor row itself.
@@ -132,8 +137,16 @@ export class ProductsService {
     });
   }
 
+  /**
+   * One product, with its categories. Only this read embeds them: list reads
+   * would pay for the join on every page to render something the grid doesn't
+   * show.
+   */
   findById(id: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { id } });
+    return this.prisma.product.findUnique({
+      where: { id },
+      include: { categories: { orderBy: { sortOrder: 'asc' } } },
+    });
   }
 
   /**
@@ -187,10 +200,20 @@ export class ProductsService {
   }
 
   async create(data: CreateProductInput): Promise<Product> {
+    // categoryIds is a relation, not a column — it has to come out of the
+    // spread or Prisma rejects it as an unknown field.
+    const { categoryIds, ...fields } = data;
+
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const slideOrder = await this.placeInCarousel(tx, null, data.slideOrder ?? null);
-        return tx.product.create({ data: { ...data, slideOrder } });
+        const slideOrder = await this.placeInCarousel(tx, null, fields.slideOrder ?? null);
+        return tx.product.create({
+          data: {
+            ...fields,
+            slideOrder,
+            ...(categoryIds ? { categories: { connect: categoryIds.map((id) => ({ id })) } } : {}),
+          },
+        });
       });
     } catch (error) {
       // P2002 = unique violation; here the discogsReleaseId is already imported.
@@ -202,16 +225,30 @@ export class ProductsService {
   }
 
   async update(id: string, data: UpdateProductInput): Promise<Product> {
+    const { categoryIds, ...fields } = data;
+    // `set` replaces the whole membership rather than adding to it, so an
+    // absent categoryIds must leave the existing assignments alone — sending
+    // an empty array is how a caller clears them.
+    const categories = categoryIds
+      ? { categories: { set: categoryIds.map((id) => ({ id })) } }
+      : {};
+
     try {
       // Only re-sequence when the caller actually addressed the carousel;
       // an ordinary edit must not disturb other records' positions.
       if (!('slideOrder' in data)) {
-        return await this.prisma.product.update({ where: { id }, data });
+        return await this.prisma.product.update({
+          where: { id },
+          data: { ...fields, ...categories },
+        });
       }
 
       return await this.prisma.$transaction(async (tx) => {
-        const slideOrder = await this.placeInCarousel(tx, id, data.slideOrder ?? null);
-        return tx.product.update({ where: { id }, data: { ...data, slideOrder } });
+        const slideOrder = await this.placeInCarousel(tx, id, fields.slideOrder ?? null);
+        return tx.product.update({
+          where: { id },
+          data: { ...fields, slideOrder, ...categories },
+        });
       });
     } catch (error) {
       // P2025 = record to update not found.

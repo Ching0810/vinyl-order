@@ -9,6 +9,7 @@ const LINKS = [
   { href: '/admin/products', label: 'Products' },
   { href: '/admin/products/new', label: 'Add product' },
   { href: '/admin/hero', label: 'Hero carousel' },
+  { href: '/admin/categories', label: 'Categories' },
 ];
 
 /**

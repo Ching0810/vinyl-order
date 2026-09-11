@@ -4,6 +4,7 @@ import { Button, Container, Text } from '@chakra-ui/react';
 import NextLink from 'next/link';
 
 import Hero from '@/components/home/hero';
+import CategoryNav from '@/components/layout/category-nav';
 import PageShell from '@/components/layout/page-shell';
 import Grid from '@/components/product/grid';
 import GridSkeleton from '@/components/product/grid-skeleton';
@@ -38,7 +39,7 @@ const HomePage = () => {
   };
 
   return (
-    <PageShell>
+    <PageShell nav={<CategoryNav />}>
       <Hero slides={slideProducts ?? []} loading={slidesPending} search={<Search />} />
 
       <Container maxW="7xl" px={{ base: '4', md: '8' }} py={{ base: '12', md: '20' }}>

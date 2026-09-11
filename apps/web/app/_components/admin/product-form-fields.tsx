@@ -4,6 +4,7 @@ import { Field, Image, Input, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
 import type { Control, FieldErrors, UseFormRegister } from 'react-hook-form';
 
+import CategoryFields from '@/components/admin/category-fields';
 import MerchandisingFields from '@/components/admin/merchandising-fields';
 import Panel from '@/components/admin/panel';
 
@@ -26,6 +27,7 @@ export interface ProductFormValues {
   stock: number;
   isHot: boolean;
   slideOrder: number | null;
+  categoryIds: string[];
 }
 
 interface Props {
@@ -143,6 +145,7 @@ const ProductFormFields = ({
 
     <Panel title="Merchandising" description="Where this record shows up on the storefront.">
       <MerchandisingFields control={control} />
+      <CategoryFields control={control} />
     </Panel>
   </Stack>
 );

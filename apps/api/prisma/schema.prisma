@@ -53,6 +53,34 @@ model Product {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  /// Storefront navigation tabs this record appears under. Separate from
+  /// `genres`, which is descriptive metadata imported from Discogs: a Mandarin
+  /// pop record is "Pop" to Discogs with nothing marking it 華語.
+  categories Category[]
+
   /// Covers the carousel read: non-null positions, in order.
   @@index([slideOrder])
+}
+
+/// A storefront navigation tab.
+///
+/// Curated rather than derived. Deriving tabs from `Product.genres` would mean
+/// the tab bar changes shape on every import, has no order, and no stable
+/// identity — renaming a genre string would silently unassign every record and
+/// break any shared link. A row gives each tab a slug that outlives its label.
+model Category {
+  id   String @id @default(uuid())
+  /// URL identity, e.g. "mandarin". Stable across renames of `name`.
+  slug String @unique
+  /// Display label, e.g. "華語".
+  name String
+  /// Ascending order in the tab bar.
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@index([sortOrder])
 }

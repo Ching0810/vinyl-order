@@ -15,6 +15,7 @@ import type { PageArgs } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 import { useState } from 'react';
 
+import Paginator from '@/components/ui/paginator';
 import SectionHeading from '@/components/ui/section-heading';
 import { formatPrice } from '@/lib/utils/currency';
 import { useDeleteProduct } from '@/services/queries/products/use-delete-product';
@@ -146,27 +147,14 @@ const AdminProductList = () => {
             </Table.Root>
           </Box>
 
-          <HStack justify="center" gap="4" mt="6">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={goPrev}
-              disabled={!pageInfo?.hasPreviousPage || isPlaceholderData}
-            >
-              Previous
-            </Button>
-            <Text fontSize="sm" color="fg.muted">
-              Page {pageNum}
-            </Text>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={goNext}
-              disabled={!pageInfo?.hasNextPage || isPlaceholderData}
-            >
-              Next
-            </Button>
-          </HStack>
+          <Paginator
+            pageNum={pageNum}
+            hasPrevious={Boolean(pageInfo?.hasPreviousPage)}
+            hasNext={Boolean(pageInfo?.hasNextPage)}
+            busy={isPlaceholderData}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
         </>
       )}
     </Container>
