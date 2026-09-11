@@ -1,10 +1,9 @@
 'use client';
 
-import { Button, Container, HStack, Heading, Text } from '@chakra-ui/react';
-import NextLink from 'next/link';
+import { Container, Text } from '@chakra-ui/react';
 
-import Guard from '@/components/admin/guard';
 import ProductForm, { blankProductForm } from '@/components/admin/product-form';
+import SectionHeading from '@/components/ui/section-heading';
 import { HttpError } from '@/lib/core/http';
 import { useCreateProduct } from '@/services/queries/products/use-create-product';
 
@@ -20,28 +19,23 @@ const NewProductForm = () => {
   })();
 
   return (
-    <Container maxW="3xl" py="8">
-      <HStack justify="space-between" mb="6">
-        <Heading size="lg">Add product</Heading>
-        <HStack gap="2">
-          <Button asChild variant="ghost">
-            <NextLink href="/">Store</NextLink>
-          </Button>
-          <Button asChild variant="ghost">
-            <NextLink href="/admin/products">Back</NextLink>
-          </Button>
-        </HStack>
-      </HStack>
+    <Container maxW="3xl" px={{ base: '4', md: '8' }} py={{ base: '8', md: '12' }}>
+      <SectionHeading
+        eyebrow="Catalogue"
+        title="Add product"
+        description="Import metadata from Discogs, then set your own price, stock and placement."
+      />
 
       {/* Stays on the page after a successful add and clears the form for the next one. */}
       {createMutation.isSuccess ? (
-        <Text mb="4" color="green.600">
+        <Text mb="4" color="fg.success">
           Product added — the form is cleared for the next one.
         </Text>
       ) : null}
 
       <ProductForm
         initialValues={blankProductForm}
+        enableDiscogsImport
         submitLabel="Create product"
         submitting={createMutation.isPending}
         errorMessage={errorMessage}
@@ -53,10 +47,4 @@ const NewProductForm = () => {
   );
 };
 
-const NewProductPage = () => (
-  <Guard>
-    <NewProductForm />
-  </Guard>
-);
-
-export default NewProductPage;
+export default NewProductForm;

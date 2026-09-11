@@ -9,6 +9,8 @@
 // Zod v4: string formats are top-level validators (`z.url()`, `z.uuid()`).
 import { z } from 'zod';
 
+import { categorySchema } from './category';
+
 /** A product as returned by the API and shown in the catalog. */
 export const productSchema = z.object({
   id: z.uuid(),
@@ -28,9 +30,18 @@ export const productSchema = z.object({
   /** Featured in the storefront "hot" section. */
   isHot: z.boolean(),
   /** Featured in the storefront hero carousel. */
-  isSlide: z.boolean(),
-  /** Position in the carousel, ascending. Only read when isSlide is true. */
-  slideOrder: z.number().int(),
+  /**
+   * Position in the hero carousel, ascending. Null means the record is not in
+   * the carousel — membership and position are one fact, so one nullable field
+   * carries both and they cannot disagree.
+   */
+  slideOrder: z.number().int().nullable(),
+  /**
+   * Navigation tabs this record sits under. Present on the single-product read
+   * and omitted from list reads, which would otherwise pay for a join on every
+   * page of the catalogue to render information the grid doesn't show.
+   */
+  categories: z.array(categorySchema).optional(),
 });
 export type Product = z.infer<typeof productSchema>;
 
@@ -50,8 +61,13 @@ export const createProductSchema = z.object({
   currency: z.string().min(1).default('TWD'),
   stock: z.number().int().nonnegative().default(0),
   isHot: z.boolean().default(false),
-  isSlide: z.boolean().default(false),
-  slideOrder: z.number().int().default(0),
+  slideOrder: z.number().int().nullable().default(null),
+  /**
+   * Category ids to file this record under. Optional, and when sent it
+   * replaces the whole set — so a client that doesn't manage categories must
+   * omit it rather than send an empty array, which would clear them.
+   */
+  categoryIds: z.array(z.uuid()).optional(),
 });
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
@@ -71,7 +87,8 @@ export const updateProductSchema = z.object({
   currency: z.string().min(1).optional(),
   stock: z.number().int().nonnegative().optional(),
   isHot: z.boolean().optional(),
-  isSlide: z.boolean().optional(),
-  slideOrder: z.number().int().optional(),
+  slideOrder: z.number().int().nullable().optional(),
+  /** Category ids to file this record under; replaces the full set when sent. */
+  categoryIds: z.array(z.uuid()).optional(),
 });
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;

@@ -44,13 +44,17 @@ export class ProductsService {
    * backward with `last`/`before`. Fetches one extra row to determine whether a
    * further page exists in the paging direction.
    */
-  async paginate(args: PageArgs): Promise<Connection<ProductContract>> {
+  async paginate(args: PageArgs, categorySlug?: string): Promise<Connection<ProductContract>> {
     const backward = args.last !== undefined || args.before !== undefined;
+    // `some` reads the join table: keep products having at least one matching
+    // category. Absent slug means the whole catalogue.
+    const where = categorySlug ? { categories: { some: { slug: categorySlug } } } : {};
 
     if (backward) {
       const size = clampSize(args.last, DEFAULT_PAGE_SIZE);
       const beforeId = decodeCursor(args.before);
       const rows = await this.prisma.product.findMany({
+        where,
         orderBy: this.pageOrder,
         // Negative take walks backward from the cursor (rows before it).
         take: -(size + 1),
@@ -68,6 +72,7 @@ export class ProductsService {
     const size = clampSize(args.first, DEFAULT_PAGE_SIZE);
     const afterId = decodeCursor(args.after);
     const rows = await this.prisma.product.findMany({
+      where,
       orderBy: this.pageOrder,
       take: size + 1,
       // skip:1 jumps past the cursor row itself.
@@ -107,13 +112,14 @@ export class ProductsService {
   /**
    * Products featured in the hero carousel, in display order.
    *
-   * `slideOrder` defaults to 0, so several slides commonly tie; createdAt
-   * breaks the tie deterministically. Without it Postgres is free to return
-   * tied rows in any order and the carousel would reshuffle between requests.
+   * Null slideOrder means "not in the carousel". Positions are kept unique and
+   * contiguous by placeInCarousel, so the createdAt key is only a backstop
+   * against rows written outside the API — without some tie-break, Postgres may
+   * return equal rows in any order and the carousel would reshuffle per request.
    */
   findSlides(): Promise<Product[]> {
     return this.prisma.product.findMany({
-      where: { isSlide: true },
+      where: { slideOrder: { not: null } },
       orderBy: [{ slideOrder: 'asc' }, { createdAt: 'desc' }],
     });
   }
@@ -131,13 +137,84 @@ export class ProductsService {
     });
   }
 
+  /**
+   * One product, with its categories. Only this read embeds them: list reads
+   * would pay for the join on every page to render something the grid doesn't
+   * show.
+   */
   findById(id: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { id } });
+    return this.prisma.product.findUnique({
+      where: { id },
+      include: { categories: { orderBy: { sortOrder: 'asc' } } },
+    });
+  }
+
+  /**
+   * Place a product in the carousel at `requested`, or remove it with null,
+   * returning the position actually assigned.
+   *
+   * `slideOrder` is treated as an insertion index rather than a raw value: the
+   * gap at the product's old slot is closed and a slot is opened at the target,
+   * so positions stay contiguous 0..n-1 and two records can never share one.
+   * Enforcing it here rather than with a unique index is deliberate — a partial
+   * unique index cannot be deferred in Postgres, so any swap would trip it
+   * mid-transaction.
+   *
+   * Callers must run this inside a transaction: it issues several dependent
+   * writes, and a concurrent placement between them would corrupt the sequence.
+   */
+  private async placeInCarousel(
+    tx: Prisma.TransactionClient,
+    id: string | null,
+    requested: number | null,
+  ): Promise<number | null> {
+    const from = id
+      ? ((await tx.product.findUnique({ where: { id }, select: { slideOrder: true } }))
+          ?.slideOrder ?? null)
+      : null;
+
+    // Leaving its old slot — close the gap behind it.
+    if (from !== null) {
+      await tx.product.updateMany({
+        where: { slideOrder: { gt: from } },
+        data: { slideOrder: { decrement: 1 } },
+      });
+    }
+
+    if (requested === null) return null;
+
+    // Clamp into the range that exists with this product out of the list, so a
+    // wild number from a form lands at the end instead of leaving a hole.
+    const others = await tx.product.count({
+      where: { slideOrder: { not: null }, ...(id ? { id: { not: id } } : {}) },
+    });
+    const target = Math.min(Math.max(requested, 0), others);
+
+    // Open the slot.
+    await tx.product.updateMany({
+      where: { slideOrder: { gte: target }, ...(id ? { id: { not: id } } : {}) },
+      data: { slideOrder: { increment: 1 } },
+    });
+
+    return target;
   }
 
   async create(data: CreateProductInput): Promise<Product> {
+    // categoryIds is a relation, not a column — it has to come out of the
+    // spread or Prisma rejects it as an unknown field.
+    const { categoryIds, ...fields } = data;
+
     try {
-      return await this.prisma.product.create({ data });
+      return await this.prisma.$transaction(async (tx) => {
+        const slideOrder = await this.placeInCarousel(tx, null, fields.slideOrder ?? null);
+        return tx.product.create({
+          data: {
+            ...fields,
+            slideOrder,
+            ...(categoryIds ? { categories: { connect: categoryIds.map((id) => ({ id })) } } : {}),
+          },
+        });
+      });
     } catch (error) {
       // P2002 = unique violation; here the discogsReleaseId is already imported.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -148,8 +225,31 @@ export class ProductsService {
   }
 
   async update(id: string, data: UpdateProductInput): Promise<Product> {
+    const { categoryIds, ...fields } = data;
+    // `set` replaces the whole membership rather than adding to it, so an
+    // absent categoryIds must leave the existing assignments alone — sending
+    // an empty array is how a caller clears them.
+    const categories = categoryIds
+      ? { categories: { set: categoryIds.map((id) => ({ id })) } }
+      : {};
+
     try {
-      return await this.prisma.product.update({ where: { id }, data });
+      // Only re-sequence when the caller actually addressed the carousel;
+      // an ordinary edit must not disturb other records' positions.
+      if (!('slideOrder' in data)) {
+        return await this.prisma.product.update({
+          where: { id },
+          data: { ...fields, ...categories },
+        });
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        const slideOrder = await this.placeInCarousel(tx, id, fields.slideOrder ?? null);
+        return tx.product.update({
+          where: { id },
+          data: { ...fields, slideOrder, ...categories },
+        });
+      });
     } catch (error) {
       // P2025 = record to update not found.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {

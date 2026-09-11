@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AuthModule } from './auth/auth.module';
+import { CategoriesModule } from './categories/categories.module';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -32,6 +33,7 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
     UsersModule,
     AuthModule,
     ProductsModule,
+    CategoriesModule,
     StorageModule,
     HealthModule,
   ],

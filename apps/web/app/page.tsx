@@ -1,10 +1,11 @@
 'use client';
 
-import { Box, Container, Text } from '@chakra-ui/react';
+import { Button, Container, Text } from '@chakra-ui/react';
+import NextLink from 'next/link';
 
 import Hero from '@/components/home/hero';
-import Footer from '@/components/layout/footer';
-import Header from '@/components/layout/header';
+import CategoryNav from '@/components/layout/category-nav';
+import PageShell from '@/components/layout/page-shell';
 import Grid from '@/components/product/grid';
 import GridSkeleton from '@/components/product/grid-skeleton';
 import Search from '@/components/product/search';
@@ -38,20 +39,22 @@ const HomePage = () => {
   };
 
   return (
-    <Box minH="100dvh" display="flex" flexDirection="column">
-      <Header />
+    <PageShell nav={<CategoryNav />}>
+      <Hero slides={slideProducts ?? []} loading={slidesPending} search={<Search />} />
 
-      <Box flex="1">
-        <Hero slides={slideProducts ?? []} loading={slidesPending} search={<Search />} />
-
-        <Container maxW="7xl" px={{ base: '4', md: '8' }} py={{ base: '12', md: '20' }}>
-          <SectionHeading eyebrow="Moving this week" title="Hot Right Now" />
-          {renderHot()}
-        </Container>
-      </Box>
-
-      <Footer />
-    </Box>
+      <Container maxW="7xl" px={{ base: '4', md: '8' }} py={{ base: '12', md: '20' }}>
+        <SectionHeading
+          eyebrow="Moving this week"
+          title="Hot Right Now"
+          action={
+            <Button asChild variant="outline" size="sm" borderRadius="full">
+              <NextLink href="/products">Browse all records</NextLink>
+            </Button>
+          }
+        />
+        {renderHot()}
+      </Container>
+    </PageShell>
   );
 };
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { Field, Input, Stack, Switch } from '@chakra-ui/react';
-import { type Control, Controller, type UseFormRegister } from 'react-hook-form';
+import { type Control, Controller } from 'react-hook-form';
 
 import type { ProductFormValues } from '@/components/admin/product-form-fields';
 
@@ -9,16 +9,13 @@ import type { ProductFormValues } from '@/components/admin/product-form-fields';
  * The merchandising half of the product form: where a product is surfaced on
  * the storefront, as opposed to what the record is.
  *
- * Switch is a controlled Chakra composite, so the booleans go through
- * Controller rather than `register`.
+ * The carousel switch and the position box are two views of one field.
+ * `slideOrder` is null when the record isn't in the carousel and an integer
+ * when it is, so the switch is really "is this null?" — turning it off writes
+ * null, turning it on gives it a position. There is no second flag that could
+ * disagree with the number.
  */
-const MerchandisingFields = ({
-  control,
-  register,
-}: {
-  control: Control<ProductFormValues>;
-  register: UseFormRegister<ProductFormValues>;
-}) => (
+const MerchandisingFields = ({ control }: { control: Control<ProductFormValues> }) => (
   <Stack gap="4">
     <Controller
       control={control}
@@ -37,30 +34,39 @@ const MerchandisingFields = ({
 
     <Controller
       control={control}
-      name="isSlide"
-      render={({ field }) => (
-        <Switch.Root
-          checked={field.value}
-          onCheckedChange={(details) => field.onChange(details.checked)}
-        >
-          <Switch.HiddenInput onBlur={field.onBlur} />
-          <Switch.Control />
-          <Switch.Label>Show in hero carousel</Switch.Label>
-        </Switch.Root>
-      )}
-    />
+      name="slideOrder"
+      render={({ field }) => {
+        const inCarousel = field.value !== null;
 
-    <Field.Root maxW="xs">
-      <Field.Label>Carousel position</Field.Label>
-      <Input
-        type="number"
-        {...register('slideOrder', { setValueAs: (v) => (v === '' ? 0 : Number(v)) })}
-      />
-      <Field.HelperText>
-        Lower shows first. Products sharing a number fall back to newest-first. Kept when the
-        carousel switch is off, so re-enabling restores this slot.
-      </Field.HelperText>
-    </Field.Root>
+        return (
+          <Stack gap="4">
+            <Switch.Root
+              checked={inCarousel}
+              onCheckedChange={(details) => field.onChange(details.checked ? 0 : null)}
+            >
+              <Switch.HiddenInput onBlur={field.onBlur} />
+              <Switch.Control />
+              <Switch.Label>Show in hero carousel</Switch.Label>
+            </Switch.Root>
+
+            <Field.Root maxW="xs" disabled={!inCarousel}>
+              <Field.Label>Carousel position</Field.Label>
+              <Input
+                type="number"
+                value={field.value ?? ''}
+                onChange={(event) =>
+                  field.onChange(event.target.value === '' ? null : Number(event.target.value))
+                }
+              />
+              <Field.HelperText>
+                Lower shows first; ties fall back to newest-first. Easiest to arrange on the Hero
+                carousel screen.
+              </Field.HelperText>
+            </Field.Root>
+          </Stack>
+        );
+      }}
+    />
   </Stack>
 );
 

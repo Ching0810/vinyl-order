@@ -2,6 +2,7 @@
 // Imported by both apps/web and apps/api. Add your shared schemas/types here.
 
 export * from './auth';
+export * from './category';
 export * from './discogs';
 export * from './pagination';
 export * from './product';

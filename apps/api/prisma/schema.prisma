@@ -45,15 +45,42 @@ model Product {
   stock            Int      @default(0)
   /// Featured on the storefront "hot" section.
   isHot            Boolean  @default(false)
-  /// Featured in the storefront hero carousel.
-  isSlide          Boolean  @default(false)
-  /// Position in the carousel, ascending. Kept when isSlide is turned off so
-  /// re-enabling a product restores its old slot. Ties fall back to createdAt,
-  /// which matters because the default leaves every new slide on 0.
-  slideOrder       Int      @default(0)
+  /// Position in the storefront hero carousel, ascending. Null means the
+  /// record is not in the carousel at all — membership and position are the
+  /// same fact, so one nullable column carries both and the two can never
+  /// disagree. Ties fall back to createdAt.
+  slideOrder       Int?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  /// Covers the carousel read: filter on isSlide, ordered by slideOrder.
-  @@index([isSlide, slideOrder])
+  /// Storefront navigation tabs this record appears under. Separate from
+  /// `genres`, which is descriptive metadata imported from Discogs: a Mandarin
+  /// pop record is "Pop" to Discogs with nothing marking it 華語.
+  categories Category[]
+
+  /// Covers the carousel read: non-null positions, in order.
+  @@index([slideOrder])
+}
+
+/// A storefront navigation tab.
+///
+/// Curated rather than derived. Deriving tabs from `Product.genres` would mean
+/// the tab bar changes shape on every import, has no order, and no stable
+/// identity — renaming a genre string would silently unassign every record and
+/// break any shared link. A row gives each tab a slug that outlives its label.
+model Category {
+  id   String @id @default(uuid())
+  /// URL identity, e.g. "mandarin". Stable across renames of `name`.
+  slug String @unique
+  /// Display label, e.g. "華語".
+  name String
+  /// Ascending order in the tab bar.
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@index([sortOrder])
 }

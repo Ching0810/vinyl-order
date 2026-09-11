@@ -6,8 +6,14 @@
 // (backward). This stays correct under inserts/deletes and is fast at any depth,
 // unlike offset paging — the trade-off is no arbitrary "jump to page N".
 
-/** Forward (`first`/`after`) or backward (`last`/`before`) page request. */
-export interface PageArgs {
+/**
+ * Forward (`first`/`after`) or backward (`last`/`before`) page request.
+ *
+ * A `type` rather than an `interface` on purpose: TypeScript gives type
+ * aliases an implicit index signature but not interfaces, so only this form
+ * can be handed to a query-string builder typed as Record<string, ...>.
+ */
+export type PageArgs = {
   /** Take the first N after `after` (forward paging). */
   first?: number;
   /** Opaque cursor: return items after this one. */
@@ -16,7 +22,7 @@ export interface PageArgs {
   last?: number;
   /** Opaque cursor: return items before this one. */
   before?: string;
-}
+};
 
 /** Whether there are more pages, and the cursors at each end of this page. */
 export interface PageInfo {
