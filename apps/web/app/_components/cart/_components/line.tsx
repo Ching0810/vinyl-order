@@ -62,11 +62,11 @@ const Line = ({
       <Stack gap="1" flex="1" minW="0">
         <NextLink href={`/products/${product.id}`}>
           <Text fontWeight="semibold" truncate _hover={{ color: 'brand.fg' }}>
-            {product.artist}
+            {product.title}
           </Text>
         </NextLink>
         <Text fontSize="sm" color="fg.muted" lineClamp={1}>
-          {product.title}
+          {product.artist}
         </Text>
         <Text fontSize="xs" color="fg.subtle">
           {formatPrice(product.priceCents, product.currency)} each

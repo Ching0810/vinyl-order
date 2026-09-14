@@ -6,7 +6,7 @@ import NextLink from 'next/link';
 import { formatPrice } from '@/lib/utils/currency';
 
 /**
- * One catalog tile: cover art + artist/title + year·format + price, linking to
+ * One catalog tile: cover art + title/artist + year·format + price, linking to
  * the product's detail page. Server-renderable — no client state.
  *
  * The cover is the only saturated element, so the frame around it stays flat
@@ -73,17 +73,20 @@ const Card = ({ product, eager = false }: { product: Product; eager?: boolean })
         ) : null}
       </Box>
 
-      <Stack gap="1.5" p="4">
-        <Text fontWeight="semibold" lineClamp={1} letterSpacing="display">
-          {product.artist}
-        </Text>
-        <Text fontSize="sm" color="fg.muted" lineClamp={2} minH="10">
+      {/* flex="1" + the price's mt="auto": a one-line title leaves its spare
+          height above the price, not between title and artist, so prices
+          still line up across a row. */}
+      <Stack gap="1.5" p="4" flex="1">
+        <Text fontWeight="semibold" lineClamp={2} letterSpacing="display">
           {product.title}
+        </Text>
+        <Text fontSize="sm" color="fg.muted" lineClamp={1}>
+          {product.artist}
         </Text>
         <Text fontSize="2xs" color="fg.subtle" letterSpacing="label" textTransform="uppercase">
           {[product.year, product.format[0]].filter(Boolean).join(' · ')}
         </Text>
-        <Text fontWeight="bold" fontSize="lg" pt="1">
+        <Text fontWeight="bold" fontSize="lg" pt="1" mt="auto">
           {formatPrice(product.priceCents, product.currency)}
         </Text>
       </Stack>

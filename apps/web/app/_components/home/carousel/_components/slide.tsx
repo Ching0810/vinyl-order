@@ -142,7 +142,7 @@ const Slide = ({
             color="ink.50"
             lineClamp={2}
           >
-            {product.artist}
+            {product.title}
           </Heading>
 
           <Text
@@ -151,7 +151,7 @@ const Slide = ({
             lineClamp={2}
             fontWeight="medium"
           >
-            {product.title}
+            {product.artist}
           </Text>
 
           {product.year || product.format[0] ? (
