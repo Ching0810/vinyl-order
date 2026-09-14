@@ -15,7 +15,7 @@ const AdminCategoriesPage = () => (
       description="The tabs in the storefront header. Products are filed into them from each product's own form."
       action={
         <Button asChild size="sm" variant="outline" borderRadius="full">
-          <NextLink href="/products">View store</NextLink>
+          <NextLink href="/">View store</NextLink>
         </Button>
       }
     />

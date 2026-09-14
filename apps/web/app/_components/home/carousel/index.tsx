@@ -109,7 +109,13 @@ const Carousel = ({
               // showing have to leave the accessibility tree.
               aria-hidden={i !== controls.selectedIndex}
             >
-              <Slide product={product} eager={i === 0} index={i} total={slides.length} />
+              <Slide
+                product={product}
+                eager={i === 0}
+                active={i === controls.selectedIndex}
+                index={i}
+                total={slides.length}
+              />
             </Box>
           ))}
         </Flex>
