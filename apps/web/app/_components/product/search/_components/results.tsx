@@ -45,10 +45,10 @@ const Results = ({ results, isFetching }: { results?: Product[]; isFetching: boo
           </Box>
           <Box flex="1" minW="0">
             <Text fontSize="sm" fontWeight="semibold" truncate>
-              {product.artist}
+              {product.title}
             </Text>
             <Text fontSize="xs" color="fg.muted" truncate>
-              {product.title}
+              {product.artist}
             </Text>
           </Box>
           <Text fontSize="sm" fontWeight="medium" flexShrink="0">

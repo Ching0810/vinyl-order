@@ -67,10 +67,10 @@ const Detail = ({ product }: { product: Product }) => {
 
           <Stack gap="2">
             <Heading as="h1" textStyle="display" fontSize={{ base: '3xl', md: '5xl' }}>
-              {product.artist}
+              {product.title}
             </Heading>
             <Text fontSize={{ base: 'lg', md: 'xl' }} color="fg.muted">
-              {product.title}
+              {product.artist}
             </Text>
           </Stack>
 
