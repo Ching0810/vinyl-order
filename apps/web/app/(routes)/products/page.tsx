@@ -2,10 +2,9 @@
 
 import { Container, Text } from '@chakra-ui/react';
 import type { PageArgs } from '@vinyl-order/shared';
-import { useSearchParams } from 'next/navigation';
+import { redirect, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
-import CategoryNav from '@/components/layout/category-nav';
 import PageShell from '@/components/layout/page-shell';
 import Grid from '@/components/product/grid';
 import GridSkeleton from '@/components/product/grid-skeleton';
@@ -17,7 +16,7 @@ import { useProducts } from '@/services/queries/products/use-products';
 const PAGE_SIZE = 12;
 
 /**
- * Public catalogue browse, optionally narrowed to one category via `?category=`.
+ * Public catalogue browse for one category.
  *
  * The slug drives the query rather than a category id, so the URL stays
  * readable and survives a tab being renamed — the whole reason categories carry
@@ -25,9 +24,10 @@ const PAGE_SIZE = 12;
  *
  * Paging is cursor-based, so there is no page-number jumping by design;
  * `pageNum` is display-only, to tell the visitor roughly where they are.
+ *
+ * @param slug - the category being browsed
  */
-const Catalogue = () => {
-  const slug = useSearchParams().get('category') ?? undefined;
+const Catalogue = ({ slug }: { slug: string }) => {
   const { data: categories } = useCategories();
 
   const [args, setArgs] = useState<PageArgs>({ first: PAGE_SIZE });
@@ -59,21 +59,14 @@ const Catalogue = () => {
       return <Text color="fg.error">Couldn&apos;t load the catalogue. Please retry.</Text>;
     }
     if (products.length === 0) {
-      return (
-        <Text color="fg.muted">
-          {slug ? 'Nothing filed under this category yet.' : 'Nothing in the catalogue yet.'}
-        </Text>
-      );
+      return <Text color="fg.muted">Nothing filed under this category yet.</Text>;
     }
     return <Grid products={products} />;
   };
 
   return (
     <Container maxW="7xl" px={{ base: '4', md: '8' }} py={{ base: '10', md: '16' }}>
-      <SectionHeading
-        eyebrow={active ? 'Category' : 'Every record'}
-        title={active ? active.name : 'The Catalogue'}
-      />
+      <SectionHeading eyebrow="Category" title={active?.name ?? 'The Catalogue'} />
 
       {renderBody()}
 
@@ -93,11 +86,25 @@ const Catalogue = () => {
   );
 };
 
+/**
+ * Reads the category from `?category=`.
+ *
+ * There is no unfiltered "all records" listing — the header's category tabs are
+ * the way in — so a bare `/products` (an old link, a trimmed URL) is sent home.
+ * Checking here, before Catalogue mounts, means that visit never fires a
+ * product query it would throw away.
+ */
+const CategoryGate = () => {
+  const slug = useSearchParams().get('category');
+  if (!slug) redirect('/');
+  return <Catalogue slug={slug} />;
+};
+
 /** `useSearchParams` needs a Suspense boundary above it, so it lives here. */
 const ProductsPage = () => (
-  <PageShell nav={<CategoryNav />}>
+  <PageShell>
     <Suspense fallback={<GridSkeleton count={PAGE_SIZE} />}>
-      <Catalogue />
+      <CategoryGate />
     </Suspense>
   </PageShell>
 );

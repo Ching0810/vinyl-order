@@ -1,10 +1,8 @@
 'use client';
 
-import { Button, Container, Text } from '@chakra-ui/react';
-import NextLink from 'next/link';
+import { Container, Text } from '@chakra-ui/react';
 
 import Hero from '@/components/home/hero';
-import CategoryNav from '@/components/layout/category-nav';
 import PageShell from '@/components/layout/page-shell';
 import Grid from '@/components/product/grid';
 import GridSkeleton from '@/components/product/grid-skeleton';
@@ -39,19 +37,11 @@ const HomePage = () => {
   };
 
   return (
-    <PageShell nav={<CategoryNav />}>
+    <PageShell>
       <Hero slides={slideProducts ?? []} loading={slidesPending} search={<Search />} />
 
       <Container maxW="7xl" px={{ base: '4', md: '8' }} py={{ base: '12', md: '20' }}>
-        <SectionHeading
-          eyebrow="Moving this week"
-          title="Hot Right Now"
-          action={
-            <Button asChild variant="outline" size="sm" borderRadius="full">
-              <NextLink href="/products">Browse all records</NextLink>
-            </Button>
-          }
-        />
+        <SectionHeading eyebrow="Moving this week" title="Hot Right Now" />
         {renderHot()}
       </Container>
     </PageShell>

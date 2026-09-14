@@ -79,7 +79,7 @@ const CartView = () => {
         body="Nothing here yet. Browse the catalogue and add a record."
         cta={
           <Button asChild variant="outline" borderRadius="full">
-            <NextLink href="/products">Browse records</NextLink>
+            <NextLink href="/">Browse records</NextLink>
           </Button>
         }
       />

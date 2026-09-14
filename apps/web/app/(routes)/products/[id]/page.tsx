@@ -4,7 +4,6 @@ import { Container, Flex, Skeleton, Stack, Text } from '@chakra-ui/react';
 import NextLink from 'next/link';
 import { useParams } from 'next/navigation';
 
-import CategoryNav from '@/components/layout/category-nav';
 import PageShell from '@/components/layout/page-shell';
 import Detail from '@/components/product/detail';
 import { HttpError } from '@/lib/core/http';
@@ -69,7 +68,7 @@ const ProductDetailPage = () => {
   };
 
   return (
-    <PageShell nav={<CategoryNav />}>
+    <PageShell>
       <Container maxW="7xl" px={{ base: '4', md: '8' }} py={{ base: '8', md: '14' }}>
         {renderBody()}
       </Container>
