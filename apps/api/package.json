@@ -14,13 +14,14 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main.js",
     "studio": "prisma studio --port 5555",
+    "studio:test": "DATABASE_URL=\"postgresql://vinyl:vinyl@localhost:5432/vinyl_test?schema=public\" prisma studio --port 5556",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch --passWithNoTests",
     "test:cov": "NODE_OPTIONS=--experimental-vm-modules jest --coverage --passWithNoTests",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json"
+    "test:e2e": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json --runInBand"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

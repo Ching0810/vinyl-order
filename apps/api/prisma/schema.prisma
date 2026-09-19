@@ -18,6 +18,16 @@ enum Role {
   admin
 }
 
+/// Where an order is in its life. Checkout only ever creates `pending`; the
+/// rest exist so payment, shipping and cancellation don't each need a
+/// migration just to add a value.
+enum OrderStatus {
+  pending
+  paid
+  shipped
+  cancelled
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
@@ -27,7 +37,8 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  cart Cart?
+  cart   Cart?
+  orders Order[]
 }
 
 /// A customer's shopping cart. One per user, created lazily on first add.
@@ -67,6 +78,59 @@ model CartItem {
   @@index([cartId])
 }
 
+/// A placed order: a record of what was bought, never recalculated.
+///
+/// Unlike the cart, every amount here is stored rather than derived. An order
+/// is a financial record, so it must read the same later even if the products
+/// it came from are repriced or deleted.
+///
+/// It holds no products directly — only lines. "This order contains that
+/// record" means nothing without how many and at what price, and those facts
+/// belong to the pairing, so the join table is a model of its own.
+model Order {
+  id     String @id @default(uuid())
+  /// Restrict: a financial record must not vanish because a user row did.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  status        OrderStatus @default(pending)
+  /// Sum of the lines at purchase.
+  subtotalCents Int
+  currency      String
+
+  items OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// "My orders, newest first", which is also the pagination order.
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+/// One line of an order, with the product copied in as it was at purchase.
+///
+/// No unique (orderId, productId) as CartItem has: lines are written once at
+/// checkout and never merged.
+model OrderItem {
+  id      String @id @default(uuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// A link back to the product while it exists. SetNull on delete: the copy
+  /// below is what the order renders from, so the line outlives the product.
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  quantity       Int
+  /// Copied from Product at checkout and never read from it again.
+  unitPriceCents Int
+  title          String
+  artist         String
+  imageUrl       String?
+
+  @@index([orderId])
+}
+
 /// A vinyl product the store sells. Metadata is usually imported from Discogs
 /// (discogsReleaseId), but price/stock/image are owned by us. Money is stored as
 /// integer cents to avoid floating-point rounding.
@@ -97,7 +161,9 @@ model Product {
   /// pop record is "Pop" to Discogs with nothing marking it 華語.
   categories Category[]
 
-  cartItems CartItem[]
+  cartItems  CartItem[]
+  /// Lines of past orders. Deleting a product nulls their link, not the line.
+  orderItems OrderItem[]
 
   /// Covers the carousel read: non-null positions, in order.
   @@index([slideOrder])

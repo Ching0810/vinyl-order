@@ -29,7 +29,13 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
     // Global rate limit: 100 requests / 60s per client IP. ttl is in ms.
     // In-memory store (per instance) — swap to a Redis store
     // (@nest-lab/throttler-storage-redis) once running >1 instance.
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 100 }],
+      // Every e2e request comes from the same address, so the limit would start
+      // rejecting them for reasons unrelated to what a test is asserting — the
+      // concurrent-checkout spec alone fires dozens of requests at once.
+      skipIf: () => NODE_ENV === 'test',
+    }),
     PrismaModule,
     UsersModule,
     AuthModule,
