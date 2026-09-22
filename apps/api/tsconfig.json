@@ -19,6 +19,10 @@
     // `nest build` skip emit and produce an empty dist.
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "skipLibCheck": true,
+    // Global type packages, listed because TypeScript 6 no longer loads every
+    // @types/* automatically. node: process, Buffer. jest: describe/it/expect
+    // in specs. multer: Express.Multer.File on uploads.
+    "types": ["node", "jest", "multer"],
     "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": false,
