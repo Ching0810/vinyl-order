@@ -8,20 +8,8 @@ import type {
 } from '@vinyl-order/shared';
 
 import { Prisma, type Product } from '../generated/prisma/client';
+import { paginate } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
-
-const DEFAULT_PAGE_SIZE = 10;
-const MAX_PAGE_SIZE = 100;
-
-/** Cursors are opaque to clients — we just base64url the row id. */
-const encodeCursor = (id: string): string => Buffer.from(id).toString('base64url');
-const decodeCursor = (cursor?: string): string | undefined =>
-  cursor ? Buffer.from(cursor, 'base64url').toString('utf8') : undefined;
-
-const clampSize = (n: number | undefined, fallback: number): number => {
-  if (n === undefined || !Number.isFinite(n)) return fallback;
-  return Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(n)));
-};
 
 /**
  * Data-access layer for the Product entity. The public storefront reads through
@@ -40,65 +28,18 @@ export class ProductsService {
   ];
 
   /**
-   * Cursor-paginated catalog (Relay connection). Forward with `first`/`after`,
-   * backward with `last`/`before`. Fetches one extra row to determine whether a
-   * further page exists in the paging direction.
+   * Cursor-paginated catalog (Relay connection); see common/pagination.
    */
-  async paginate(args: PageArgs, categorySlug?: string): Promise<Connection<ProductContract>> {
-    const backward = args.last !== undefined || args.before !== undefined;
+  paginate(args: PageArgs, categorySlug?: string): Promise<Connection<ProductContract>> {
     // `some` reads the join table: keep products having at least one matching
     // category. Absent slug means the whole catalogue.
     const where = categorySlug ? { categories: { some: { slug: categorySlug } } } : {};
 
-    if (backward) {
-      const size = clampSize(args.last, DEFAULT_PAGE_SIZE);
-      const beforeId = decodeCursor(args.before);
-      const rows = await this.prisma.product.findMany({
-        where,
-        orderBy: this.pageOrder,
-        // Negative take walks backward from the cursor (rows before it).
-        take: -(size + 1),
-        ...(beforeId ? { cursor: { id: beforeId }, skip: 1 } : {}),
-      });
-      const hasPreviousPage = rows.length > size;
-      // The extra row is at the start when walking backward.
-      const pageRows = hasPreviousPage ? rows.slice(rows.length - size) : rows;
-      return this.toConnection(pageRows, {
-        hasPreviousPage,
-        hasNextPage: Boolean(args.before),
-      });
-    }
-
-    const size = clampSize(args.first, DEFAULT_PAGE_SIZE);
-    const afterId = decodeCursor(args.after);
-    const rows = await this.prisma.product.findMany({
-      where,
-      orderBy: this.pageOrder,
-      take: size + 1,
-      // skip:1 jumps past the cursor row itself.
-      ...(afterId ? { cursor: { id: afterId }, skip: 1 } : {}),
-    });
-    const hasNextPage = rows.length > size;
-    const pageRows = hasNextPage ? rows.slice(0, size) : rows;
-    return this.toConnection(pageRows, {
-      hasNextPage,
-      hasPreviousPage: Boolean(args.after),
-    });
-  }
-
-  private toConnection(
-    rows: Product[],
-    flags: { hasNextPage: boolean; hasPreviousPage: boolean },
-  ): Connection<ProductContract> {
-    const edges = rows.map((node) => ({ node, cursor: encodeCursor(node.id) }));
-    return {
-      edges,
-      pageInfo: {
-        ...flags,
-        startCursor: edges[0]?.cursor ?? null,
-        endCursor: edges[edges.length - 1]?.cursor ?? null,
-      },
-    };
+    return paginate(
+      args,
+      (window) => this.prisma.product.findMany({ where, orderBy: this.pageOrder, ...window }),
+      (product) => product,
+    );
   }
 
   /** Featured products for the storefront hot section. */
