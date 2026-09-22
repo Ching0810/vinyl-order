@@ -79,3 +79,19 @@ export const DiscIcon = (props: SVGProps<SVGSVGElement>) => (
     <circle cx="12" cy="12" r="1" fill="currentColor" />
   </svg>
 );
+
+/** Success mark: a tick in a circle. */
+export const CheckCircleIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="m8 12 3 3 5-6" />
+  </svg>
+);
+
+/** Error mark: an exclamation in a circle. */
+export const AlertCircleIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 8v4M12 16h.01" />
+  </svg>
+);
