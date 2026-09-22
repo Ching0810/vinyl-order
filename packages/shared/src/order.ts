@@ -85,8 +85,16 @@ export type Order = z.infer<typeof orderSchema>;
  * - INSUFFICIENT_STOCK: at least one line wants more copies than remain.
  * - MIXED_CURRENCY: lines are priced in different currencies, which a single
  *   order total can't represent.
+ * - CART_CHANGED: the cart was consumed or edited by another request while
+ *   this checkout ran — typically a second tab or a double submit. Nothing was
+ *   ordered; reload the cart and look again.
  */
-export const orderErrorCodeSchema = z.enum(['CART_EMPTY', 'INSUFFICIENT_STOCK', 'MIXED_CURRENCY']);
+export const orderErrorCodeSchema = z.enum([
+  'CART_EMPTY',
+  'INSUFFICIENT_STOCK',
+  'MIXED_CURRENCY',
+  'CART_CHANGED',
+]);
 export type OrderErrorCode = z.infer<typeof orderErrorCodeSchema>;
 
 /** One line that couldn't be fulfilled. */
