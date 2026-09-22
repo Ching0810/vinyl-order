@@ -19,6 +19,7 @@ import { ZodValidationPipe } from 'nestjs-zod';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { toPageArgs } from '../common/pagination';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
@@ -45,15 +46,7 @@ export class ProductsController {
     @Query('before') before?: string,
     @Query('category') category?: string,
   ): Promise<Connection<Product>> {
-    return this.products.paginate(
-      {
-        first: first === undefined ? undefined : Number(first),
-        after,
-        last: last === undefined ? undefined : Number(last),
-        before,
-      },
-      category,
-    );
+    return this.products.paginate(toPageArgs({ first, after, last, before }), category);
   }
 
   /** GET /products/hot — featured products for the storefront hot section. Public. */

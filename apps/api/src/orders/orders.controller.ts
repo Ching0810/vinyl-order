@@ -1,8 +1,9 @@
-import { Controller, Post, UseGuards } from '@nestjs/common';
-import type { Order, PublicUser } from '@vinyl-order/shared';
+import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import type { Connection, Order, OrderSummary, PublicUser } from '@vinyl-order/shared';
 
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { toPageArgs } from '../common/pagination';
 import { OrdersService } from './orders.service';
 
 /**
@@ -16,6 +17,27 @@ import { OrdersService } from './orders.service';
 @UseGuards(JwtAuthGuard)
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
+
+  /**
+   * GET /orders — order history, newest first. Forward: `?first=&after=`;
+   * backward: `?last=&before=`. Defaults to the first 10.
+   */
+  @Get()
+  list(
+    @CurrentUser() user: PublicUser,
+    @Query('first') first?: string,
+    @Query('after') after?: string,
+    @Query('last') last?: string,
+    @Query('before') before?: string,
+  ): Promise<Connection<OrderSummary>> {
+    return this.orders.list(user.id, toPageArgs({ first, after, last, before }));
+  }
+
+  /** GET /orders/:id — one order with every line; 404 unless it is the user's. */
+  @Get(':id')
+  findOne(@CurrentUser() user: PublicUser, @Param('id') id: string): Promise<Order> {
+    return this.orders.findOne(user.id, id);
+  }
 
   /**
    * Place the current cart as an order.

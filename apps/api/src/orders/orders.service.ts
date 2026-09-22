@@ -1,17 +1,57 @@
-import { ConflictException, Injectable } from '@nestjs/common';
-import type { InsufficientStockItem, Order as OrderContract } from '@vinyl-order/shared';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  type Connection,
+  type InsufficientStockItem,
+  ORDER_PREVIEW_LINES,
+  type Order as OrderContract,
+  type OrderSummary,
+  type PageArgs,
+} from '@vinyl-order/shared';
 
+import { paginate } from '../common/pagination';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
+// OrderItem has no timestamps — lines are written once and never edited — so
+// title orders them, and id breaks ties between records sharing a title (two
+// pressings of one album). The preview uses the same order, so its lines are
+// the first ones of the full order.
+const lineOrder = [
+  { title: 'asc' },
+  { id: 'asc' },
+] satisfies Prisma.OrderItemOrderByWithRelationInput[];
+
 /** An order row joined to the lines it is rendered from. */
 const withItems = {
-  // OrderItem has no timestamps — lines are written once and never edited — so
-  // title is the only stable order for a deterministic response.
-  items: { orderBy: { title: 'asc' } },
+  items: { orderBy: lineOrder },
 } satisfies Prisma.OrderInclude;
 
 type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof withItems }>;
+
+/**
+ * An order row with only what a history row shows: the first few lines, and
+ * how many there are in total. Counted in the same query, not by loading every
+ * line.
+ */
+const withPreview = {
+  items: {
+    orderBy: lineOrder,
+    take: ORDER_PREVIEW_LINES,
+    select: { title: true, artist: true, imageUrl: true, quantity: true },
+  },
+  _count: { select: { items: true } },
+} satisfies Prisma.OrderInclude;
+
+type OrderWithPreview = Prisma.OrderGetPayload<{ include: typeof withPreview }>;
+
+/**
+ * Newest first. id breaks ties between orders placed in the same millisecond,
+ * which cursor paging needs to be deterministic.
+ */
+const orderHistoryOrder = [
+  { createdAt: 'desc' },
+  { id: 'desc' },
+] satisfies Prisma.OrderOrderByWithRelationInput[];
 
 /** A cart line joined to the product it copies into the order. */
 type CartLine = Prisma.CartItemGetPayload<{ include: { product: true } }>;
@@ -35,9 +75,13 @@ const conflict = (code: string, message: string, extra: object = {}): ConflictEx
   new ConflictException({ statusCode: 409, code, message, ...extra });
 
 /**
- * Turning a cart into an order.
+ * Turning a cart into an order, and reading a customer's orders back.
  *
- * Everything correctness-critical happens in one transaction, and both guards
+ * Every read is scoped by userId inside the query itself, so another
+ * customer's order is simply not found — there is no separate ownership check
+ * to forget.
+ *
+ * In checkout, everything correctness-critical happens in one transaction, and both guards
  * follow the same rule: never read, decide, then write. Each write carries its
  * own condition and reports how many rows it touched, so there is no gap
  * between checking and acting for a concurrent checkout to race through.
@@ -50,6 +94,42 @@ const conflict = (code: string, message: string, extra: object = {}): ConflictEx
 @Injectable()
 export class OrdersService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * The user's order history, newest first, cursor-paginated.
+   *
+   * A foreign or unknown cursor can't leak anything: `where` still limits the
+   * page to this user's orders, and a cursor Prisma can't find gives an empty
+   * page.
+   */
+  list(userId: string, args: PageArgs): Promise<Connection<OrderSummary>> {
+    return paginate(
+      args,
+      (window) =>
+        this.prisma.order.findMany({
+          where: { userId },
+          orderBy: orderHistoryOrder,
+          include: withPreview,
+          ...window,
+        }),
+      (order) => this.toSummary(order),
+    );
+  }
+
+  /**
+   * One of the user's orders with every line.
+   *
+   * 404 rather than 403 for someone else's order: a 403 would confirm that the
+   * id exists.
+   */
+  async findOne(userId: string, id: string): Promise<OrderContract> {
+    const order = await this.prisma.order.findFirst({
+      where: { id, userId },
+      include: withItems,
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return this.toContract(order);
+  }
 
   /**
    * Place the signed-in user's cart as an order.
@@ -234,15 +314,27 @@ export class OrdersService {
       lineTotalCents: item.unitPriceCents * item.quantity,
     }));
 
+    return { ...this.toBase(order, items.length), items };
+  }
+
+  /** Shape an order row for a history row: its first lines and their count. */
+  private toSummary(order: OrderWithPreview): OrderSummary {
+    return { ...this.toBase(order, order._count.items), preview: order.items };
+  }
+
+  /** The fields a summary and a full order share. */
+  private toBase(
+    order: Pick<OrderWithItems, 'id' | 'status' | 'subtotalCents' | 'currency' | 'createdAt'>,
+    lineCount: number,
+  ) {
     return {
       id: order.id,
       status: order.status,
       subtotalCents: order.subtotalCents,
       currency: order.currency,
-      itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+      lineCount,
       // ISO string, matching what actually crosses JSON.
       createdAt: order.createdAt.toISOString(),
-      items,
     };
   }
 }

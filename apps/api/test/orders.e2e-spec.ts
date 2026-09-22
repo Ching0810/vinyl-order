@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import type { InsufficientStockError, Order } from '@vinyl-order/shared';
+import type { Connection, InsufficientStockError, Order, OrderSummary } from '@vinyl-order/shared';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
@@ -231,7 +231,7 @@ describe('Orders (e2e)', () => {
       status: 'pending',
       subtotalCents: 3_000,
       currency: 'TWD',
-      itemCount: 2,
+      lineCount: 1,
       items: [
         {
           productId: product.id,
@@ -262,5 +262,185 @@ describe('Orders (e2e)', () => {
         title: product.title,
       }),
     ]);
+  });
+
+  describe('order history', () => {
+    /**
+     * An order written directly, with a chosen timestamp so tests know the
+     * expected order. Checkout is covered above; here it would only add noise.
+     */
+    const createOrder = (
+      userId: string,
+      createdAt: Date,
+      lines: { title: string; quantity?: number }[] = [{ title: 'Some Album' }],
+    ) =>
+      prisma.order.create({
+        data: {
+          userId,
+          currency: 'TWD',
+          subtotalCents: 1_000 * lines.length,
+          createdAt,
+          items: {
+            create: lines.map(({ title, quantity = 1 }) => ({
+              title,
+              quantity,
+              artist: 'Test Artist',
+              unitPriceCents: 1_000,
+            })),
+          },
+        },
+      });
+
+    /** Minutes after a fixed instant, so "newer" is unambiguous. */
+    const at = (minutes: number) => new Date(Date.UTC(2026, 0, 1, 0, minutes));
+
+    const get = (token: string, path: string) =>
+      request(app.getHttpServer()).get(path).set('Authorization', `Bearer ${token}`);
+
+    const listPage = async (token: string, query: string) =>
+      (await get(token, `/orders?${query}`).expect(200)).body as Connection<OrderSummary>;
+
+    it('lists only my orders, newest first, each with a preview', async () => {
+      const { user, token } = await createBuyer([]);
+      const other = await createBuyer([]);
+      const oldest = await createOrder(user.id, at(1));
+      const middle = await createOrder(user.id, at(2));
+      const newest = await createOrder(user.id, at(3), [
+        { title: 'E' },
+        { title: 'B', quantity: 2 },
+        { title: 'D' },
+        { title: 'A' },
+        { title: 'C' },
+      ]);
+      await createOrder(other.user.id, at(4));
+
+      const page = await listPage(token, '');
+
+      expect(page.edges.map((edge) => edge.node.id)).toEqual([newest.id, middle.id, oldest.id]);
+      const summary = page.edges[0].node;
+      // Five records: the first three by title, and the count for "and 2 more".
+      expect(summary.lineCount).toBe(5);
+      expect(summary.preview).toEqual([
+        { title: 'A', artist: 'Test Artist', imageUrl: null, quantity: 1 },
+        { title: 'B', artist: 'Test Artist', imageUrl: null, quantity: 2 },
+        { title: 'C', artist: 'Test Artist', imageUrl: null, quantity: 1 },
+      ]);
+      // A history row never carries the full line list.
+      expect(summary).not.toHaveProperty('items');
+      expect(page.pageInfo).toMatchObject({ hasNextPage: false, hasPreviousPage: false });
+    });
+
+    it('pages forward and backward over every order exactly once', async () => {
+      const { user, token } = await createBuyer([]);
+      const orders: { id: string }[] = [];
+      for (let minute = 1; minute <= 5; minute++) {
+        orders.push(await createOrder(user.id, at(minute)));
+      }
+      const newestFirst = orders.map((order) => order.id).reverse();
+
+      const forward: string[] = [];
+      let after = '';
+      let hasNextPage = true;
+      while (hasNextPage) {
+        const page = await listPage(token, `first=2${after && `&after=${after}`}`);
+        forward.push(...page.edges.map((edge) => edge.node.id));
+        ({ hasNextPage } = page.pageInfo);
+        after = page.pageInfo.endCursor ?? '';
+      }
+      expect(forward).toEqual(newestFirst);
+
+      // Backward from the oldest end, prepending each page.
+      const backward: string[] = [];
+      let before = '';
+      let hasPreviousPage = true;
+      while (hasPreviousPage) {
+        const page = await listPage(token, `last=2${before && `&before=${before}`}`);
+        backward.unshift(...page.edges.map((edge) => edge.node.id));
+        ({ hasPreviousPage } = page.pageInfo);
+        before = page.pageInfo.startCursor ?? '';
+      }
+      expect(backward).toEqual(newestFirst);
+    });
+
+    /**
+     * Two checkouts in the same millisecond tie on createdAt. Without the id
+     * tie-breaker, a page boundary between them could repeat one and skip the
+     * other.
+     */
+    it('pages through orders that share a timestamp without repeats or gaps', async () => {
+      const { user, token } = await createBuyer([]);
+      const tied = await Promise.all([1, 2, 3].map(() => createOrder(user.id, at(1))));
+
+      const seen: string[] = [];
+      let after = '';
+      for (let i = 0; i < tied.length; i++) {
+        const page = await listPage(token, `first=1${after && `&after=${after}`}`);
+        seen.push(page.edges[0].node.id);
+        after = page.pageInfo.endCursor ?? '';
+      }
+
+      expect(seen).toEqual(
+        tied
+          .map((order) => order.id)
+          .sort()
+          .reverse(),
+      );
+    });
+
+    it('returns an empty page for a customer with no orders, or an unknown cursor', async () => {
+      const { user, token } = await createBuyer([]);
+
+      const empty = await listPage(token, '');
+      expect(empty).toEqual({
+        edges: [],
+        pageInfo: {
+          hasNextPage: false,
+          hasPreviousPage: false,
+          startCursor: null,
+          endCursor: null,
+        },
+      });
+
+      await createOrder(user.id, at(1));
+      const unknown = Buffer.from(randomUUID()).toString('base64url');
+      expect((await listPage(token, `first=10&after=${unknown}`)).edges).toEqual([]);
+    });
+
+    it('shows my order with every line', async () => {
+      const { user, token } = await createBuyer([]);
+      const order = await createOrder(user.id, at(1), [
+        { title: 'B', quantity: 2 },
+        { title: 'A' },
+        { title: 'C' },
+        { title: 'D' },
+      ]);
+
+      const res = await get(token, `/orders/${order.id}`).expect(200);
+
+      const body = res.body as Order;
+      expect(body.id).toBe(order.id);
+      expect(body.lineCount).toBe(4);
+      expect(body.items.map((item) => [item.title, item.quantity])).toEqual([
+        ['A', 1],
+        ['B', 2],
+        ['C', 1],
+        ['D', 1],
+      ]);
+      expect(body).not.toHaveProperty('preview');
+    });
+
+    it("answers 404 for another customer's order, as for one that doesn't exist", async () => {
+      const owner = await createBuyer([]);
+      const stranger = await createBuyer([]);
+      const order = await createOrder(owner.user.id, at(1));
+
+      await get(stranger.token, `/orders/${order.id}`).expect(404);
+      await get(stranger.token, `/orders/${randomUUID()}`).expect(404);
+    });
+
+    it('requires a signed-in user', async () => {
+      await request(app.getHttpServer()).get('/orders').expect(401);
+      await request(app.getHttpServer()).get(`/orders/${randomUUID()}`).expect(401);
+    });
   });
 });
