@@ -10,7 +10,7 @@ import { useLogout } from '@/services/queries/auth/use-logout';
 
 /**
  * Logged-in account dropdown: the trigger shows the user's name; the menu holds
- * their identity + role, navigation (Account, Admin for admins), and Logout.
+ * their identity + role, navigation (Orders, Admin for admins), and Logout.
  */
 const UserMenu = ({ user }: { user: PublicUser }) => {
   const router = useRouter();
@@ -43,8 +43,8 @@ const UserMenu = ({ user }: { user: PublicUser }) => {
 
             <Menu.Separator />
 
-            <Menu.Item value="account" asChild>
-              <NextLink href="/account">Account</NextLink>
+            <Menu.Item value="orders" asChild>
+              <NextLink href="/orders">Orders</NextLink>
             </Menu.Item>
             {user.role === 'admin' ? (
               <Menu.Item value="admin" asChild>
