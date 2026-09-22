@@ -53,11 +53,11 @@ const orderHistoryOrder = [
   { id: 'desc' },
 ] satisfies Prisma.OrderOrderByWithRelationInput[];
 
-/** A cart line joined to the product it copies into the order. */
-type CartLine = Prisma.CartItemGetPayload<{ include: { product: true } }>;
+/** A cart item joined to the product it copies into the order. */
+type CartItemWithProduct = Prisma.CartItemGetPayload<{ include: { product: true } }>;
 
 /**
- * Thrown inside the transaction when a line can't be fulfilled.
+ * Thrown inside the transaction when a cart item can't be fulfilled.
  *
  * A private error rather than a ConflictException because the response needs
  * `available`, the stock actually left — and reading it inside the transaction
@@ -65,7 +65,7 @@ type CartLine = Prisma.CartItemGetPayload<{ include: { product: true } }>;
  * is known inside, and the handler reads the real stock after the rollback.
  */
 class ShortStockError extends Error {
-  constructor(readonly lines: Omit<InsufficientStockItem, 'available'>[]) {
+  constructor(readonly shortItems: Omit<InsufficientStockItem, 'available'>[]) {
     super('INSUFFICIENT_STOCK');
   }
 }
@@ -88,7 +88,7 @@ const conflict = (code: string, message: string, extra: object = {}): ConflictEx
  *
  * - Overselling is prevented by `UPDATE ... WHERE stock >= qty`, checked via
  *   the affected-row count.
- * - Duplicate orders are prevented by deleting the cart lines *first* and
+ * - Duplicate orders are prevented by deleting the cart items *first* and
  *   checking the delete count: whoever removes the rows owns them.
  */
 @Injectable()
@@ -142,48 +142,48 @@ export class OrdersService {
   async checkout(userId: string): Promise<OrderContract> {
     try {
       const order = await this.prisma.$transaction(
-        async (tx) => {
-          const lines = await tx.cartItem.findMany({
+        async (transaction) => {
+          const cartItems = await transaction.cartItem.findMany({
             where: { cart: { userId } },
             include: { product: true },
           });
-          if (lines.length === 0) {
+          if (cartItems.length === 0) {
             throw conflict('CART_EMPTY', 'Your cart is empty.');
           }
 
           // One order carries one total, so it can only carry one currency.
           // The storefront already assumes a single currency; this enforces it
           // rather than inventing multi-currency totals nobody needs yet.
-          const currency = lines[0].product.currency;
-          if (lines.some((line) => line.product.currency !== currency)) {
+          const currency = cartItems[0].product.currency;
+          if (cartItems.some((cartItem) => cartItem.product.currency !== currency)) {
             throw conflict('MIXED_CURRENCY', 'All records in an order must share one currency.');
           }
 
-          await this.claimCartLines(tx, lines);
-          await this.takeStock(tx, lines);
+          await this.claimCartItems(transaction, cartItems);
+          await this.takeStock(transaction, cartItems);
 
-          return tx.order.create({
+          return transaction.order.create({
             data: {
               userId,
               currency,
               // Stored, not derived: an order's total must not move if a
               // product is repriced later.
-              subtotalCents: lines.reduce(
-                (sum, line) => sum + line.product.priceCents * line.quantity,
+              subtotalCents: cartItems.reduce(
+                (sum, cartItem) => sum + cartItem.product.priceCents * cartItem.quantity,
                 0,
               ),
               // status defaults to `pending` in the database — the one place
               // "a new order starts pending" is defined.
               items: {
-                create: lines.map((line) => ({
-                  productId: line.productId,
-                  quantity: line.quantity,
+                create: cartItems.map((cartItem) => ({
+                  productId: cartItem.productId,
+                  quantity: cartItem.quantity,
                   // Copied at purchase and never read from Product again. This
                   // is what lets an order survive a reprice or a delete.
-                  unitPriceCents: line.product.priceCents,
-                  title: line.product.title,
-                  artist: line.product.artist,
-                  imageUrl: line.product.imageUrl,
+                  unitPriceCents: cartItem.product.priceCents,
+                  title: cartItem.product.title,
+                  artist: cartItem.product.artist,
+                  imageUrl: cartItem.product.imageUrl,
                 })),
               },
             },
@@ -205,7 +205,7 @@ export class OrdersService {
       // rather than our own reverted decrements. It is informational only: by
       // the time the customer reads it, someone else may have taken more.
       const products = await this.prisma.product.findMany({
-        where: { id: { in: error.lines.map((line) => line.productId) } },
+        where: { id: { in: error.shortItems.map((item) => item.productId) } },
         select: { id: true, stock: true },
       });
       const stockById = new Map(products.map((product) => [product.id, product.stock]));
@@ -213,12 +213,12 @@ export class OrdersService {
       throw conflict(
         'INSUFFICIENT_STOCK',
         'Some records no longer have enough stock.',
-        // Every short line at once, so the customer fixes them in one pass
+        // Every short item at once, so the customer fixes them in one pass
         // instead of one per attempt.
         {
-          items: error.lines.map((line) => ({
-            ...line,
-            available: stockById.get(line.productId) ?? 0,
+          items: error.shortItems.map((item) => ({
+            ...item,
+            available: stockById.get(item.productId) ?? 0,
           })),
         },
       );
@@ -226,7 +226,7 @@ export class OrdersService {
   }
 
   /**
-   * Consume the cart lines this checkout is ordering, and prove we were the
+   * Consume the cart items this checkout is ordering, and prove we were the
    * ones who consumed them.
    *
    * Deleting is the claim, not a check before one: two transactions cannot both
@@ -243,14 +243,17 @@ export class OrdersService {
    */
 
   // this method prevent same cartItem add to order twice
-  private async claimCartLines(tx: Prisma.TransactionClient, lines: CartLine[]): Promise<void> {
+  private async claimCartItems(
+    transaction: Prisma.TransactionClient,
+    cartItems: CartItemWithProduct[],
+  ): Promise<void> {
     // the number of cartItem delete from user cart
-    const { count } = await tx.cartItem.deleteMany({
-      where: { id: { in: lines.map((line) => line.id) } },
+    const { count } = await transaction.cartItem.deleteMany({
+      where: { id: { in: cartItems.map((cartItem) => cartItem.id) } },
     });
 
     // if delete count did not match with target count, it means part of cartItem already been claim to a order
-    if (count !== lines.length) {
+    if (count !== cartItems.length) {
       throw conflict(
         'CART_CHANGED',
         'Your cart changed while checking out. Please review it and try again.',
@@ -259,7 +262,7 @@ export class OrdersService {
   }
 
   /**
-   * Decrement stock for every line, or fail the whole order.
+   * Decrement stock for every cart item, or fail the whole order.
    *
    * `updateMany` rather than `update` because it returns a count instead of
    * throwing when the WHERE matches nothing: "not enough stock" becomes a value
@@ -268,35 +271,40 @@ export class OrdersService {
    * after waiting on the row lock, Postgres re-evaluates `stock >= quantity`
    * against the newly committed row.
    *
-   * Every line is attempted before failing, so the error can list them all.
+   * Every cart item is attempted before failing, so the error can list them all.
    */
   // this method prevent last product order by multiple orders
-  private async takeStock(tx: Prisma.TransactionClient, lines: CartLine[]): Promise<void> {
+  private async takeStock(
+    transaction: Prisma.TransactionClient,
+    cartItems: CartItemWithProduct[],
+  ): Promise<void> {
     // Lock ordering: every checkout takes product locks in the same global
     // order, so two carts holding the same records in opposite order queue
     // instead of deadlocking. Sequential on purpose — running these in parallel
     // would throw that ordering away (and a transaction is one connection).
-    const ordered = [...lines].sort((a, b) => a.productId.localeCompare(b.productId));
+    const cartItemsByProductId = [...cartItems].sort((a, b) =>
+      a.productId.localeCompare(b.productId),
+    );
 
-    const short: Omit<InsufficientStockItem, 'available'>[] = [];
-    for (const line of ordered) {
-      const { count } = await tx.product.updateMany({
-        where: { id: line.productId, stock: { gte: line.quantity } },
-        data: { stock: { decrement: line.quantity } },
+    const shortItems: Omit<InsufficientStockItem, 'available'>[] = [];
+    for (const cartItem of cartItemsByProductId) {
+      const { count } = await transaction.product.updateMany({
+        where: { id: cartItem.productId, stock: { gte: cartItem.quantity } },
+        data: { stock: { decrement: cartItem.quantity } },
       });
 
       if (count === 0) {
-        short.push({
-          productId: line.productId,
-          title: line.product.title,
-          requested: line.quantity,
+        shortItems.push({
+          productId: cartItem.productId,
+          title: cartItem.product.title,
+          requested: cartItem.quantity,
         });
       }
     }
 
     // Throwing rolls back the decrements that did succeed: the customer gets
     // every record or none, never a partial order.
-    if (short.length > 0) throw new ShortStockError(short);
+    if (shortItems.length > 0) throw new ShortStockError(shortItems);
   }
 
   /** Shape an order row for the wire. Nothing here reads a live product. */
