@@ -1,11 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import {
-  type Connection,
-  type InsufficientStockItem,
-  ORDER_PREVIEW_LINES,
-  type Order as OrderContract,
-  type OrderSummary,
-  type PageArgs,
+import type {
+  Connection,
+  InsufficientStockItem,
+  Order as OrderContract,
+  OrderSummary,
+  PageArgs,
 } from '@vinyl-order/shared';
 
 import { paginate } from '../common/pagination';
@@ -14,8 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 // OrderItem has no timestamps — lines are written once and never edited — so
 // title orders them, and id breaks ties between records sharing a title (two
-// pressings of one album). The preview uses the same order, so its lines are
-// the first ones of the full order.
+// pressings of one album).
 const lineOrder = [
   { title: 'asc' },
   { id: 'asc' },
@@ -29,20 +27,14 @@ const withItems = {
 type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof withItems }>;
 
 /**
- * An order row with only what a history row shows: the first few lines, and
- * how many there are in total. Counted in the same query, not by loading every
- * line.
+ * An order row with only what a history row shows: how many lines it has,
+ * counted in the same query rather than by loading them.
  */
-const withPreview = {
-  items: {
-    orderBy: lineOrder,
-    take: ORDER_PREVIEW_LINES,
-    select: { title: true, artist: true, imageUrl: true, quantity: true },
-  },
+const withLineCount = {
   _count: { select: { items: true } },
 } satisfies Prisma.OrderInclude;
 
-type OrderWithPreview = Prisma.OrderGetPayload<{ include: typeof withPreview }>;
+type OrderWithLineCount = Prisma.OrderGetPayload<{ include: typeof withLineCount }>;
 
 /**
  * Newest first. id breaks ties between orders placed in the same millisecond,
@@ -109,7 +101,7 @@ export class OrdersService {
         this.prisma.order.findMany({
           where: { userId },
           orderBy: orderHistoryOrder,
-          include: withPreview,
+          include: withLineCount,
           ...window,
         }),
       (order) => this.toSummary(order),
@@ -325,9 +317,9 @@ export class OrdersService {
     return { ...this.toBase(order, items.length), items };
   }
 
-  /** Shape an order row for a history row: its first lines and their count. */
-  private toSummary(order: OrderWithPreview): OrderSummary {
-    return { ...this.toBase(order, order._count.items), preview: order.items };
+  /** Shape an order row for a history row: the order, and how many lines. */
+  private toSummary(order: OrderWithLineCount): OrderSummary {
+    return this.toBase(order, order._count.items);
   }
 
   /** The fields a summary and a full order share. */

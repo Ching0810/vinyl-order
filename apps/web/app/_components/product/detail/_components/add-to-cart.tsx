@@ -1,7 +1,7 @@
 'use client';
 
 import { Button, HStack, Text } from '@chakra-ui/react';
-import type { Product } from '@vinyl-order/shared';
+import { type Product, cartErrorCodeSchema } from '@vinyl-order/shared';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
@@ -16,10 +16,18 @@ import { useAddCartItem } from '@/services/queries/cart/use-cart-mutations';
 const MAX_PER_LINE = 99;
 
 /** Why an add failed, in the shopper's terms. */
-const failureMessage = (error: unknown): string =>
-  error instanceof HttpError && error.status === 401
-    ? 'Your session ended. Sign in again to add this to your cart.'
-    : 'Couldn’t add this to your cart. Please try again.';
+const failureMessage = (error: unknown): string => {
+  if (!(error instanceof HttpError)) return 'Couldn’t add this to your cart. Please try again.';
+  if (error.status === 401) {
+    return 'Your session ended. Sign in again to add this to your cart.';
+  }
+  // The API refuses a sold-out record; the page's stock can be a minute old.
+  if (cartErrorCodeSchema.safeParse((error.body as { code?: unknown } | null)?.code).data) {
+    return 'This record has just sold out.';
+  }
+  return 'Couldn’t add this to your cart. Please try again.';
+};
+
 /**
  * Choose how many copies, then add them to the cart.
  *

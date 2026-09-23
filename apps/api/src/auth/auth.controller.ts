@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Req,
   Res,
   UseGuards,
   UsePipes,
@@ -12,7 +13,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import type { PublicUser } from '@vinyl-order/shared';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { ZodValidationPipe } from 'nestjs-zod';
 
 import {
@@ -21,10 +22,9 @@ import {
   accessTokenCookieOptions,
 } from './auth.cookie';
 import { AuthService } from './auth.service';
-import { CurrentUser } from './current-user.decorator';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import { JwtAuthGuard } from './jwt-auth.guard';
+import { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
 
 /**
  * HTTP boundary for auth.
@@ -82,9 +82,21 @@ export class AuthController {
     return { success: true };
   }
 
-  @UseGuards(JwtAuthGuard)
+  /**
+   * Who is signed in, or nobody.
+   *
+   * Optionally guarded: the storefront asks this on every page, including for
+   * visitors who have never logged in, and "nobody" is an ordinary answer
+   * rather than a 401 for the browser to log as a failed request. Routes that
+   * genuinely need a session (cart, orders) still use JwtAuthGuard and still
+   * answer 401.
+   *
+   * Wrapped in an object like login and register, so null is a value in a
+   * response body rather than an empty one.
+   */
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('me')
-  me(@CurrentUser() user: PublicUser): PublicUser {
-    return user;
+  me(@Req() request: Request): { user: PublicUser | null } {
+    return { user: (request.user as PublicUser | undefined) ?? null };
   }
 }
