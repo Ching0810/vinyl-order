@@ -70,3 +70,17 @@ export const updateCartItemSchema = z.object({
   quantity: quantitySchema,
 });
 export type UpdateCartItemInput = z.infer<typeof updateCartItemSchema>;
+
+/**
+ * Why a cart write was refused (409).
+ *
+ * - OUT_OF_STOCK: the record has no copies left, so there is no quantity that
+ *   could be put in the cart. A request for more copies than remain isn't an
+ *   error: the line is capped at what's in stock, and the response carries the
+ *   quantity that was actually set.
+ *
+ * A cart is an intention, so these caps are tidiness, not a guarantee — stock
+ * can fall after a line is added, and checkout is what really decides.
+ */
+export const cartErrorCodeSchema = z.enum(['OUT_OF_STOCK']);
+export type CartErrorCode = z.infer<typeof cartErrorCodeSchema>;

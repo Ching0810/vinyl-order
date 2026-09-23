@@ -1,8 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AddCartItemInput, Cart as CartContract } from '@vinyl-order/shared';
 
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+/** 409 body: a code the web can branch on, not a message it has to match. */
+const outOfStock = (): ConflictException =>
+  new ConflictException({
+    statusCode: 409,
+    code: 'OUT_OF_STOCK',
+    message: 'That record is sold out.',
+  });
 
 /** A cart row joined to everything needed to price and render it. */
 const withItems = {
@@ -80,10 +88,16 @@ export class CartService {
    * Add a product, or increase it if already present. The composite unique on
    * (cartId, productId) is what lets this be one upsert instead of a read
    * followed by a decision.
+   *
+   * Asking for more copies than remain caps the line at the stock rather than
+   * failing: every write answers with the whole cart, so the caller sees the
+   * quantity that was actually set. Sold out is different — there is no
+   * quantity to cap to — and is refused.
    */
   async addItem(userId: string, { productId, quantity }: AddCartItemInput): Promise<CartContract> {
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) throw new NotFoundException('Product not found');
+    if (product.stock === 0) throw outOfStock();
 
     const cart = await this.ensureCart(userId);
 
@@ -92,19 +106,27 @@ export class CartService {
       create: { cartId: cart.id, productId, quantity },
       update: { quantity: { increment: quantity } },
     });
+    await this.capToStock(cart.id, productId, product.stock);
 
     return this.find(userId);
   }
 
-  /** Set an absolute quantity on a line, so a retry lands on the same result. */
+  /**
+   * Set an absolute quantity on a line, so a retry lands on the same result.
+   * Capped at the stock, like addItem.
+   */
   async updateItem(userId: string, productId: string, quantity: number): Promise<CartContract> {
     const cart = await this.prisma.cart.findUnique({ where: { userId } });
     if (!cart) throw new NotFoundException('Cart not found');
 
+    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    if (!product) throw new NotFoundException('Product not found');
+    if (product.stock === 0) throw outOfStock();
+
     try {
       await this.prisma.cartItem.update({
         where: { cartId_productId: { cartId: cart.id, productId } },
-        data: { quantity },
+        data: { quantity: Math.min(quantity, product.stock) },
       });
     } catch (error) {
       // P2025 = no such line in this cart.
@@ -125,6 +147,21 @@ export class CartService {
     // outcome the caller wanted, so it shouldn't be an error.
     await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id, productId } });
     return this.find(userId);
+  }
+
+  /**
+   * Bring a line back down to the stock if the write just pushed it over.
+   *
+   * A second statement rather than a read-then-write: whatever quantity the
+   * upsert's increment produced, including one from a request that raced this
+   * one, this corrects it. It is housekeeping, not a guarantee — stock can
+   * fall a moment later, and only checkout's conditional decrement decides.
+   */
+  private async capToStock(cartId: string, productId: string, stock: number): Promise<void> {
+    await this.prisma.cartItem.updateMany({
+      where: { cartId, productId, quantity: { gt: stock } },
+      data: { quantity: stock },
+    });
   }
 
   /** Empty the cart, keeping the cart row itself. */
