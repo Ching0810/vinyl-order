@@ -8,11 +8,9 @@ import EmptyState from '@/components/ui/empty-state';
 import { formatPrice } from '@/lib/utils/currency';
 import { useMe } from '@/services/queries/auth/use-me';
 import { useCart } from '@/services/queries/cart/use-cart';
-import {
-  useClearCart,
-  useRemoveCartItem,
-  useUpdateCartItem,
-} from '@/services/queries/cart/use-cart-mutations';
+import { useClearCart } from '@/services/queries/cart/use-clear-cart';
+import { useRemoveCartItem } from '@/services/queries/cart/use-remove-cart-item';
+import { useUpdateCartItem } from '@/services/queries/cart/use-update-cart-item';
 import { createOrderMutationKey } from '@/services/queries/orders/use-create-order';
 
 import Line from './_components/line';

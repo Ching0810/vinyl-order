@@ -9,8 +9,8 @@ import { CartIcon } from '@/components/ui/icons';
 import StatusDialog, { type StatusNotice } from '@/components/ui/status-dialog';
 import { HttpError } from '@/lib/core/http';
 import { useMe } from '@/services/queries/auth/use-me';
+import { useAddCartItem } from '@/services/queries/cart/use-add-cart-item';
 import { useCart } from '@/services/queries/cart/use-cart';
-import { useAddCartItem } from '@/services/queries/cart/use-cart-mutations';
 
 /** The cart's own per-line ceiling (quantitySchema). */
 const MAX_PER_LINE = 99;

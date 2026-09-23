@@ -6,11 +6,9 @@ import type { Category } from '@vinyl-order/shared';
 
 import Panel from '@/components/admin/panel';
 import { categoriesQueryKey, useCategories } from '@/services/queries/categories/use-categories';
-import {
-  useCreateCategory,
-  useDeleteCategory,
-  useUpdateCategory,
-} from '@/services/queries/categories/use-category-mutations';
+import { useCreateCategory } from '@/services/queries/categories/use-create-category';
+import { useDeleteCategory } from '@/services/queries/categories/use-delete-category';
+import { useUpdateCategory } from '@/services/queries/categories/use-update-category';
 
 import AddCategory from './_components/add-category';
 import CategoryRow from './_components/category-row';

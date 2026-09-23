@@ -22,5 +22,3 @@
  */
 export const formatPrice = (priceCents: number, currency: string): string =>
   new Intl.NumberFormat('zh-TW', { style: 'currency', currency }).format(priceCents / 100);
-
-export default formatPrice;
