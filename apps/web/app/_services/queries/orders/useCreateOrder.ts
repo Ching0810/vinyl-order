@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Cart } from '@vinyl-order/shared';
 
+import { currentAttemptKey, endAttempt } from '@/lib/core/checkout-attempt';
 import { HttpError } from '@/lib/core/http';
 import { createOrder } from '@/services/api/orders/create';
 import { cartQueryKey } from '@/services/queries/cart/useCart';
@@ -34,8 +35,11 @@ export const useCreateOrder = () => {
 
   return useMutation({
     mutationKey: createOrderMutationKey,
-    mutationFn: createOrder,
+    mutationFn: () => createOrder(currentAttemptKey()),
     onSuccess: async (order) => {
+      // Placed — or already placed, and this was a retry answered with it.
+      // Either way the attempt is over and the next press starts a new one.
+      endAttempt();
       queryClient.setQueryData<Cart>(cartQueryKey, (cart) =>
         cart ? { ...cart, items: [], itemCount: 0, subtotalCents: 0 } : cart,
       );
@@ -47,8 +51,15 @@ export const useCreateOrder = () => {
       ]);
     },
     onError: async (error) => {
-      if (error instanceof HttpError && error.status === 409) {
-        await queryClient.invalidateQueries({ queryKey: cartQueryKey });
+      // A definite answer ends the attempt: the customer will change something
+      // and press again, which deserves its own key. No response at all (a
+      // timeout, a dropped connection) is *not* definite — the key stays, so
+      // pressing again asks whether the earlier request landed.
+      if (error instanceof HttpError) {
+        endAttempt();
+        if (error.status === 409) {
+          await queryClient.invalidateQueries({ queryKey: cartQueryKey });
+        }
       }
     },
   });

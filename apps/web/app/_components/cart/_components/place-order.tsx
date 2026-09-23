@@ -45,6 +45,13 @@ const describeProblem = (error: unknown): CheckoutProblem => {
       ),
     };
   }
+  if (code === 'CHECKOUT_IN_PROGRESS') {
+    return {
+      title: 'Still working on your last attempt',
+      description:
+        'Your previous request is finishing. Give it a moment and press Place order again — you won’t be charged twice.',
+    };
+  }
   if (code === 'CART_CHANGED') {
     return {
       title: 'Your cart changed',
