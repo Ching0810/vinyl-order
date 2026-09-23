@@ -13,7 +13,6 @@ export interface StatusNotice {
 
 /** Long enough to read a short line; short enough not to be in the way. */
 const AUTO_CLOSE_MS = 1500;
-
 /**
  * A short result shown over a dimmed page — "Added to your cart", or why it
  * didn't work.
@@ -34,7 +33,7 @@ const AUTO_CLOSE_MS = 1500;
  * @param notice - what to show; kept after closing for the exit animation
  * @param onClose - called when it should close (timer, click outside, Escape)
  */
-const StatusDialog = ({
+export default function StatusDialog({
   open,
   notice,
   onClose,
@@ -42,7 +41,7 @@ const StatusDialog = ({
   open: boolean;
   notice: StatusNotice | null;
   onClose: () => void;
-}) => {
+}) {
   const success = notice?.status === 'success';
 
   useEffect(() => {
@@ -81,6 +80,4 @@ const StatusDialog = ({
       </Portal>
     </Dialog.Root>
   );
-};
-
-export default StatusDialog;
+}

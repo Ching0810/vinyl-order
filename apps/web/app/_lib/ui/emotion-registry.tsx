@@ -4,7 +4,6 @@ import createCache from '@emotion/cache';
 import { CacheProvider } from '@emotion/react';
 import { useServerInsertedHTML } from 'next/navigation';
 import { type ReactNode, useState } from 'react';
-
 /**
  * Emotion SSR registry for the App Router.
  *
@@ -18,7 +17,7 @@ import { type ReactNode, useState } from 'react';
  * `<head>` is also where the cascade needs them, so Chakra's `@layer` order
  * declaration lands ahead of every rule depending on it.
  */
-const EmotionRegistry = ({ children }: { children: ReactNode }) => {
+export default function EmotionRegistry({ children }: { children: ReactNode }) {
   const [{ cache, flush }] = useState(() => {
     // Key 'css' matches Emotion's default, so class names are unchanged.
     const cache = createCache({ key: 'css' });
@@ -71,6 +70,4 @@ const EmotionRegistry = ({ children }: { children: ReactNode }) => {
   });
 
   return <CacheProvider value={cache}>{children}</CacheProvider>;
-};
-
-export default EmotionRegistry;
+}

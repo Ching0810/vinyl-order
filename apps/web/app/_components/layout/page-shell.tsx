@@ -5,7 +5,7 @@ import Footer from '@/components/layout/footer';
 import Header from '@/components/layout/header';
 
 // server component — pure composition; Header is the only client island.
-
+// server component — pure composition; Header is the only client island.
 /**
  * The standard page frame: sticky header, content, footer pinned to the bottom
  * of short pages.
@@ -17,13 +17,13 @@ import Header from '@/components/layout/header';
  * @param nav - optional bar rendered directly under the header (the admin
  *   area uses it for its sub-navigation)
  */
-const PageShell = ({ children, nav }: { children: ReactNode; nav?: ReactNode }) => (
-  <Box minH="100dvh" display="flex" flexDirection="column">
-    <Header />
-    {nav}
-    <Box flex="1">{children}</Box>
-    <Footer />
-  </Box>
-);
-
-export default PageShell;
+export default function PageShell({ children, nav }: { children: ReactNode; nav?: ReactNode }) {
+  return (
+    <Box minH="100dvh" display="flex" flexDirection="column">
+      <Header />
+      {nav}
+      <Box flex="1">{children}</Box>
+      <Footer />
+    </Box>
+  );
+}

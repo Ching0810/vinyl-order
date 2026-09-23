@@ -63,7 +63,6 @@ const Backdrop = ({ imageUrl, index }: { imageUrl: Product['imageUrl']; index: n
     </Text>
   </>
 );
-
 /**
  * One carousel panel: a record half out of its sleeve, beside the release
  * details.
@@ -84,7 +83,7 @@ const Backdrop = ({ imageUrl, index }: { imageUrl: Product['imageUrl']; index: n
  * @param index - zero-based position, shown as a ghosted numeral
  * @param total - number of slides
  */
-const Slide = ({
+export default function Slide({
   product,
   eager,
   active,
@@ -96,87 +95,87 @@ const Slide = ({
   active: boolean;
   index: number;
   total: number;
-}) => (
-  <Box
-    asChild
-    position="absolute"
-    inset="0"
-    overflow="hidden"
-    bg="ink.950"
-    // Inset so the ring isn't clipped by the carousel's rounded, overflow-hidden frame.
-    _focusVisible={{ outline: '2px solid', outlineColor: 'brand.400', outlineOffset: '-4px' }}
-  >
-    {/* aria-hidden on the wrapper doesn't stop focus, so hidden slides opt out explicitly. */}
-    <NextLink href={`/products/${product.id}`} tabIndex={active ? undefined : -1}>
-      <Backdrop imageUrl={product.imageUrl} index={index} />
+}) {
+  return (
+    <Box
+      asChild
+      position="absolute"
+      inset="0"
+      overflow="hidden"
+      bg="ink.950"
+      // Inset so the ring isn't clipped by the carousel's rounded, overflow-hidden frame.
+      _focusVisible={{ outline: '2px solid', outlineColor: 'brand.400', outlineOffset: '-4px' }}
+    >
+      {/* aria-hidden on the wrapper doesn't stop focus, so hidden slides opt out explicitly. */}
+      <NextLink href={`/products/${product.id}`} tabIndex={active ? undefined : -1}>
+        <Backdrop imageUrl={product.imageUrl} index={index} />
 
-      <Flex
-        position="relative"
-        h="full"
-        align="center"
-        gap={{ base: '6', md: '16' }}
-        px={{ base: '6', md: '14' }}
-        direction={{ base: 'column', md: 'row' }}
-        justify="center"
-      >
-        <Artwork
-          imageUrl={product.imageUrl}
-          alt={`${product.artist} – ${product.title}`}
-          eager={eager}
-        />
-
-        <Stack
-          gap={{ base: '3', md: '4' }}
-          textAlign={{ base: 'center', md: 'start' }}
-          align={{ base: 'center', md: 'start' }}
-          maxW="lg"
+        <Flex
+          position="relative"
+          h="full"
+          align="center"
+          gap={{ base: '6', md: '16' }}
+          px={{ base: '6', md: '14' }}
+          direction={{ base: 'column', md: 'row' }}
+          justify="center"
         >
-          <Text textStyle="eyebrow" color="brand.300">
-            Featured · {String(index + 1).padStart(2, '0')} of {String(total).padStart(2, '0')}
-          </Text>
+          <Artwork
+            imageUrl={product.imageUrl}
+            alt={`${product.artist} – ${product.title}`}
+            eager={eager}
+          />
 
-          <Heading
-            as="h2"
-            textStyle="display"
-            fontSize={{ base: '3xl', md: '5xl', lg: '6xl' }}
-            color="ink.50"
-            lineClamp={2}
+          <Stack
+            gap={{ base: '3', md: '4' }}
+            textAlign={{ base: 'center', md: 'start' }}
+            align={{ base: 'center', md: 'start' }}
+            maxW="lg"
           >
-            {product.title}
-          </Heading>
-
-          <Text
-            fontSize={{ base: 'sm', md: 'lg' }}
-            color="ink.300"
-            lineClamp={2}
-            fontWeight="medium"
-          >
-            {product.artist}
-          </Text>
-
-          {product.year || product.format[0] ? (
-            <Text fontSize="2xs" color="ink.500" letterSpacing="label" textTransform="uppercase">
-              {[product.year, product.format[0]].filter(Boolean).join(' · ')}
+            <Text textStyle="eyebrow" color="brand.300">
+              Featured · {String(index + 1).padStart(2, '0')} of {String(total).padStart(2, '0')}
             </Text>
-          ) : null}
 
-          <Box
-            mt="1"
-            px="4"
-            py="1.5"
-            borderRadius="full"
-            borderWidth="1px"
-            borderColor="brand.400/40"
-            bg="brand.400/10"
-          >
-            <Text fontSize={{ base: 'md', md: 'lg' }} fontWeight="bold" color="brand.200">
-              {formatPrice(product.priceCents, product.currency)}
+            <Heading
+              as="h2"
+              textStyle="display"
+              fontSize={{ base: '3xl', md: '5xl', lg: '6xl' }}
+              color="ink.50"
+              lineClamp={2}
+            >
+              {product.title}
+            </Heading>
+
+            <Text
+              fontSize={{ base: 'sm', md: 'lg' }}
+              color="ink.300"
+              lineClamp={2}
+              fontWeight="medium"
+            >
+              {product.artist}
             </Text>
-          </Box>
-        </Stack>
-      </Flex>
-    </NextLink>
-  </Box>
-);
 
-export default Slide;
+            {product.year || product.format[0] ? (
+              <Text fontSize="2xs" color="ink.500" letterSpacing="label" textTransform="uppercase">
+                {[product.year, product.format[0]].filter(Boolean).join(' · ')}
+              </Text>
+            ) : null}
+
+            <Box
+              mt="1"
+              px="4"
+              py="1.5"
+              borderRadius="full"
+              borderWidth="1px"
+              borderColor="brand.400/40"
+              bg="brand.400/10"
+            >
+              <Text fontSize={{ base: 'md', md: 'lg' }} fontWeight="bold" color="brand.200">
+                {formatPrice(product.priceCents, product.currency)}
+              </Text>
+            </Box>
+          </Stack>
+        </Flex>
+      </NextLink>
+    </Box>
+  );
+}

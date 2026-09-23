@@ -5,13 +5,12 @@ import { useRouter } from 'next/navigation';
 import { type ReactNode, useEffect } from 'react';
 
 import { useMe } from '@/services/queries/auth/use-me';
-
 /**
  * Client-side gate for admin pages: shows a spinner while auth resolves, then
  * redirects non-admins home. This is UX only — the API enforces real security
  * via JwtAuthGuard + RolesGuard, so a determined user gains nothing by bypassing it.
  */
-const Guard = ({ children }: { children: ReactNode }) => {
+export default function Guard({ children }: { children: ReactNode }) {
   const { data: user, isPending } = useMe();
   const router = useRouter();
 
@@ -30,6 +29,4 @@ const Guard = ({ children }: { children: ReactNode }) => {
   }
 
   return <>{children}</>;
-};
-
-export default Guard;
+}

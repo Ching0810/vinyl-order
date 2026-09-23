@@ -5,7 +5,6 @@ import { type Control, Controller } from 'react-hook-form';
 
 import type { ProductFormValues } from '@/components/admin/product-form-fields';
 import { useCategories } from '@/services/queries/categories/use-categories';
-
 /**
  * Which storefront tabs this record appears under.
  *
@@ -15,7 +14,7 @@ import { useCategories } from '@/services/queries/categories/use-categories';
  * 華語. A record can sit in several — a Japanese jazz release belongs in both
  * 東洋 and 爵士 — which is why this is a checkbox group rather than a select.
  */
-const CategoryFields = ({ control }: { control: Control<ProductFormValues> }) => {
+export default function CategoryFields({ control }: { control: Control<ProductFormValues> }) {
   const { data: categories, isPending } = useCategories();
 
   if (isPending) return <Skeleton h="8" />;
@@ -54,6 +53,4 @@ const CategoryFields = ({ control }: { control: Control<ProductFormValues> }) =>
       )}
     />
   );
-};
-
-export default CategoryFields;
+}

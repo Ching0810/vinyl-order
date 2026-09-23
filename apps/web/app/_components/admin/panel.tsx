@@ -1,6 +1,5 @@
 import { Stack, Text } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
-
 /**
  * A titled card grouping related form fields.
  *
@@ -12,7 +11,7 @@ import type { ReactNode } from 'react';
  * @param description - optional one-line explanation
  * @param children - the fields in this group
  */
-const Panel = ({
+export default function Panel({
   title,
   description,
   children,
@@ -20,27 +19,27 @@ const Panel = ({
   title: string;
   description?: string;
   children: ReactNode;
-}) => (
-  <Stack
-    gap="5"
-    p={{ base: '5', md: '6' }}
-    borderRadius="card"
-    borderWidth="1px"
-    borderColor="border.muted"
-    bg="bg.panel"
-  >
-    <Stack gap="1">
-      <Text textStyle="eyebrow" color="fg.muted">
-        {title}
-      </Text>
-      {description ? (
-        <Text fontSize="sm" color="fg.subtle">
-          {description}
+}) {
+  return (
+    <Stack
+      gap="5"
+      p={{ base: '5', md: '6' }}
+      borderRadius="card"
+      borderWidth="1px"
+      borderColor="border.muted"
+      bg="bg.panel"
+    >
+      <Stack gap="1">
+        <Text textStyle="eyebrow" color="fg.muted">
+          {title}
         </Text>
-      ) : null}
+        {description ? (
+          <Text fontSize="sm" color="fg.subtle">
+            {description}
+          </Text>
+        ) : null}
+      </Stack>
+      {children}
     </Stack>
-    {children}
-  </Stack>
-);
-
-export default Panel;
+  );
+}

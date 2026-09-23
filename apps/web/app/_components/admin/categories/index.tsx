@@ -14,7 +14,6 @@ import {
 
 import AddCategory from './_components/add-category';
 import CategoryRow from './_components/category-row';
-
 /**
  * Manage the storefront tab bar: which tabs exist, what they are called, and
  * the order they appear in.
@@ -29,7 +28,7 @@ import CategoryRow from './_components/category-row';
  * reason as the hero screen: a mutation settles before the query it invalidated
  * refetches, and a mirror synced in that gap flashes stale rows back.
  */
-const CategoryManager = () => {
+export default function CategoryManager() {
   const queryClient = useQueryClient();
   const { data, isPending } = useCategories();
   const createMutation = useCreateCategory();
@@ -104,6 +103,4 @@ const CategoryManager = () => {
       </Panel>
     </Stack>
   );
-};
-
-export default CategoryManager;
+}

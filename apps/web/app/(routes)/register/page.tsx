@@ -9,8 +9,7 @@ import { useForm } from 'react-hook-form';
 
 import { HttpError } from '@/lib/core/http';
 import { useRegister } from '@/services/queries/auth/use-register';
-
-const RegisterPage = () => {
+export default function RegisterPage() {
   const router = useRouter();
   const registerMutation = useRegister();
 
@@ -95,6 +94,4 @@ const RegisterPage = () => {
       </form>
     </Box>
   );
-};
-
-export default RegisterPage;
+}

@@ -13,19 +13,18 @@ const OrderFromUrl = () => {
   const placed = useSearchParams().get('placed') === '1';
   return <OrderDetail id={id} placed={placed} />;
 };
-
 /**
  * `/orders/[id]` — one order, and the confirmation page after checkout.
  * `useSearchParams` needs a Suspense boundary above it, so it lives here.
  */
-const OrderPage = () => (
-  <PageShell>
-    <Container maxW="4xl" px={{ base: '4', md: '8' }} py={{ base: '10', md: '16' }}>
-      <Suspense fallback={null}>
-        <OrderFromUrl />
-      </Suspense>
-    </Container>
-  </PageShell>
-);
-
-export default OrderPage;
+export default function OrderPage() {
+  return (
+    <PageShell>
+      <Container maxW="4xl" px={{ base: '4', md: '8' }} py={{ base: '10', md: '16' }}>
+        <Suspense fallback={null}>
+          <OrderFromUrl />
+        </Suspense>
+      </Container>
+    </PageShell>
+  );
+}

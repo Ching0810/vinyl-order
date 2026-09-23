@@ -10,7 +10,6 @@ import { useMe } from '@/services/queries/auth/use-me';
 import AddToCart from './_components/add-to-cart';
 import AdminPanel from './_components/admin-panel';
 import Related from './_components/related';
-
 /**
  * Public product detail: cover on one side, release details and the buy action
  * on the other, with the artist's other releases below.
@@ -23,7 +22,7 @@ import Related from './_components/related';
  *
  * @param product - the product to display
  */
-const Detail = ({ product }: { product: Product }) => {
+export default function Detail({ product }: { product: Product }) {
   const { data: user } = useMe();
   const isAdmin = user?.role === 'admin';
   const inStock = product.stock > 0;
@@ -98,6 +97,4 @@ const Detail = ({ product }: { product: Product }) => {
       <Related artist={product.artist} excludeId={product.id} />
     </Box>
   );
-};
-
-export default Detail;
+}

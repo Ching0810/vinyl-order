@@ -7,12 +7,11 @@ import { useRouter } from 'next/navigation';
 
 import { UserIcon } from '@/components/ui/icons';
 import { useLogout } from '@/services/queries/auth/use-logout';
-
 /**
  * Logged-in account dropdown: the trigger shows the user's name; the menu holds
  * their identity + role, navigation (Orders, Admin for admins), and Logout.
  */
-const UserMenu = ({ user }: { user: PublicUser }) => {
+export default function UserMenu({ user }: { user: PublicUser }) {
   const router = useRouter();
   const logoutMutation = useLogout();
 
@@ -62,6 +61,4 @@ const UserMenu = ({ user }: { user: PublicUser }) => {
       </Portal>
     </Menu.Root>
   );
-};
-
-export default UserMenu;
+}

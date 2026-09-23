@@ -6,7 +6,6 @@ import NextLink from 'next/link';
 import Cover from '@/components/order/cover';
 import { formatPrice } from '@/lib/utils/currency';
 import { useOrder } from '@/services/queries/orders/use-order';
-
 /**
  * Every line of one order, shown when its history row is expanded.
  *
@@ -17,7 +16,7 @@ import { useOrder } from '@/services/queries/orders/use-order';
  *
  * @param id - the order to load
  */
-const Items = ({ id }: { id: string }) => {
+export default function Items({ id }: { id: string }) {
   const { data: order, isPending, isError } = useOrder(id);
 
   if (isPending) {
@@ -60,6 +59,4 @@ const Items = ({ id }: { id: string }) => {
       </Button>
     </Stack>
   );
-};
-
-export default Items;
+}

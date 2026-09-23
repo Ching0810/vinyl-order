@@ -11,7 +11,6 @@ const LINKS = [
   { href: '/admin/hero', label: 'Hero carousel' },
   { href: '/admin/categories', label: 'Categories' },
 ];
-
 /**
  * Sub-navigation for the admin area, sitting under the storefront header.
  *
@@ -19,7 +18,7 @@ const LINKS = [
  * carry: a consistent bar means the same destinations sit in the same place on
  * every screen, and the current section is always marked.
  */
-const AdminNav = () => {
+export default function AdminNav() {
   const pathname = usePathname();
 
   return (
@@ -56,6 +55,4 @@ const AdminNav = () => {
       </HStack>
     </Flex>
   );
-};
-
-export default AdminNav;
+}

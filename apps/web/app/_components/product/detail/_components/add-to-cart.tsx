@@ -20,7 +20,6 @@ const failureMessage = (error: unknown): string =>
   error instanceof HttpError && error.status === 401
     ? 'Your session ended. Sign in again to add this to your cart.'
     : 'Couldn’t add this to your cart. Please try again.';
-
 /**
  * Choose how many copies, then add them to the cart.
  *
@@ -44,7 +43,7 @@ const failureMessage = (error: unknown): string =>
  *
  * @param product - the product being bought
  */
-const AddToCart = ({ product }: { product: Product }) => {
+export default function AddToCart({ product }: { product: Product }) {
   const { data: user } = useMe();
   const { data: cart } = useCart();
   const router = useRouter();
@@ -145,6 +144,4 @@ const AddToCart = ({ product }: { product: Product }) => {
       <StatusDialog open={dialogOpen} notice={notice} onClose={closeDialog} />
     </>
   );
-};
-
-export default AddToCart;
+}

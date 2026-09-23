@@ -11,12 +11,11 @@ const STATUS: Record<OrderStatus, { label: string; palette: string }> = {
   shipped: { label: 'Shipped', palette: 'green' },
   cancelled: { label: 'Cancelled', palette: 'gray' },
 };
-
 /** Where an order is in its life, as a coloured badge. */
-const StatusBadge = ({ status }: { status: OrderStatus }) => (
-  <Badge colorPalette={STATUS[status].palette} variant="subtle" borderRadius="full" px="2.5">
-    {STATUS[status].label}
-  </Badge>
-);
-
-export default StatusBadge;
+export default function StatusBadge({ status }: { status: OrderStatus }) {
+  return (
+    <Badge colorPalette={STATUS[status].palette} variant="subtle" borderRadius="full" px="2.5">
+      {STATUS[status].label}
+    </Badge>
+  );
+}
