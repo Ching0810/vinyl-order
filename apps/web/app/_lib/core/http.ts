@@ -59,10 +59,14 @@ export const http = {
   get<T>(path: string, params: QueryParams = {}): Promise<T> {
     return request<T>(`${path}${toQueryString(params)}`, { method: 'GET' });
   },
-  post<T>(path: string, body?: unknown): Promise<T> {
+  /**
+   * @param headers - extra headers for this call alone (e.g. Idempotency-Key)
+   */
+  post<T>(path: string, body?: unknown, headers?: HeadersInit): Promise<T> {
     return request<T>(path, {
       method: 'POST',
       body: body === undefined ? undefined : JSON.stringify(body),
+      headers,
     });
   },
   patch<T>(path: string, body?: unknown): Promise<T> {
