@@ -300,7 +300,7 @@ describe('Orders (e2e)', () => {
     const listPage = async (token: string, query: string) =>
       (await get(token, `/orders?${query}`).expect(200)).body as Connection<OrderSummary>;
 
-    it('lists only my orders, newest first, each with a preview', async () => {
+    it('lists only my orders, newest first, with their line counts', async () => {
       const { user, token } = await createBuyer([]);
       const other = await createBuyer([]);
       const oldest = await createOrder(user.id, at(1));
@@ -318,14 +318,9 @@ describe('Orders (e2e)', () => {
 
       expect(page.edges.map((edge) => edge.node.id)).toEqual([newest.id, middle.id, oldest.id]);
       const summary = page.edges[0].node;
-      // Five records: the first three by title, and the count for "and 2 more".
+      // Five records, counted without loading them: a history row never
+      // carries the lines themselves.
       expect(summary.lineCount).toBe(5);
-      expect(summary.preview).toEqual([
-        { title: 'A', artist: 'Test Artist', imageUrl: null, quantity: 1 },
-        { title: 'B', artist: 'Test Artist', imageUrl: null, quantity: 2 },
-        { title: 'C', artist: 'Test Artist', imageUrl: null, quantity: 1 },
-      ]);
-      // A history row never carries the full line list.
       expect(summary).not.toHaveProperty('items');
       expect(page.pageInfo).toMatchObject({ hasNextPage: false, hasPreviousPage: false });
     });
@@ -426,7 +421,6 @@ describe('Orders (e2e)', () => {
         ['C', 1],
         ['D', 1],
       ]);
-      expect(body).not.toHaveProperty('preview');
     });
 
     it("answers 404 for another customer's order, as for one that doesn't exist", async () => {

@@ -57,40 +57,25 @@ const orderBaseSchema = z.object({
   /** ISO 4217 currency code shared by every line, e.g. "TWD". */
   currency: z.string(),
   /**
-   * How many different records the order contains — one per line. With the
-   * preview, lets a list row say "and 2 more".
+   * How many different records the order contains — one per line. Not the sum
+   * of quantities: "4" would then mean four copies of one record or four
+   * records, and a history row can't say which. Quantities are on the lines.
    */
   lineCount: z.number().int(),
   createdAt: z.iso.datetime(),
 });
 
-/** Most lines an order-history row previews. */
-export const ORDER_PREVIEW_LINES = 3;
-
-/** Just enough of a line to recognise the order at a glance. */
-export const orderPreviewLineSchema = orderItemSchema.pick({
-  title: true,
-  artist: true,
-  imageUrl: true,
-  quantity: true,
-});
-export type OrderPreviewLine = z.infer<typeof orderPreviewLineSchema>;
-
 /**
- * One row of the order history: the order plus its first few lines. Shoppers
- * recognise an order by what was in it, so the row shows records rather than a
- * bare count — and "4 items" couldn't say whether that was four copies of one
- * record or four records.
+ * One row of the order history: the order without its lines, so a list doesn't
+ * load every line of every order. The history page shows an order's records
+ * once it is expanded, which is a GET /orders/:id away.
  */
-export const orderSummarySchema = orderBaseSchema.extend({
-  /** The first ORDER_PREVIEW_LINES lines, in the same order as `items`. */
-  preview: z.array(orderPreviewLineSchema).max(ORDER_PREVIEW_LINES),
-});
+export const orderSummarySchema = orderBaseSchema;
 export type OrderSummary = z.infer<typeof orderSummarySchema>;
 
 /**
  * A full order with every line. Built on the same base as the summary so the
- * two shapes can't drift apart; no preview, since `items` has all of it.
+ * two shapes can't drift apart.
  *
  * Returned by POST /orders and GET /orders/:id. GET /orders returns
  * Connection<OrderSummary> (see ./pagination).
