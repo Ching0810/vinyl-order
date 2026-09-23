@@ -27,8 +27,7 @@ const DetailSkeleton = () => (
     </Stack>
   </Flex>
 );
-
-const ProductDetailPage = () => {
+export default function ProductDetailPage() {
   const params = useParams<{ id: string }>();
   const { data: product, isPending, error } = useProduct(params.id);
 
@@ -74,6 +73,4 @@ const ProductDetailPage = () => {
       </Container>
     </PageShell>
   );
-};
-
-export default ProductDetailPage;
+}

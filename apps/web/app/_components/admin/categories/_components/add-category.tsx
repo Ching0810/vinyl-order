@@ -5,7 +5,6 @@ import { useState } from 'react';
 
 /** Mirrors the shared slugSchema so bad input is caught before the request. */
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
 /**
  * Create a new storefront tab.
  *
@@ -16,13 +15,13 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * @param onCreate - called with a validated label and slug
  * @param busy - a write is in flight
  */
-const AddCategory = ({
+export default function AddCategory({
   onCreate,
   busy,
 }: {
   onCreate: (values: { name: string; slug: string }) => void;
   busy: boolean;
-}) => {
+}) {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
 
@@ -69,6 +68,4 @@ const AddCategory = ({
       </HStack>
     </Stack>
   );
-};
-
-export default AddCategory;
+}

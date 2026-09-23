@@ -15,7 +15,6 @@ export type { CarouselApi };
 
 /** Dwell time per slide before advancing. */
 const DEFAULT_DELAY_MS = 6000;
-
 /**
  * Hero carousel, built on Embla.
  *
@@ -34,7 +33,7 @@ const DEFAULT_DELAY_MS = 6000;
  * @param onApiReady - receives Embla's instance API (scrollTo, on, plugins, …)
  *   so a parent can drive the carousel programmatically
  */
-const Carousel = ({
+export default function Carousel({
   slides,
   autoplayDelay = DEFAULT_DELAY_MS,
   loop = true,
@@ -44,7 +43,7 @@ const Carousel = ({
   autoplayDelay?: number;
   loop?: boolean;
   onApiReady?: (api: CarouselApi) => void;
-}) => {
+}) {
   // Plugin instances need a stable identity — a fresh array each render would
   // make Embla re-initialise on every pass.
   const plugins = useMemo(
@@ -134,6 +133,4 @@ const Carousel = ({
       ) : null}
     </Box>
   );
-};
-
-export default Carousel;
+}

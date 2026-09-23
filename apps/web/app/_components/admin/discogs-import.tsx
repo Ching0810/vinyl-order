@@ -5,13 +5,16 @@ import type { DiscogsLookupResult } from '@vinyl-order/shared';
 import { useState } from 'react';
 
 import { useDiscogsSearch } from '@/services/queries/admin/use-discogs-search';
-
 /**
  * Discogs import panel for the product form: search releases, then click one to
  * prefill the form via `onPick`. Owns its own search box state + query, so the
  * parent form only deals with the chosen result.
  */
-const DiscogsImport = ({ onPick }: { onPick: (result: DiscogsLookupResult) => void }) => {
+export default function DiscogsImport({
+  onPick,
+}: {
+  onPick: (result: DiscogsLookupResult) => void;
+}) {
   const [query, setQuery] = useState('');
   const searchMutation = useDiscogsSearch();
 
@@ -75,6 +78,4 @@ const DiscogsImport = ({ onPick }: { onPick: (result: DiscogsLookupResult) => vo
       ) : null}
     </Stack>
   );
-};
-
-export default DiscogsImport;
+}

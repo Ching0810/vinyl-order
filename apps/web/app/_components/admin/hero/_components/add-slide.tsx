@@ -12,7 +12,6 @@ import { productsQueryKey } from '@/services/queries/products/use-products';
 
 /** Cap the picker so a broad search can't produce an endless list. */
 const MAX_RESULTS = 6;
-
 /**
  * Search the catalogue for a record to add to the carousel.
  *
@@ -29,7 +28,7 @@ const MAX_RESULTS = 6;
  * @param busy - a write is in flight; the add buttons lock
  * @param inOrderIds - ids currently in the carousel, including optimistic adds
  */
-const AddSlide = ({
+export default function AddSlide({
   onAdd,
   busy,
   inOrderIds,
@@ -37,7 +36,7 @@ const AddSlide = ({
   onAdd: (product: Product) => void;
   busy: boolean;
   inOrderIds: Set<string>;
-}) => {
+}) {
   const [term, setTerm] = useState('');
   const q = useDebouncedValue(term.trim(), 400);
 
@@ -116,6 +115,4 @@ const AddSlide = ({
       )}
     </Stack>
   );
-};
-
-export default AddSlide;
+}

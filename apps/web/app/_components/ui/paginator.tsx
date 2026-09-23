@@ -1,7 +1,6 @@
 'use client';
 
 import { Button, HStack, Text } from '@chakra-ui/react';
-
 /**
  * Previous / page number / Next controls for a cursor-paginated list.
  *
@@ -14,7 +13,7 @@ import { Button, HStack, Text } from '@chakra-ui/react';
  * @param hasNext - whether a next page exists
  * @param busy - a fetch is in flight; both buttons lock to stop double-paging
  */
-const Paginator = ({
+export default function Paginator({
   pageNum,
   hasPrevious,
   hasNext,
@@ -28,30 +27,30 @@ const Paginator = ({
   busy?: boolean;
   onPrevious: () => void;
   onNext: () => void;
-}) => (
-  <HStack justify="center" gap="4" mt="12">
-    <Button
-      size="sm"
-      variant="outline"
-      borderRadius="full"
-      onClick={onPrevious}
-      disabled={!hasPrevious || busy}
-    >
-      Previous
-    </Button>
-    <Text fontSize="sm" color="fg.muted">
-      Page {pageNum}
-    </Text>
-    <Button
-      size="sm"
-      variant="outline"
-      borderRadius="full"
-      onClick={onNext}
-      disabled={!hasNext || busy}
-    >
-      Next
-    </Button>
-  </HStack>
-);
-
-export default Paginator;
+}) {
+  return (
+    <HStack justify="center" gap="4" mt="12">
+      <Button
+        size="sm"
+        variant="outline"
+        borderRadius="full"
+        onClick={onPrevious}
+        disabled={!hasPrevious || busy}
+      >
+        Previous
+      </Button>
+      <Text fontSize="sm" color="fg.muted">
+        Page {pageNum}
+      </Text>
+      <Button
+        size="sm"
+        variant="outline"
+        borderRadius="full"
+        onClick={onNext}
+        disabled={!hasNext || busy}
+      >
+        Next
+      </Button>
+    </HStack>
+  );
+}

@@ -13,7 +13,6 @@ import { useSlideProducts } from '@/services/queries/products/use-slide-products
 
 /** Records in the hot strip: one or two grid rows, never a catalogue. */
 const HOT_COUNT = 6;
-
 /**
  * Public storefront home. A Client Component: the carousel and the hot grid are
  * both fetched through React Query, so the data lands in the shared cache and a
@@ -26,7 +25,7 @@ const HOT_COUNT = 6;
  * Layout follows a stacked, modular structure — hero, then titled sections —
  * so new sections can be appended without reworking the page.
  */
-const HomePage = () => {
+export default function HomePage() {
   const { data: slideProducts, isPending: slidesPending } = useSlideProducts();
   const {
     data: hotProducts,
@@ -53,6 +52,4 @@ const HomePage = () => {
       </Container>
     </PageShell>
   );
-};
-
-export default HomePage;
+}

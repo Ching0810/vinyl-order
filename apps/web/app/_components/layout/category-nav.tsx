@@ -64,7 +64,6 @@ const Tabs = () => {
     </Row>
   );
 };
-
 /**
  * Storefront category tabs, the header's primary navigation.
  *
@@ -81,10 +80,10 @@ const Tabs = () => {
  * Suspense boundary, so the boundary lives here rather than being something
  * every page that renders this has to remember.
  */
-const CategoryNav = () => (
-  <Suspense fallback={<Row>{null}</Row>}>
-    <Tabs />
-  </Suspense>
-);
-
-export default CategoryNav;
+export default function CategoryNav() {
+  return (
+    <Suspense fallback={<Row>{null}</Row>}>
+      <Tabs />
+    </Suspense>
+  );
+}

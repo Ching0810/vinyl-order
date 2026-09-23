@@ -99,14 +99,13 @@ const CategoryGate = () => {
   if (!slug) redirect('/');
   return <Catalogue slug={slug} />;
 };
-
 /** `useSearchParams` needs a Suspense boundary above it, so it lives here. */
-const ProductsPage = () => (
-  <PageShell>
-    <Suspense fallback={<GridSkeleton count={PAGE_SIZE} />}>
-      <CategoryGate />
-    </Suspense>
-  </PageShell>
-);
-
-export default ProductsPage;
+export default function ProductsPage() {
+  return (
+    <PageShell>
+      <Suspense fallback={<GridSkeleton count={PAGE_SIZE} />}>
+        <CategoryGate />
+      </Suspense>
+    </PageShell>
+  );
+}

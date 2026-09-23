@@ -2,7 +2,6 @@ import { Box, Flex, Image, Spinner, Text } from '@chakra-ui/react';
 import type { Product } from '@vinyl-order/shared';
 
 import { formatPrice } from '@/lib/utils/currency';
-
 /**
  * The result rows for a search query, shared by the desktop dropdown and the
  * mobile drawer so both surfaces render matches identically.
@@ -10,7 +9,13 @@ import { formatPrice } from '@/lib/utils/currency';
  * @param results - matches for the current query, or undefined before first fetch
  * @param isFetching - whether a request is in flight
  */
-const Results = ({ results, isFetching }: { results?: Product[]; isFetching: boolean }) => {
+export default function Results({
+  results,
+  isFetching,
+}: {
+  results?: Product[];
+  isFetching: boolean;
+}) {
   if (isFetching) {
     return (
       <Flex p="6" justify="center">
@@ -58,6 +63,4 @@ const Results = ({ results, isFetching }: { results?: Product[]; isFetching: boo
       ))}
     </Box>
   );
-};
-
-export default Results;
+}

@@ -45,7 +45,6 @@ const AccountItems = ({ user }: { user: PublicUser | null | undefined }) => {
     </Menu.ItemGroup>
   );
 };
-
 /**
  * The header's navigation on narrow screens: categories, cart and account
  * folded into one hamburger dropdown, since a phone-width row has no room for
@@ -63,7 +62,7 @@ const AccountItems = ({ user }: { user: PublicUser | null | undefined }) => {
  * @param userPending - true while the session check is still in flight
  * @param cartCount - items in the cart, shown beside the Cart entry
  */
-const MobileMenu = ({
+export default function MobileMenu({
   user,
   userPending,
   cartCount,
@@ -71,7 +70,7 @@ const MobileMenu = ({
   user: PublicUser | null | undefined;
   userPending: boolean;
   cartCount: number;
-}) => {
+}) {
   const [open, setOpen] = useState(false);
   const { data: categories } = useCategories();
 
@@ -127,6 +126,4 @@ const MobileMenu = ({
       </Portal>
     </Menu.Root>
   );
-};
-
-export default MobileMenu;
+}

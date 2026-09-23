@@ -21,7 +21,6 @@ const HistorySkeleton = () => (
     ))}
   </Stack>
 );
-
 /**
  * The customer's orders, newest first, a page at a time.
  *
@@ -32,7 +31,7 @@ const HistorySkeleton = () => (
  * Paging is cursor-based like the catalogue: Previous and Next step to the
  * adjacent page, and `pageNum` only tells the customer roughly where they are.
  */
-const OrderHistory = () => {
+export default function OrderHistory() {
   const { data: user, isPending: authPending } = useMe();
   const [args, setArgs] = useState<PageArgs>({ first: PAGE_SIZE });
   const [pageNum, setPageNum] = useState(1);
@@ -100,6 +99,4 @@ const OrderHistory = () => {
       />
     </>
   );
-};
-
-export default OrderHistory;
+}

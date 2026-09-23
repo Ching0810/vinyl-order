@@ -90,11 +90,8 @@ const EditProductForm = ({ id }: { id: string }) => {
     </Container>
   );
 };
-
-const EditProductPage = () => {
+export default function EditProductPage() {
   const params = useParams<{ id: string }>();
 
   return <EditProductForm id={params.id} />;
-};
-
-export default EditProductPage;
+}

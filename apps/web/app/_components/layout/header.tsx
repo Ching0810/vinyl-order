@@ -9,7 +9,6 @@ import UserMenu from '@/components/layout/user-menu';
 import { CartIcon, DiscIcon } from '@/components/ui/icons';
 import { useMe } from '@/services/queries/auth/use-me';
 import { useCart } from '@/services/queries/cart/use-cart';
-
 /**
  * Storefront banner. A client island over the (server-rendered) catalog:
  * - the category tabs are the primary navigation, centred between the logo and
@@ -28,7 +27,7 @@ import { useCart } from '@/services/queries/cart/use-cart';
  * beneath it rather than colliding with a solid bar. The outer element spans
  * the viewport; the inner grid is width-capped and centred.
  */
-const Header = () => {
+export default function Header() {
   const { data: user, isPending } = useMe();
   const { data: cart } = useCart();
   const cartCount = cart?.itemCount ?? 0;
@@ -118,6 +117,4 @@ const Header = () => {
       </Grid>
     </Flex>
   );
-};
-
-export default Header;
+}

@@ -9,7 +9,6 @@ import { useDebouncedValue } from '@/lib/core/use-debounced-value';
 import { searchProducts } from '@/services/api/products/search';
 
 import Results from './_components/results';
-
 /**
  * Storefront search, with a different surface per breakpoint.
  *
@@ -25,7 +24,7 @@ import Results from './_components/results';
  * The query is debounced 500ms after the final keystroke, then React Query
  * fetches and caches it — so the two surfaces share one cache entry.
  */
-const Search = () => {
+export default function Search() {
   const [term, setTerm] = useState('');
   const [focused, setFocused] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -131,6 +130,4 @@ const Search = () => {
       </Drawer.Root>
     </>
   );
-};
-
-export default Search;
+}

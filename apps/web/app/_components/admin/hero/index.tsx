@@ -14,7 +14,6 @@ import { useUpdateProduct } from '@/services/queries/products/use-update-product
 
 import AddSlide from './_components/add-slide';
 import SlideRow from './_components/slide-row';
-
 /**
  * Manage which records appear in the hero carousel, and in what order.
  *
@@ -37,7 +36,7 @@ import SlideRow from './_components/slide-row';
  * React Query keeps serving the optimistic value throughout the background
  * refetch, so there is no window to flash in.
  */
-const HeroManager = () => {
+export default function HeroManager() {
   const queryClient = useQueryClient();
   const { data, isPending } = useSlideProducts();
   const updateMutation = useUpdateProduct();
@@ -119,6 +118,4 @@ const HeroManager = () => {
       </Panel>
     </Stack>
   );
-};
-
-export default HeroManager;
+}

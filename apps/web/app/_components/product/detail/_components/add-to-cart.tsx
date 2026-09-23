@@ -51,7 +51,7 @@ const failureMessage = (error: unknown): string => {
  *
  * @param product - the product being bought
  */
-const AddToCart = ({ product }: { product: Product }) => {
+export default function AddToCart({ product }: { product: Product }) {
   const { data: user } = useMe();
   const { data: cart } = useCart();
   const router = useRouter();
@@ -152,6 +152,4 @@ const AddToCart = ({ product }: { product: Product }) => {
       <StatusDialog open={dialogOpen} notice={notice} onClose={closeDialog} />
     </>
   );
-};
-
-export default AddToCart;
+}
