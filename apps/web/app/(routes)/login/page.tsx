@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 
 import { HttpError } from '@/lib/core/http';
-import { useLogin } from '@/services/queries/auth/use-login';
+import { useLogin } from '@/services/queries/auth/useLogin';
 export default function LoginPage() {
   const router = useRouter();
   const loginMutation = useLogin();

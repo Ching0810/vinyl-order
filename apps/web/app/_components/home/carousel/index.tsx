@@ -9,7 +9,7 @@ import { useEffect, useMemo } from 'react';
 
 import Controls from './_components/controls';
 import Slide from './_components/slide';
-import { type CarouselApi, useCarouselControls } from './_hooks/use-carousel-controls';
+import { type CarouselApi, useCarouselControls } from './_hooks/useCarouselControls';
 
 export type { CarouselApi };
 

@@ -5,7 +5,7 @@ import NextLink from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { useCategories } from '@/services/queries/categories/use-categories';
+import { useCategories } from '@/services/queries/categories/useCategories';
 
 /** Shared frame so the loading, empty and loaded states occupy the same space. */
 const Row = ({ children }: { children: React.ReactNode }) => (

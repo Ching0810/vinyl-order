@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { getSlideProducts } from '@/services/api/products/slides';
 
-import { productsQueryKey } from './use-products';
+import { productsQueryKey } from './useProducts';
 
 /** Cache key for the carousel list — shared so admin mutations can invalidate it. */
 export const slideProductsQueryKey = [...productsQueryKey, 'slides'] as const;

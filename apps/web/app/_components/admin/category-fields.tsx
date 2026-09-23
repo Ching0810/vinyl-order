@@ -4,7 +4,7 @@ import { Checkbox, Field, Skeleton, Text, Wrap } from '@chakra-ui/react';
 import { type Control, Controller } from 'react-hook-form';
 
 import type { ProductFormValues } from '@/components/admin/product-form-fields';
-import { useCategories } from '@/services/queries/categories/use-categories';
+import { useCategories } from '@/services/queries/categories/useCategories';
 /**
  * Which storefront tabs this record appears under.
  *

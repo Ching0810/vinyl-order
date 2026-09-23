@@ -7,8 +7,8 @@ import { useState } from 'react';
 
 import EmptyState from '@/components/ui/empty-state';
 import Paginator from '@/components/ui/paginator';
-import { useMe } from '@/services/queries/auth/use-me';
-import { useOrders } from '@/services/queries/orders/use-orders';
+import { useMe } from '@/services/queries/auth/useMe';
+import { useOrders } from '@/services/queries/orders/useOrders';
 
 import Row from './_components/row';
 

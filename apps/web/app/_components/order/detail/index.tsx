@@ -10,8 +10,8 @@ import { HttpError } from '@/lib/core/http';
 import { formatPrice } from '@/lib/utils/currency';
 import { formatDateTime } from '@/lib/utils/date';
 import { orderReference } from '@/lib/utils/order';
-import { useMe } from '@/services/queries/auth/use-me';
-import { useOrder } from '@/services/queries/orders/use-order';
+import { useMe } from '@/services/queries/auth/useMe';
+import { useOrder } from '@/services/queries/orders/useOrder';
 
 import Line from './_components/line';
 

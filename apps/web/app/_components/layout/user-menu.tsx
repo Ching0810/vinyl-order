@@ -6,7 +6,7 @@ import NextLink from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { UserIcon } from '@/components/ui/icons';
-import { useLogout } from '@/services/queries/auth/use-logout';
+import { useLogout } from '@/services/queries/auth/useLogout';
 /**
  * Logged-in account dropdown: the trigger shows the user's name; the menu holds
  * their identity + role, navigation (Orders, Admin for admins), and Logout.

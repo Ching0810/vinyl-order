@@ -4,7 +4,7 @@ import { Button, HStack, Image, Input, Stack, Text } from '@chakra-ui/react';
 import type { DiscogsLookupResult } from '@vinyl-order/shared';
 import { useState } from 'react';
 
-import { useDiscogsSearch } from '@/services/queries/admin/use-discogs-search';
+import { useDiscogsSearch } from '@/services/queries/admin/useDiscogsSearch';
 /**
  * Discogs import panel for the product form: search releases, then click one to
  * prefill the form via `onPick`. Owns its own search box state + query, so the

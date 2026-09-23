@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { createProduct } from '@/services/api/products/create';
-import { productsQueryKey } from '@/services/queries/products/use-products';
+import { productsQueryKey } from '@/services/queries/products/useProducts';
 
 /** Create-product mutation. Invalidates the list so it refetches with the new row. */
 export const useCreateProduct = () => {

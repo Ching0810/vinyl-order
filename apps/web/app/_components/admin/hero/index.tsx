@@ -5,12 +5,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { Product } from '@vinyl-order/shared';
 
 import Panel from '@/components/admin/panel';
-import { productsQueryKey } from '@/services/queries/products/use-products';
+import { productsQueryKey } from '@/services/queries/products/useProducts';
 import {
   slideProductsQueryKey,
   useSlideProducts,
-} from '@/services/queries/products/use-slide-products';
-import { useUpdateProduct } from '@/services/queries/products/use-update-product';
+} from '@/services/queries/products/useSlideProducts';
+import { useUpdateProduct } from '@/services/queries/products/useUpdateProduct';
 
 import AddSlide from './_components/add-slide';
 import SlideRow from './_components/slide-row';

@@ -6,14 +6,12 @@ import NextLink from 'next/link';
 
 import EmptyState from '@/components/ui/empty-state';
 import { formatPrice } from '@/lib/utils/currency';
-import { useMe } from '@/services/queries/auth/use-me';
-import { useCart } from '@/services/queries/cart/use-cart';
-import {
-  useClearCart,
-  useRemoveCartItem,
-  useUpdateCartItem,
-} from '@/services/queries/cart/use-cart-mutations';
-import { createOrderMutationKey } from '@/services/queries/orders/use-create-order';
+import { useMe } from '@/services/queries/auth/useMe';
+import { useCart } from '@/services/queries/cart/useCart';
+import { useClearCart } from '@/services/queries/cart/useClearCart';
+import { useRemoveCartItem } from '@/services/queries/cart/useRemoveCartItem';
+import { useUpdateCartItem } from '@/services/queries/cart/useUpdateCartItem';
+import { createOrderMutationKey } from '@/services/queries/orders/useCreateOrder';
 
 import Line from './_components/line';
 import PlaceOrder from './_components/place-order';

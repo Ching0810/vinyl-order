@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { login } from '@/services/api/auth/login';
-import { meQueryKey, sessionQueryKey } from '@/services/queries/auth/use-me';
+import { meQueryKey, sessionQueryKey } from '@/services/queries/auth/useMe';
 
 /**
  * Login mutation. On success it primes the `me` query cache with the returned

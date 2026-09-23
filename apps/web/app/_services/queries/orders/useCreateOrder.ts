@@ -5,10 +5,10 @@ import type { Cart } from '@vinyl-order/shared';
 
 import { HttpError } from '@/lib/core/http';
 import { createOrder } from '@/services/api/orders/create';
-import { cartQueryKey } from '@/services/queries/cart/use-cart';
-import { orderQueryKey } from '@/services/queries/orders/use-order';
-import { orderPagesQueryKey } from '@/services/queries/orders/use-orders';
-import { productsQueryKey } from '@/services/queries/products/use-products';
+import { cartQueryKey } from '@/services/queries/cart/useCart';
+import { orderQueryKey } from '@/services/queries/orders/useOrder';
+import { orderPagesQueryKey } from '@/services/queries/orders/useOrders';
+import { productsQueryKey } from '@/services/queries/products/useProducts';
 
 /** Lets the cart lock its controls while an order is being placed. */
 export const createOrderMutationKey = ['createOrder'] as const;

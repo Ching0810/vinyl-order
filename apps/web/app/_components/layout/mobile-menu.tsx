@@ -7,8 +7,8 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { CloseIcon, MenuIcon } from '@/components/ui/icons';
-import { useLogout } from '@/services/queries/auth/use-logout';
-import { useCategories } from '@/services/queries/categories/use-categories';
+import { useLogout } from '@/services/queries/auth/useLogout';
+import { useCategories } from '@/services/queries/categories/useCategories';
 
 /** Account section: the signed-in user's links and Logout, or Login when signed out. */
 const AccountItems = ({ user }: { user: PublicUser | null | undefined }) => {

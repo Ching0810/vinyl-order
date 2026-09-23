@@ -20,5 +20,3 @@ const dateTimeFormat = new Intl.DateTimeFormat('zh-TW', {
  * @param iso - ISO 8601 string, as the contracts carry dates
  */
 export const formatDateTime = (iso: string): string => dateTimeFormat.format(new Date(iso));
-
-export default formatDateTime;

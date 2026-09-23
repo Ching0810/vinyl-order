@@ -9,5 +9,3 @@
  * @param id - the order's UUID
  */
 export const orderReference = (id: string): string => id.slice(0, 8).toUpperCase();
-
-export default orderReference;
