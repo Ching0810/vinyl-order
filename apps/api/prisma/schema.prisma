@@ -100,11 +100,21 @@ model Order {
 
   items OrderItem[]
 
+  /// The client's id for one checkout attempt, so a retry lands on the order
+  /// the first request created instead of making a second one. Null for
+  /// checkouts that sent no key — Postgres treats nulls as distinct, so any
+  /// number of them coexist.
+  idempotencyKey String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   /// "My orders, newest first", which is also the pagination order.
   @@index([userId, createdAt(sort: Desc)])
+  /// Scoped to the user: keys come from clients, so one customer's key must
+  /// never collide with — or reveal — another's. Also the shape of the lookup
+  /// that answers a retry.
+  @@unique([userId, idempotencyKey])
 }
 
 /// One line of an order, with the product copied in as it was at purchase.
