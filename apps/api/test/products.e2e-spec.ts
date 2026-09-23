@@ -62,6 +62,51 @@ describe('Products (e2e)', () => {
     (await request(app.getHttpServer()).get(`/products?${query}`).expect(200))
       .body as Connection<Product>;
 
+  /**
+   * GET /products/hot is a front-page strip, not a catalogue: it answers with
+   * a bounded number of rows however many records are flagged hot, and
+   * whatever a caller asks for.
+   */
+  it('returns hot products newest first, defaulting to 6 and capped at 24', async () => {
+    // More hot records than the cap, so the cap is actually exercised. Which
+    // rows come back isn't asserted: hot records are global, and other specs
+    // (and earlier runs against a database that isn't reset) have their own.
+    await prisma.product.createMany({
+      data: Array.from({ length: 25 }, () => ({
+        title: `Hot ${randomUUID()}`,
+        artist: 'Test Artist',
+        priceCents: 1_000,
+        isHot: true,
+      })),
+    });
+
+    const get = async (query: string) =>
+      (await request(app.getHttpServer()).get(`/products/hot${query}`).expect(200))
+        .body as Product[];
+
+    expect(await get('')).toHaveLength(6);
+    expect(await get('?limit=2')).toHaveLength(2);
+    // Unreadable and out-of-range limits land on the default and the bounds
+    // rather than erroring — a strip on a public page shouldn't 400.
+    expect(await get('?limit=abc')).toHaveLength(6);
+    expect(await get('?limit=0')).toHaveLength(1);
+    expect(await get('?limit=999')).toHaveLength(24);
+
+    // Newest first. The contract carries no dates, so the returned ids are
+    // dated from the rows themselves — which also holds for hot records this
+    // test didn't create.
+    const page = await get('?limit=24');
+    expect(page.every((product) => product.isHot)).toBe(true);
+
+    const rows = await prisma.product.findMany({
+      where: { id: { in: page.map((product) => product.id) } },
+      select: { id: true, createdAt: true },
+    });
+    const dateById = new Map(rows.map((row) => [row.id, row.createdAt.getTime()]));
+    const dates = page.map((product) => dateById.get(product.id) ?? 0);
+    expect(dates).toEqual([...dates].sort((a, b) => b - a));
+  });
+
   it('pages forward and backward over a category exactly once', async () => {
     // Two products share a timestamp, so a page boundary falls between a tie.
     const { slug, newestFirst } = await createCategory([at(1), at(2), at(2), at(3), at(4)]);

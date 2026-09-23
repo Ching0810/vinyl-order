@@ -24,6 +24,16 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
 
+/** What the storefront's hot section draws when it doesn't ask for a size. */
+const DEFAULT_HOT_LIMIT = 6;
+/** A feature strip, not a catalogue: no caller needs more than a screenful. */
+const MAX_HOT_LIMIT = 24;
+
+const clampHotLimit = (limit: number): number =>
+  Number.isFinite(limit)
+    ? Math.min(MAX_HOT_LIMIT, Math.max(1, Math.trunc(limit)))
+    : DEFAULT_HOT_LIMIT;
+
 /**
  * Vinyl catalog. Reads are public; writes are admin-only (JwtAuthGuard verifies
  * the session, RolesGuard checks role === 'admin'). ZodValidationPipe validates
@@ -49,10 +59,14 @@ export class ProductsController {
     return this.products.paginate(toPageArgs({ first, after, last, before }), category);
   }
 
-  /** GET /products/hot — featured products for the storefront hot section. Public. */
+  /**
+   * GET /products/hot?limit= — featured products for the storefront hot
+   * section. Public. Unreadable or missing limits fall back to the default,
+   * and the maximum caps what one request can pull.
+   */
   @Get('hot')
-  hot(): Promise<Product[]> {
-    return this.products.findHot();
+  hot(@Query('limit') limit?: string): Promise<Product[]> {
+    return this.products.findHot(clampHotLimit(Number(limit)));
   }
 
   /**

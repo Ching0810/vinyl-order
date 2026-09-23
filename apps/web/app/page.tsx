@@ -11,6 +11,9 @@ import SectionHeading from '@/components/ui/section-heading';
 import { useHotProducts } from '@/services/queries/products/use-hot-products';
 import { useSlideProducts } from '@/services/queries/products/use-slide-products';
 
+/** Records in the hot strip: one or two grid rows, never a catalogue. */
+const HOT_COUNT = 6;
+
 /**
  * Public storefront home. A Client Component: the carousel and the hot grid are
  * both fetched through React Query, so the data lands in the shared cache and a
@@ -25,10 +28,14 @@ import { useSlideProducts } from '@/services/queries/products/use-slide-products
  */
 const HomePage = () => {
   const { data: slideProducts, isPending: slidesPending } = useSlideProducts();
-  const { data: hotProducts, isPending: hotPending, isError: hotFailed } = useHotProducts();
+  const {
+    data: hotProducts,
+    isPending: hotPending,
+    isError: hotFailed,
+  } = useHotProducts(HOT_COUNT);
 
   const renderHot = () => {
-    if (hotPending) return <GridSkeleton />;
+    if (hotPending) return <GridSkeleton count={HOT_COUNT} />;
     if (hotFailed) return <Text color="fg.error">Couldn&apos;t load products. Please retry.</Text>;
     if (!hotProducts || hotProducts.length === 0) {
       return <Text color="fg.muted">No hot products yet.</Text>;
