@@ -96,14 +96,39 @@ export type Order = z.infer<typeof orderSchema>;
  * - CART_CHANGED: the cart was consumed or edited by another request while
  *   this checkout ran — typically a second tab or a double submit. Nothing was
  *   ordered; reload the cart and look again.
+ * - CHECKOUT_IN_PROGRESS: an earlier request carrying this idempotency key is
+ *   still running, so the order it will create can't be read back yet. Retry
+ *   with the same key in a moment; nothing was ordered twice.
  */
 export const orderErrorCodeSchema = z.enum([
   'CART_EMPTY',
   'INSUFFICIENT_STOCK',
   'MIXED_CURRENCY',
   'CART_CHANGED',
+  'CHECKOUT_IN_PROGRESS',
 ]);
 export type OrderErrorCode = z.infer<typeof orderErrorCodeSchema>;
+
+/**
+ * Header carrying the client's id for one checkout attempt (POST /orders).
+ *
+ * One attempt, one key: every retry of that attempt repeats it, and the server
+ * answers a repeat with the order the first request created (200) instead of
+ * placing a second one. A later checkout is a new attempt and a new key.
+ *
+ * Optional — without it checkout behaves as it always has. Lower-case because
+ * that is how Node normalises incoming header names.
+ */
+export const IDEMPOTENCY_KEY_HEADER = 'idempotency-key';
+
+/** Keys are stored, so their length is the API's business, not the client's. */
+export const IDEMPOTENCY_KEY_MAX_LENGTH = 200;
+
+/**
+ * A client-generated key. Any non-empty string: the server only ever compares
+ * keys, never parses them, so the format is the client's choice.
+ */
+export const idempotencyKeySchema = z.string().trim().min(1).max(IDEMPOTENCY_KEY_MAX_LENGTH);
 
 /** One line that couldn't be fulfilled. */
 export const insufficientStockItemSchema = z.object({

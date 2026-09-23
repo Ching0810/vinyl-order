@@ -1,10 +1,45 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import type { Connection, Order, OrderSummary, PublicUser } from '@vinyl-order/shared';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Headers,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  IDEMPOTENCY_KEY_HEADER,
+  idempotencyKeySchema,
+  type Connection,
+  type Order,
+  type OrderSummary,
+  type PublicUser,
+} from '@vinyl-order/shared';
+import type { Response } from 'express';
 
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { toPageArgs } from '../common/pagination';
 import { OrdersService } from './orders.service';
+
+/**
+ * Read the client's key for this checkout attempt, if it sent one.
+ *
+ * Keys are stored, so an over-long one is refused rather than truncated. The
+ * format is otherwise the client's business: the server only compares keys.
+ */
+const readIdempotencyKey = (header?: string): string | undefined => {
+  if (header === undefined) return undefined;
+
+  const parsed = idempotencyKeySchema.safeParse(header);
+  if (!parsed.success) {
+    throw new BadRequestException(`${IDEMPOTENCY_KEY_HEADER} must be 1-200 characters.`);
+  }
+  return parsed.data;
+};
 
 /**
  * The signed-in customer's orders.
@@ -46,9 +81,25 @@ export class OrdersController {
    * cart itself. If the client sent the lines, the server would have to
    * re-validate every one against the database anyway, and the cart the
    * customer saw could disagree with the order created.
+   *
+   * An optional Idempotency-Key header identifies one checkout attempt, so a
+   * retry of that attempt answers 200 with the order the first request placed
+   * instead of placing a second one. A fresh order answers 201: the status
+   * says whether anything was created, which is what a retrying client wants
+   * to know.
    */
   @Post()
-  checkout(@CurrentUser() user: PublicUser): Promise<Order> {
-    return this.orders.checkout(user.id);
+  async checkout(
+    @CurrentUser() user: PublicUser,
+    @Res({ passthrough: true }) response: Response,
+    @Headers(IDEMPOTENCY_KEY_HEADER) idempotencyKey?: string,
+  ): Promise<Order> {
+    const { order, created } = await this.orders.checkout(
+      user.id,
+      readIdempotencyKey(idempotencyKey),
+    );
+
+    response.status(created ? HttpStatus.CREATED : HttpStatus.OK);
+    return order;
   }
 }

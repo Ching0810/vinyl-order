@@ -3,7 +3,14 @@ import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import type { Connection, InsufficientStockError, Order, OrderSummary } from '@vinyl-order/shared';
+import {
+  IDEMPOTENCY_KEY_HEADER,
+  IDEMPOTENCY_KEY_MAX_LENGTH,
+  type Connection,
+  type InsufficientStockError,
+  type Order,
+  type OrderSummary,
+} from '@vinyl-order/shared';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
@@ -65,8 +72,18 @@ describe('Orders (e2e)', () => {
     return { user, token: jwt.sign(payload) };
   };
 
-  const checkout = (token: string) =>
-    request(app.getHttpServer()).post('/orders').set('Authorization', `Bearer ${token}`);
+  /**
+   * POST /orders, optionally carrying an idempotency key.
+   *
+   * @param token - the customer's session
+   * @param idempotencyKey - the client's id for this attempt
+   */
+  const checkout = (token: string, idempotencyKey?: string) => {
+    const call = request(app.getHttpServer())
+      .post('/orders')
+      .set('Authorization', `Bearer ${token}`);
+    return idempotencyKey ? call.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey) : call;
+  };
 
   /**
    * The test the design doc calls "the one that matters": ten buyers, one
@@ -262,6 +279,105 @@ describe('Orders (e2e)', () => {
         title: product.title,
       }),
     ]);
+  });
+
+  /**
+   * A retry is not a second order. The cart claim already stops a double
+   * submit, but it cannot help once the cart is empty — which is exactly the
+   * state a retry arrives in. See docs/design/idempotency.md.
+   */
+  describe('idempotency key', () => {
+    it('answers a repeat with the order the first request placed', async () => {
+      const product = await createProduct(5);
+      const { user, token } = await createBuyer([{ productId: product.id, quantity: 2 }]);
+      const key = randomUUID();
+
+      const first = await checkout(token, key).expect(201);
+      // The cart is empty by now: without the key this would be CART_EMPTY.
+      const repeat = await checkout(token, key).expect(200);
+
+      expect((repeat.body as Order).id).toBe((first.body as Order).id);
+      expect(await prisma.order.count({ where: { userId: user.id } })).toBe(1);
+      // Stock moved once, for the first request only.
+      const after = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+      expect(after.stock).toBe(3);
+    });
+
+    it.each([1, 2, 3])(
+      'places one order when the same key arrives twice at once (round %i)',
+      async () => {
+        const product = await createProduct(5);
+        const { user, token } = await createBuyer([{ productId: product.id, quantity: 1 }]);
+        const key = randomUUID();
+
+        const responses = await Promise.all([checkout(token, key), checkout(token, key)]);
+
+        expect(await prisma.order.count({ where: { userId: user.id } })).toBe(1);
+        const after = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+        expect(after.stock).toBe(4);
+
+        // One request created the order; the other either reads it back, or —
+        // in the window before the winner commits — is asked to retry.
+        const created = responses.find((res) => res.status === 201);
+        const loser = responses.find((res) => res !== created);
+        expect(created).toBeDefined();
+        if (loser?.status === 200) {
+          expect((loser.body as Order).id).toBe((created?.body as Order).id);
+        } else {
+          expect(loser?.status).toBe(409);
+          expect((loser?.body as { code: string }).code).toBe('CHECKOUT_IN_PROGRESS');
+        }
+      },
+    );
+
+    it('treats a different key as a new attempt', async () => {
+      const product = await createProduct(5);
+      const { token } = await createBuyer([{ productId: product.id, quantity: 1 }]);
+
+      await checkout(token, randomUUID()).expect(201);
+      // A new attempt against a cart the first one consumed.
+      const second = await checkout(token, randomUUID()).expect(409);
+
+      expect(['CART_EMPTY', 'CART_CHANGED']).toContain((second.body as { code: string }).code);
+    });
+
+    it('scopes keys to the customer', async () => {
+      const product = await createProduct(5);
+      const key = 'shared-key-not-a-uuid';
+      const alice = await createBuyer([{ productId: product.id, quantity: 1 }]);
+      const bob = await createBuyer([{ productId: product.id, quantity: 1 }]);
+
+      const first = await checkout(alice.token, key).expect(201);
+      // Bob's checkout is untouched by Alice having used the same string.
+      const second = await checkout(bob.token, key).expect(201);
+
+      expect((second.body as Order).id).not.toBe((first.body as Order).id);
+    });
+
+    /** A failed attempt writes no order, so its key is free to try again. */
+    it('does not consume the key when the checkout failed', async () => {
+      const product = await createProduct(1);
+      const { user, token } = await createBuyer([{ productId: product.id, quantity: 5 }]);
+      const key = randomUUID();
+
+      await checkout(token, key).expect(409);
+      await prisma.product.update({ where: { id: product.id }, data: { stock: 5 } });
+      const retry = await checkout(token, key).expect(201);
+
+      expect((retry.body as Order).lineCount).toBe(1);
+      expect(await prisma.order.count({ where: { userId: user.id } })).toBe(1);
+    });
+
+    it('refuses an over-long key without ordering anything', async () => {
+      const product = await createProduct(5);
+      const { user, token } = await createBuyer([{ productId: product.id, quantity: 1 }]);
+
+      await checkout(token, 'k'.repeat(IDEMPOTENCY_KEY_MAX_LENGTH + 1)).expect(400);
+
+      expect(await prisma.order.count({ where: { userId: user.id } })).toBe(0);
+      const after = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+      expect(after.stock).toBe(5);
+    });
   });
 
   describe('order history', () => {

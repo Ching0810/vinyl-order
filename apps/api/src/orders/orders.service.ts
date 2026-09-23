@@ -62,6 +62,25 @@ class ShortStockError extends Error {
   }
 }
 
+/** What checkout answered with, and whether it placed the order just now. */
+export interface CheckoutResult {
+  order: OrderContract;
+  /** False when an idempotency key matched an order an earlier request placed. */
+  created: boolean;
+}
+
+/**
+ * Did this write lose the race for an idempotency key?
+ *
+ * P2002 is Prisma's unique-constraint violation, and the target names the
+ * index — so a clash on some other unique, were one added to Order, is not
+ * mistaken for a repeated checkout.
+ */
+const isDuplicateKey = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === 'P2002' &&
+  JSON.stringify(error.meta?.target ?? '').includes('idempotencyKey');
+
 /** 409 body: a code the web can branch on, not a message it has to match. */
 const conflict = (code: string, message: string, extra: object = {}): ConflictException =>
   new ConflictException({ statusCode: 409, code, message, ...extra });
@@ -126,95 +145,170 @@ export class OrdersService {
   /**
    * Place the signed-in user's cart as an order.
    *
+   * With an idempotency key, a retry of the same attempt answers with the
+   * order the first request placed rather than placing a second one. The
+   * lookup here is only an optimisation — it saves doing the work — and the
+   * unique index on (userId, idempotencyKey) is what actually decides, at
+   * write time, the way the stock guard and the cart claim do.
+   *
+   * @param userId - the customer checking out
+   * @param idempotencyKey - the client's id for this attempt, if it sent one
+   */
+  async checkout(userId: string, idempotencyKey?: string): Promise<CheckoutResult> {
+    if (idempotencyKey) {
+      const existing = await this.findByIdempotencyKey(userId, idempotencyKey);
+      if (existing) return { order: existing, created: false };
+    }
+
+    try {
+      return { order: await this.placeOrder(userId, idempotencyKey), created: true };
+    } catch (error) {
+      const order = await this.orderFromLostRace(userId, idempotencyKey, error);
+      return { order, created: false };
+    }
+  }
+
+  /** The order an earlier request placed under this key, if it has committed. */
+  private async findByIdempotencyKey(
+    userId: string,
+    idempotencyKey: string,
+  ): Promise<OrderContract | null> {
+    const order = await this.prisma.order.findUnique({
+      where: { userId_idempotencyKey: { userId, idempotencyKey } },
+      include: withItems,
+    });
+    return order ? this.toContract(order) : null;
+  }
+
+  /**
+   * Turn the cart into an order, or throw.
+   *
    * Nothing slow may go in here. The transaction holds a row lock on every
    * product it decrements until it commits, so anything waiting on those
    * records waits for us — payment and email belong after the commit, against
    * a `pending` order.
    */
-  async checkout(userId: string): Promise<OrderContract> {
-    try {
-      const order = await this.prisma.$transaction(
-        async (transaction) => {
-          const cartItems = await transaction.cartItem.findMany({
-            where: { cart: { userId } },
-            include: { product: true },
-          });
-          if (cartItems.length === 0) {
-            throw conflict('CART_EMPTY', 'Your cart is empty.');
-          }
+  private async placeOrder(userId: string, idempotencyKey?: string): Promise<OrderContract> {
+    const order = await this.prisma.$transaction(
+      async (transaction) => {
+        const cartItems = await transaction.cartItem.findMany({
+          where: { cart: { userId } },
+          include: { product: true },
+        });
+        if (cartItems.length === 0) {
+          throw conflict('CART_EMPTY', 'Your cart is empty.');
+        }
 
-          // One order carries one total, so it can only carry one currency.
-          // The storefront already assumes a single currency; this enforces it
-          // rather than inventing multi-currency totals nobody needs yet.
-          const currency = cartItems[0].product.currency;
-          if (cartItems.some((cartItem) => cartItem.product.currency !== currency)) {
-            throw conflict('MIXED_CURRENCY', 'All records in an order must share one currency.');
-          }
+        // One order carries one total, so it can only carry one currency.
+        // The storefront already assumes a single currency; this enforces it
+        // rather than inventing multi-currency totals nobody needs yet.
+        const currency = cartItems[0].product.currency;
+        if (cartItems.some((cartItem) => cartItem.product.currency !== currency)) {
+          throw conflict('MIXED_CURRENCY', 'All records in an order must share one currency.');
+        }
 
-          await this.claimCartItems(transaction, cartItems);
-          await this.takeStock(transaction, cartItems);
+        await this.claimCartItems(transaction, cartItems);
+        await this.takeStock(transaction, cartItems);
 
-          return transaction.order.create({
-            data: {
-              userId,
-              currency,
-              // Stored, not derived: an order's total must not move if a
-              // product is repriced later.
-              subtotalCents: cartItems.reduce(
-                (sum, cartItem) => sum + cartItem.product.priceCents * cartItem.quantity,
-                0,
-              ),
-              // status defaults to `pending` in the database — the one place
-              // "a new order starts pending" is defined.
-              items: {
-                create: cartItems.map((cartItem) => ({
-                  productId: cartItem.productId,
-                  quantity: cartItem.quantity,
-                  // Copied at purchase and never read from Product again. This
-                  // is what lets an order survive a reprice or a delete.
-                  unitPriceCents: cartItem.product.priceCents,
-                  title: cartItem.product.title,
-                  artist: cartItem.product.artist,
-                  imageUrl: cartItem.product.imageUrl,
-                })),
-              },
+        return transaction.order.create({
+          data: {
+            userId,
+            currency,
+            // Stored, not derived: an order's total must not move if a
+            // product is repriced later.
+            subtotalCents: cartItems.reduce(
+              (sum, cartItem) => sum + cartItem.product.priceCents * cartItem.quantity,
+              0,
+            ),
+            // Null when the client sent no key. Nulls don't collide in a
+            // Postgres unique index, so keyless checkouts never compete.
+            idempotencyKey: idempotencyKey ?? null,
+            // status defaults to `pending` in the database — the one place
+            // "a new order starts pending" is defined.
+            items: {
+              create: cartItems.map((cartItem) => ({
+                productId: cartItem.productId,
+                quantity: cartItem.quantity,
+                // Copied at purchase and never read from Product again. This
+                // is what lets an order survive a reprice or a delete.
+                unitPriceCents: cartItem.product.priceCents,
+                title: cartItem.product.title,
+                artist: cartItem.product.artist,
+                imageUrl: cartItem.product.imageUrl,
+              })),
             },
-            include: withItems,
-          });
-        },
-        // Prisma's defaults, stated so they read as a choice. Checkouts queue
-        // behind each other on hot records, but each one is a handful of fast
-        // statements; a timeout here means something is holding locks too long
-        // and is worth investigating rather than raising.
-        { maxWait: 2_000, timeout: 5_000 },
-      );
+          },
+          include: withItems,
+        });
+      },
+      // Prisma's defaults, stated so they read as a choice. Checkouts queue
+      // behind each other on hot records, but each one is a handful of fast
+      // statements; a timeout here means something is holding locks too long
+      // and is worth investigating rather than raising.
+      { maxWait: 2_000, timeout: 5_000 },
+    );
 
-      return this.toContract(order);
-    } catch (error) {
-      if (!(error instanceof ShortStockError)) throw error;
+    return this.toContract(order);
+  }
 
-      // The transaction has rolled back, so this reads the real current stock
-      // rather than our own reverted decrements. It is informational only: by
-      // the time the customer reads it, someone else may have taken more.
-      const products = await this.prisma.product.findMany({
-        where: { id: { in: error.shortItems.map((item) => item.productId) } },
-        select: { id: true, stock: true },
-      });
-      const stockById = new Map(products.map((product) => [product.id, product.stock]));
+  /**
+   * A checkout failed: decide whether it lost a race it should be forgiven for.
+   *
+   * A retry carrying a key the winner already used — beaten to the cart lines,
+   * or to the unique index — is answered with the winner's order, which is the
+   * whole point of the key. The exception is the narrow window where the
+   * winner has not committed yet: there is nothing to read back, so the client
+   * is asked to retry rather than told something untrue.
+   */
+  private async orderFromLostRace(
+    userId: string,
+    idempotencyKey: string | undefined,
+    error: unknown,
+  ): Promise<OrderContract> {
+    if (idempotencyKey) {
+      const existing = await this.findByIdempotencyKey(userId, idempotencyKey);
+      if (existing) return existing;
 
-      throw conflict(
-        'INSUFFICIENT_STOCK',
-        'Some records no longer have enough stock.',
-        // Every short item at once, so the customer fixes them in one pass
-        // instead of one per attempt.
-        {
-          items: error.shortItems.map((item) => ({
-            ...item,
-            available: stockById.get(item.productId) ?? 0,
-          })),
-        },
-      );
+      if (isDuplicateKey(error)) {
+        throw conflict(
+          'CHECKOUT_IN_PROGRESS',
+          'Your earlier attempt is still being processed. Try again in a moment.',
+        );
+      }
     }
+
+    throw await this.toClientError(error);
+  }
+
+  /**
+   * Shape a failed checkout as the error the client should see: short stock
+   * becomes the 409 listing every line that couldn't be filled; anything else
+   * passes through as it is.
+   */
+  private async toClientError(error: unknown): Promise<unknown> {
+    if (!(error instanceof ShortStockError)) return error;
+
+    // The transaction has rolled back, so this reads the real current stock
+    // rather than our own reverted decrements. It is informational only: by
+    // the time the customer reads it, someone else may have taken more.
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: error.shortItems.map((item) => item.productId) } },
+      select: { id: true, stock: true },
+    });
+    const stockById = new Map(products.map((product) => [product.id, product.stock]));
+
+    return conflict(
+      'INSUFFICIENT_STOCK',
+      'Some records no longer have enough stock.',
+      // Every short item at once, so the customer fixes them in one pass
+      // instead of one per attempt.
+      {
+        items: error.shortItems.map((item) => ({
+          ...item,
+          available: stockById.get(item.productId) ?? 0,
+        })),
+      },
+    );
   }
 
   /**
