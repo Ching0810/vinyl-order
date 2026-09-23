@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { logout } from '@/services/api/auth/logout';
-import { meQueryKey } from '@/services/queries/auth/use-me';
+import { meQueryKey } from '@/services/queries/auth/useMe';
 
 /**
  * Logout mutation. On success it clears the cached user (so the header flips to

@@ -7,7 +7,7 @@ import { useParams } from 'next/navigation';
 import PageShell from '@/components/layout/page-shell';
 import Detail from '@/components/product/detail';
 import { HttpError } from '@/lib/core/http';
-import { useProduct } from '@/services/queries/products/use-product';
+import { useProduct } from '@/services/queries/products/useProduct';
 
 /** Placeholder matching the detail layout so nothing shifts when data lands. */
 const DetailSkeleton = () => (

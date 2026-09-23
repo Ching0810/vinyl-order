@@ -8,8 +8,8 @@ import { useState } from 'react';
 import ProductTable from '@/components/admin/product-table';
 import Paginator from '@/components/ui/paginator';
 import SectionHeading from '@/components/ui/section-heading';
-import { useDeleteProduct } from '@/services/queries/products/use-delete-product';
-import { useProducts } from '@/services/queries/products/use-products';
+import { useDeleteProduct } from '@/services/queries/products/useDeleteProduct';
+import { useProducts } from '@/services/queries/products/useProducts';
 
 const PAGE_SIZE = 10;
 

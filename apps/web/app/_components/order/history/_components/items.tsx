@@ -5,7 +5,7 @@ import NextLink from 'next/link';
 
 import Cover from '@/components/order/cover';
 import { formatPrice } from '@/lib/utils/currency';
-import { useOrder } from '@/services/queries/orders/use-order';
+import { useOrder } from '@/services/queries/orders/useOrder';
 /**
  * Every line of one order, shown when its history row is expanded.
  *

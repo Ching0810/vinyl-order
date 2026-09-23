@@ -5,10 +5,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { Category } from '@vinyl-order/shared';
 
 import Panel from '@/components/admin/panel';
-import { categoriesQueryKey, useCategories } from '@/services/queries/categories/use-categories';
-import { useCreateCategory } from '@/services/queries/categories/use-create-category';
-import { useDeleteCategory } from '@/services/queries/categories/use-delete-category';
-import { useUpdateCategory } from '@/services/queries/categories/use-update-category';
+import { categoriesQueryKey, useCategories } from '@/services/queries/categories/useCategories';
+import { useCreateCategory } from '@/services/queries/categories/useCreateCategory';
+import { useDeleteCategory } from '@/services/queries/categories/useDeleteCategory';
+import { useUpdateCategory } from '@/services/queries/categories/useUpdateCategory';
 
 import AddCategory from './_components/add-category';
 import CategoryRow from './_components/category-row';

@@ -7,8 +7,8 @@ import CategoryNav from '@/components/layout/category-nav';
 import MobileMenu from '@/components/layout/mobile-menu';
 import UserMenu from '@/components/layout/user-menu';
 import { CartIcon, DiscIcon } from '@/components/ui/icons';
-import { useMe } from '@/services/queries/auth/use-me';
-import { useCart } from '@/services/queries/cart/use-cart';
+import { useMe } from '@/services/queries/auth/useMe';
+import { useCart } from '@/services/queries/cart/useCart';
 /**
  * Storefront banner. A client island over the (server-rendered) catalog:
  * - the category tabs are the primary navigation, centred between the logo and

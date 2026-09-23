@@ -8,8 +8,8 @@ import Grid from '@/components/product/grid';
 import GridSkeleton from '@/components/product/grid-skeleton';
 import Search from '@/components/product/search';
 import SectionHeading from '@/components/ui/section-heading';
-import { useHotProducts } from '@/services/queries/products/use-hot-products';
-import { useSlideProducts } from '@/services/queries/products/use-slide-products';
+import { useHotProducts } from '@/services/queries/products/useHotProducts';
+import { useSlideProducts } from '@/services/queries/products/useSlideProducts';
 
 /** Records in the hot strip: one or two grid rows, never a catalogue. */
 const HOT_COUNT = 6;

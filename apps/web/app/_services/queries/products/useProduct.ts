@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { getProduct } from '@/services/api/products/detail';
-import { productsQueryKey } from '@/services/queries/products/use-products';
+import { productsQueryKey } from '@/services/queries/products/useProducts';
 
 /** Cache key for a single product — nested under the list key so both invalidate together. */
 export const productQueryKey = (id: string) => [...productsQueryKey, id] as const;

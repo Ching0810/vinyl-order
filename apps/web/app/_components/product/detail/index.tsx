@@ -5,7 +5,7 @@ import type { Product } from '@vinyl-order/shared';
 import Image from 'next/image';
 
 import { formatPrice } from '@/lib/utils/currency';
-import { useMe } from '@/services/queries/auth/use-me';
+import { useMe } from '@/services/queries/auth/useMe';
 
 import AddToCart from './_components/add-to-cart';
 import AdminPanel from './_components/admin-panel';

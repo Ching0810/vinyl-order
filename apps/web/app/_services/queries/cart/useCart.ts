@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { getCart } from '@/services/api/cart/get';
-import { sessionQueryKey, useMe } from '@/services/queries/auth/use-me';
+import { sessionQueryKey, useMe } from '@/services/queries/auth/useMe';
 
 /** Cache key for the signed-in user's cart — under the session root, so a change of user clears it. */
 export const cartQueryKey = [...sessionQueryKey, 'cart'] as const;

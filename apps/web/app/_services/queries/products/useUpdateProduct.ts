@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UpdateProductInput } from '@vinyl-order/shared';
 
 import { updateProduct } from '@/services/api/products/update';
-import { productsQueryKey } from '@/services/queries/products/use-products';
+import { productsQueryKey } from '@/services/queries/products/useProducts';
 
 /**
  * Update-product mutation. Takes `{ id, input }`; on success invalidates the

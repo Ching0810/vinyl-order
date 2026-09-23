@@ -5,7 +5,7 @@ import { insufficientStockErrorSchema, orderErrorCodeSchema } from '@vinyl-order
 import { useRouter } from 'next/navigation';
 
 import { HttpError } from '@/lib/core/http';
-import { useCreateOrder } from '@/services/queries/orders/use-create-order';
+import { useCreateOrder } from '@/services/queries/orders/useCreateOrder';
 
 /** What went wrong, in the customer's terms. */
 interface CheckoutProblem {

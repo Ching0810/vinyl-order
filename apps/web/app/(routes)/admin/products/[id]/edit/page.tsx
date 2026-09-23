@@ -9,8 +9,8 @@ import ProductForm from '@/components/admin/product-form';
 import type { ProductFormValues } from '@/components/admin/product-form-fields';
 import SectionHeading from '@/components/ui/section-heading';
 import { HttpError } from '@/lib/core/http';
-import { useProduct } from '@/services/queries/products/use-product';
-import { useUpdateProduct } from '@/services/queries/products/use-update-product';
+import { useProduct } from '@/services/queries/products/useProduct';
+import { useUpdateProduct } from '@/services/queries/products/useUpdateProduct';
 
 /** Map a saved Product into the UI-friendly form shape (cents→major, arrays→csv). */
 const toFormValues = (product: Product): ProductFormValues => {

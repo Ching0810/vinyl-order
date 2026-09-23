@@ -7,7 +7,7 @@ import { useForm, useWatch } from 'react-hook-form';
 
 import DiscogsImport from '@/components/admin/discogs-import';
 import ProductFormFields, { type ProductFormValues } from '@/components/admin/product-form-fields';
-import { useUploadImage } from '@/services/queries/uploads/use-upload-image';
+import { useUploadImage } from '@/services/queries/uploads/useUploadImage';
 
 const splitCsv = (text: string): string[] =>
   text

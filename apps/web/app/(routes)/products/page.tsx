@@ -10,8 +10,8 @@ import Grid from '@/components/product/grid';
 import GridSkeleton from '@/components/product/grid-skeleton';
 import Paginator from '@/components/ui/paginator';
 import SectionHeading from '@/components/ui/section-heading';
-import { useCategories } from '@/services/queries/categories/use-categories';
-import { useProducts } from '@/services/queries/products/use-products';
+import { useCategories } from '@/services/queries/categories/useCategories';
+import { useProducts } from '@/services/queries/products/useProducts';
 
 const PAGE_SIZE = 12;
 

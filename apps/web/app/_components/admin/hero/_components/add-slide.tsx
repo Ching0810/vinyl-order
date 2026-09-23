@@ -6,9 +6,9 @@ import type { Product } from '@vinyl-order/shared';
 import Image from 'next/image';
 import { useState } from 'react';
 
-import { useDebouncedValue } from '@/lib/core/use-debounced-value';
+import { useDebouncedValue } from '@/lib/core/useDebouncedValue';
 import { searchProducts } from '@/services/api/products/search';
-import { productsQueryKey } from '@/services/queries/products/use-products';
+import { productsQueryKey } from '@/services/queries/products/useProducts';
 
 /** Cap the picker so a broad search can't produce an endless list. */
 const MAX_RESULTS = 6;

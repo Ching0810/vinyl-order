@@ -3,8 +3,8 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { getOrder } from '@/services/api/orders/detail';
-import { useMe } from '@/services/queries/auth/use-me';
-import { ordersQueryKey } from '@/services/queries/orders/use-orders';
+import { useMe } from '@/services/queries/auth/useMe';
+import { ordersQueryKey } from '@/services/queries/orders/useOrders';
 
 /** Cache key for one order — under the orders root, beside the history pages. */
 export const orderQueryKey = (id: string) => [...ordersQueryKey, id] as const;

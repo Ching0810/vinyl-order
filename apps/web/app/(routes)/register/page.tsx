@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 
 import { HttpError } from '@/lib/core/http';
-import { useRegister } from '@/services/queries/auth/use-register';
+import { useRegister } from '@/services/queries/auth/useRegister';
 export default function RegisterPage() {
   const router = useRouter();
   const registerMutation = useRegister();

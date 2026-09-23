@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Cart } from '@vinyl-order/shared';
 
-import { cartQueryKey } from '@/services/queries/cart/use-cart';
+import { cartQueryKey } from '@/services/queries/cart/useCart';
 
 /**
  * The shape every cart write shares.

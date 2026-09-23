@@ -2,8 +2,8 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 
-import { categoriesQueryKey } from '@/services/queries/categories/use-categories';
-import { productsQueryKey } from '@/services/queries/products/use-products';
+import { categoriesQueryKey } from '@/services/queries/categories/useCategories';
+import { productsQueryKey } from '@/services/queries/products/useProducts';
 
 /**
  * Category writes all invalidate the same two things: the tab list, and the

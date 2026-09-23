@@ -4,7 +4,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { PageArgs } from '@vinyl-order/shared';
 
 import { getOrders } from '@/services/api/orders/list';
-import { sessionQueryKey, useMe } from '@/services/queries/auth/use-me';
+import { sessionQueryKey, useMe } from '@/services/queries/auth/useMe';
 
 /**
  * Root key for the signed-in user's orders — under the session root, so a

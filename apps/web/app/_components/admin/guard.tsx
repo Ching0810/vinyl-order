@@ -4,7 +4,7 @@ import { Center, Spinner } from '@chakra-ui/react';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useEffect } from 'react';
 
-import { useMe } from '@/services/queries/auth/use-me';
+import { useMe } from '@/services/queries/auth/useMe';
 /**
  * Client-side gate for admin pages: shows a spinner while auth resolves, then
  * redirects non-admins home. This is UX only — the API enforces real security

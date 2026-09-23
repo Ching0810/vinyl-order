@@ -5,7 +5,7 @@ import { Container, Text } from '@chakra-ui/react';
 import ProductForm, { blankProductForm } from '@/components/admin/product-form';
 import SectionHeading from '@/components/ui/section-heading';
 import { HttpError } from '@/lib/core/http';
-import { useCreateProduct } from '@/services/queries/products/use-create-product';
+import { useCreateProduct } from '@/services/queries/products/useCreateProduct';
 export default function NewProductForm() {
   const createMutation = useCreateProduct();
 

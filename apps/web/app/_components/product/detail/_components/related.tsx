@@ -7,7 +7,7 @@ import Grid from '@/components/product/grid';
 import GridSkeleton from '@/components/product/grid-skeleton';
 import SectionHeading from '@/components/ui/section-heading';
 import { searchProducts } from '@/services/api/products/search';
-import { productsQueryKey } from '@/services/queries/products/use-products';
+import { productsQueryKey } from '@/services/queries/products/useProducts';
 
 /** How many other releases to show. */
 const MAX_RELATED = 4;
