@@ -18,8 +18,10 @@ export const meQueryKey = ['auth', 'me'] as const;
 export const sessionQueryKey = ['session'] as const;
 
 /**
- * Current auth state. `data` is the user when logged in; a 401 surfaces as
- * `error` (retry disabled so an unauthenticated visitor isn't retried).
+ * Current auth state: `data` is the user when signed in, and null when not —
+ * not an error, so every page can ask. `error` is left for real failures (the
+ * API being unreachable), and retry stays off so a failing call isn't repeated
+ * on every page.
  */
 export const useMe = () =>
   useQuery({
