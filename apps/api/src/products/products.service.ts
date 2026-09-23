@@ -42,11 +42,17 @@ export class ProductsService {
     );
   }
 
-  /** Featured products for the storefront hot section. */
-  findHot(): Promise<Product[]> {
+  /**
+   * Featured products for the storefront hot section, newest first.
+   *
+   * @param limit - how many to return; the caller's layout decides, so the
+   *   section never loads rows it won't draw
+   */
+  findHot(limit: number): Promise<Product[]> {
     return this.prisma.product.findMany({
       where: { isHot: true },
       orderBy: { createdAt: 'desc' },
+      take: limit,
     });
   }
 
