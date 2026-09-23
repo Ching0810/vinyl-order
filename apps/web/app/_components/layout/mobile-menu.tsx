@@ -31,8 +31,8 @@ const AccountItems = ({ user }: { user: PublicUser | null | undefined }) => {
   return (
     <Menu.ItemGroup>
       <Menu.ItemGroupLabel truncate>{user.name ?? user.email}</Menu.ItemGroupLabel>
-      <Menu.Item value="account" asChild>
-        <NextLink href="/account">Account</NextLink>
+      <Menu.Item value="orders" asChild>
+        <NextLink href="/orders">Orders</NextLink>
       </Menu.Item>
       {user.role === 'admin' ? (
         <Menu.Item value="admin" asChild>

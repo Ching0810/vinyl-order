@@ -35,6 +35,9 @@ const Line = ({
   const { product, quantity } = item;
   const outOfStock = product.stock === 0;
   const overStock = quantity > product.stock;
+  // + stops at the stock shown (and the cart's per-line limit of 99), the same
+  // ceiling as the product page; a line already over it can only come down.
+  const maxQuantity = Math.min(product.stock, 99);
 
   return (
     <HStack
@@ -101,7 +104,7 @@ const Line = ({
             size="xs"
             variant="outline"
             aria-label="Increase quantity"
-            disabled={busy || quantity >= 99}
+            disabled={busy || quantity >= maxQuantity}
             onClick={() => onQuantityChange(quantity + 1)}
           >
             +

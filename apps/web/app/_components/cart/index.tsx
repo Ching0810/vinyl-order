@@ -1,8 +1,10 @@
 'use client';
 
-import { Box, Button, Flex, HStack, Skeleton, Stack, Text } from '@chakra-ui/react';
+import { Box, Button, Flex, Skeleton, Stack, Text } from '@chakra-ui/react';
+import { useIsMutating } from '@tanstack/react-query';
 import NextLink from 'next/link';
 
+import EmptyState from '@/components/ui/empty-state';
 import { formatPrice } from '@/lib/utils/currency';
 import { useMe } from '@/services/queries/auth/use-me';
 import { useCart } from '@/services/queries/cart/use-cart';
@@ -11,19 +13,10 @@ import {
   useRemoveCartItem,
   useUpdateCartItem,
 } from '@/services/queries/cart/use-cart-mutations';
+import { createOrderMutationKey } from '@/services/queries/orders/use-create-order';
 
 import Line from './_components/line';
-
-/** Shown when there is nothing to display, for any of several reasons. */
-const Empty = ({ title, body, cta }: { title: string; body: string; cta: React.ReactNode }) => (
-  <Stack gap="4" align="start" py="10">
-    <Text fontSize="xl" fontWeight="semibold">
-      {title}
-    </Text>
-    <Text color="fg.muted">{body}</Text>
-    {cta}
-  </Stack>
-);
+import PlaceOrder from './_components/place-order';
 
 /**
  * The signed-in customer's cart.
@@ -35,7 +28,8 @@ const Empty = ({ title, body, cta }: { title: string; body: string; cta: React.R
  * Stock is surfaced per line but never blocks: reserving stock when something
  * enters a cart is its own problem (expiry, abandonment), and the real check
  * belongs in the transactional decrement at checkout. The warning here is so
- * the shopper isn't surprised there.
+ * the shopper isn't surprised there — and for the same reason it doesn't
+ * disable Place order: the cart's stock may be stale, and only checkout knows.
  */
 const CartView = () => {
   const { data: user, isPending: authPending } = useMe();
@@ -45,13 +39,17 @@ const CartView = () => {
   const removeMutation = useRemoveCartItem();
   const clearMutation = useClearCart();
 
-  const busy = updateMutation.isPending || removeMutation.isPending || clearMutation.isPending;
+  // Placing an order locks the lines too: an edit mid-checkout would either be
+  // ignored or fail the order as CART_CHANGED.
+  const placing = useIsMutating({ mutationKey: createOrderMutationKey }) > 0;
+  const busy =
+    updateMutation.isPending || removeMutation.isPending || clearMutation.isPending || placing;
 
   if (authPending) return <Skeleton h="32" borderRadius="card" />;
 
   if (!user) {
     return (
-      <Empty
+      <EmptyState
         title="Sign in to see your cart"
         body="Your cart is tied to your account, so it follows you between devices."
         cta={
@@ -74,7 +72,7 @@ const CartView = () => {
 
   if (!cart || cart.items.length === 0) {
     return (
-      <Empty
+      <EmptyState
         title="Your cart is empty"
         body="Nothing here yet. Browse the catalogue and add a record."
         cta={
@@ -124,7 +122,7 @@ const CartView = () => {
           Clear cart
         </Button>
 
-        <HStack gap="6" justify="end">
+        <Stack gap="4" align={{ base: 'stretch', sm: 'end' }}>
           <Box textAlign="end">
             <Text fontSize="xs" color="fg.subtle" letterSpacing="label" textTransform="uppercase">
               Subtotal · {cart.itemCount} {cart.itemCount === 1 ? 'item' : 'items'}
@@ -133,7 +131,8 @@ const CartView = () => {
               {formatPrice(cart.subtotalCents, currency)}
             </Text>
           </Box>
-        </HStack>
+          <PlaceOrder disabled={busy} />
+        </Stack>
       </Flex>
     </Stack>
   );
