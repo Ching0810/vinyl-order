@@ -1,6 +1,5 @@
 import { Box, Flex, Heading, Stack, Text } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
-
 /**
  * Editorial heading for a section or a screen: a small amber eyebrow, an
  * oversized title, an optional description, and an optional trailing action.
@@ -15,7 +14,7 @@ import type { ReactNode } from 'react';
  * @param description - optional one-line explanation beneath the title
  * @param action - optional node pinned to the trailing edge (e.g. a link)
  */
-const SectionHeading = ({
+export default function SectionHeading({
   eyebrow,
   title,
   description,
@@ -25,24 +24,24 @@ const SectionHeading = ({
   title: string;
   description?: string;
   action?: ReactNode;
-}) => (
-  <Stack gap="5" mb="8">
-    <Flex align={{ base: 'start', sm: 'end' }} justify="space-between" gap="4" wrap="wrap">
-      <Stack gap="2">
-        <Text textStyle="eyebrow">{eyebrow}</Text>
-        <Heading textStyle="display" fontSize={{ base: '2xl', md: '3xl' }}>
-          {title}
-        </Heading>
-        {description ? (
-          <Text fontSize="sm" color="fg.muted">
-            {description}
-          </Text>
-        ) : null}
-      </Stack>
-      {action}
-    </Flex>
-    <Box borderTopWidth="1px" borderColor="border" />
-  </Stack>
-);
-
-export default SectionHeading;
+}) {
+  return (
+    <Stack gap="5" mb="8">
+      <Flex align={{ base: 'start', sm: 'end' }} justify="space-between" gap="4" wrap="wrap">
+        <Stack gap="2">
+          <Text textStyle="eyebrow">{eyebrow}</Text>
+          <Heading textStyle="display" fontSize={{ base: '2xl', md: '3xl' }}>
+            {title}
+          </Heading>
+          {description ? (
+            <Text fontSize="sm" color="fg.muted">
+              {description}
+            </Text>
+          ) : null}
+        </Stack>
+        {action}
+      </Flex>
+      <Box borderTopWidth="1px" borderColor="border" />
+    </Stack>
+  );
+}

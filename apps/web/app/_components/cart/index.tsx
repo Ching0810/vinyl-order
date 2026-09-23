@@ -17,7 +17,6 @@ import { createOrderMutationKey } from '@/services/queries/orders/use-create-ord
 
 import Line from './_components/line';
 import PlaceOrder from './_components/place-order';
-
 /**
  * The signed-in customer's cart.
  *
@@ -31,7 +30,7 @@ import PlaceOrder from './_components/place-order';
  * the shopper isn't surprised there — and for the same reason it doesn't
  * disable Place order: the cart's stock may be stale, and only checkout knows.
  */
-const CartView = () => {
+export default function CartView() {
   const { data: user, isPending: authPending } = useMe();
   const { data: cart, isPending } = useCart();
 
@@ -136,6 +135,4 @@ const CartView = () => {
       </Flex>
     </Stack>
   );
-};
-
-export default CartView;
+}

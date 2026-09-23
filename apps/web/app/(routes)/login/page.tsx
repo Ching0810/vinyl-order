@@ -9,8 +9,7 @@ import { useForm } from 'react-hook-form';
 
 import { HttpError } from '@/lib/core/http';
 import { useLogin } from '@/services/queries/auth/use-login';
-
-const LoginPage = () => {
+export default function LoginPage() {
   const router = useRouter();
   const loginMutation = useLogin();
 
@@ -82,6 +81,4 @@ const LoginPage = () => {
       </form>
     </Box>
   );
-};
-
-export default LoginPage;
+}

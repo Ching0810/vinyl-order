@@ -7,7 +7,6 @@ import NextLink from 'next/link';
 
 import { CloseIcon } from '@/components/ui/icons';
 import { formatPrice } from '@/lib/utils/currency';
-
 /**
  * One line in the cart: cover, release, unit price, a quantity stepper and the
  * line total.
@@ -21,7 +20,7 @@ import { formatPrice } from '@/lib/utils/currency';
  * @param item - the cart line
  * @param busy - a cart write is in flight; controls lock to avoid racing
  */
-const Line = ({
+export default function Line({
   item,
   busy,
   onQuantityChange,
@@ -31,7 +30,7 @@ const Line = ({
   busy: boolean;
   onQuantityChange: (quantity: number) => void;
   onRemove: () => void;
-}) => {
+}) {
   const { product, quantity } = item;
   const outOfStock = product.stock === 0;
   const overStock = quantity > product.stock;
@@ -126,6 +125,4 @@ const Line = ({
       </Stack>
     </HStack>
   );
-};
-
-export default Line;
+}

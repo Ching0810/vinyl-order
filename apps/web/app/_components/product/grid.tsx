@@ -10,17 +10,16 @@ import Card from './card';
  * for not deferring the one image that decides the LCP score.
  */
 const ABOVE_FOLD_COUNT = 4;
-
 /**
  * Responsive grid of product tiles. Column count and gutter both step up with
  * the viewport: two dense columns on a phone, four airy ones on a desktop.
  */
-const Grid = ({ products }: { products: Product[] }) => (
-  <SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} gap={{ base: '3', sm: '4', md: '6' }}>
-    {products.map((product, index) => (
-      <Card key={product.id} product={product} eager={index < ABOVE_FOLD_COUNT} />
-    ))}
-  </SimpleGrid>
-);
-
-export default Grid;
+export default function Grid({ products }: { products: Product[] }) {
+  return (
+    <SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} gap={{ base: '3', sm: '4', md: '6' }}>
+      {products.map((product, index) => (
+        <Card key={product.id} product={product} eager={index < ABOVE_FOLD_COUNT} />
+      ))}
+    </SimpleGrid>
+  );
+}

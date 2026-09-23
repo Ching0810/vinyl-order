@@ -66,7 +66,6 @@ const describeProblem = (error: unknown): CheckoutProblem => {
     description: 'Something went wrong on our side. Nothing was ordered — please try again.',
   };
 };
-
 /**
  * The checkout button, and why it failed when it does.
  *
@@ -80,7 +79,7 @@ const describeProblem = (error: unknown): CheckoutProblem => {
  * @param disabled - the cart can't be ordered as it stands (a write is in
  *   flight, or a line wants more than is in stock)
  */
-const PlaceOrder = ({ disabled }: { disabled: boolean }) => {
+export default function PlaceOrder({ disabled }: { disabled: boolean }) {
   const router = useRouter();
   const createOrder = useCreateOrder();
 
@@ -125,6 +124,4 @@ const PlaceOrder = ({ disabled }: { disabled: boolean }) => {
       ) : null}
     </Stack>
   );
-};
-
-export default PlaceOrder;
+}

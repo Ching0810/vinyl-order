@@ -5,7 +5,6 @@ import type { Category } from '@vinyl-order/shared';
 import { useState } from 'react';
 
 import { ChevronDownIcon, ChevronUpIcon } from '@/components/ui/icons';
-
 /**
  * One tab in the admin list: its label, slug, how many products it holds, and
  * the controls to reorder, rename or remove it.
@@ -13,7 +12,7 @@ import { ChevronDownIcon, ChevronUpIcon } from '@/components/ui/icons';
  * The product count is shown next to Delete on purpose — removing a category
  * cascades its assignments, so "西洋 · 96 products" is the warning.
  */
-const CategoryRow = ({
+export default function CategoryRow({
   category,
   isFirst,
   isLast,
@@ -31,7 +30,7 @@ const CategoryRow = ({
   onMoveDown: () => void;
   onSave: (values: { name: string; slug: string }) => void;
   onDelete: () => void;
-}) => {
+}) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(category.name);
   const [slug, setSlug] = useState(category.slug);
@@ -137,6 +136,4 @@ const CategoryRow = ({
       </HStack>
     </HStack>
   );
-};
-
-export default CategoryRow;
+}

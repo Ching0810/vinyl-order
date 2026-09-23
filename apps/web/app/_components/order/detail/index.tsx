@@ -22,7 +22,6 @@ const DetailSkeleton = () => (
     <Skeleton h="28" borderRadius="card" />
   </Stack>
 );
-
 /**
  * One of the customer's orders: status, date, every line and the total —
  * all from what was copied at checkout, so it reads the same after a record is
@@ -37,7 +36,7 @@ const DetailSkeleton = () => (
  * @param id - the order's id, from the URL
  * @param placed - arrived straight from checkout
  */
-const OrderDetail = ({ id, placed }: { id: string; placed: boolean }) => {
+export default function OrderDetail({ id, placed }: { id: string; placed: boolean }) {
   const { data: user, isPending: authPending } = useMe();
   const { data: order, isPending, error } = useOrder(id);
 
@@ -123,6 +122,4 @@ const OrderDetail = ({ id, placed }: { id: string; placed: boolean }) => {
       </Flex>
     </Stack>
   );
-};
-
-export default OrderDetail;
+}

@@ -3,7 +3,7 @@
 import { Button, Stack, Text } from '@chakra-ui/react';
 import type { CreateProductInput, DiscogsLookupResult } from '@vinyl-order/shared';
 import { type ChangeEvent } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 
 import DiscogsImport from '@/components/admin/discogs-import';
 import ProductFormFields, { type ProductFormValues } from '@/components/admin/product-form-fields';
@@ -36,20 +36,19 @@ interface Props {
    */
   onSubmit: (payload: CreateProductInput, helpers: { reset: () => void }) => void;
 }
-
 /**
  * Shared add/edit product form. Owns the react-hook-form instance, the Discogs
  * prefill, and image upload; maps the UI-friendly ProductFormValues to the API
  * contract on submit. The page wires the actual create/update mutation via props.
  */
-const ProductForm = ({
+export default function ProductForm({
   initialValues,
   submitLabel,
   submitting,
   errorMessage,
   onSubmit,
   enableDiscogsImport = false,
-}: Props) => {
+}: Props) {
   const uploadMutation = useUploadImage();
 
   const {
@@ -57,12 +56,13 @@ const ProductForm = ({
     control,
     handleSubmit,
     setValue,
-    watch,
     reset,
     formState: { errors },
   } = useForm<ProductFormValues>({ defaultValues: initialValues });
 
-  const imageUrl = watch('imageUrl');
+  // useWatch rather than watch(): watch returns a function that can't be
+  // memoized, which opts this component out of React Compiler optimisation.
+  const imageUrl = useWatch({ control, name: 'imageUrl' });
 
   // Fill metadata fields from a chosen Discogs result; price/stock stay as set.
   const prefillFrom = (result: DiscogsLookupResult) => {
@@ -127,7 +127,7 @@ const ProductForm = ({
       </form>
     </>
   );
-};
+}
 
 /** Empty form state for the create page. */
 export const blankProductForm: ProductFormValues = {
@@ -145,5 +145,3 @@ export const blankProductForm: ProductFormValues = {
   slideOrder: null,
   categoryIds: [],
 };
-
-export default ProductForm;

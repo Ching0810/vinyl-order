@@ -11,7 +11,6 @@ import { productsQueryKey } from '@/services/queries/products/use-products';
 
 /** How many other releases to show. */
 const MAX_RELATED = 4;
-
 /**
  * Other releases by the same artist.
  *
@@ -24,7 +23,7 @@ const MAX_RELATED = 4;
  * @param artist - artist whose other releases to show
  * @param excludeId - the product currently being viewed
  */
-const Related = ({ artist, excludeId }: { artist: string; excludeId: string }) => {
+export default function Related({ artist, excludeId }: { artist: string; excludeId: string }) {
   const { data, isPending } = useQuery({
     queryKey: [...productsQueryKey, 'search', artist],
     queryFn: () => searchProducts(artist),
@@ -40,6 +39,4 @@ const Related = ({ artist, excludeId }: { artist: string; excludeId: string }) =
       {isPending ? <GridSkeleton count={MAX_RELATED} /> : <Grid products={others} />}
     </Box>
   );
-};
-
-export default Related;
+}

@@ -6,8 +6,7 @@ import ProductForm, { blankProductForm } from '@/components/admin/product-form';
 import SectionHeading from '@/components/ui/section-heading';
 import { HttpError } from '@/lib/core/http';
 import { useCreateProduct } from '@/services/queries/products/use-create-product';
-
-const NewProductForm = () => {
+export default function NewProductForm() {
   const createMutation = useCreateProduct();
 
   const errorMessage = (() => {
@@ -45,6 +44,4 @@ const NewProductForm = () => {
       />
     </Container>
   );
-};
-
-export default NewProductForm;
+}
