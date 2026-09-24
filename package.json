@@ -19,5 +19,5 @@
     "lint-staged": "^16.2.0",
     "prettier": "^3.6.2"
   },
-  "packageManager": "pnpm@10.31.0"
+  "packageManager": "pnpm@10.34.5"
 }
