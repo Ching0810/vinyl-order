@@ -16,6 +16,7 @@ import { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
 import type { JwtPayload } from '../src/auth/jwt.strategy';
+import { isDuplicateKey } from '../src/orders/orders.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 /**
@@ -329,6 +330,41 @@ describe('Orders (e2e)', () => {
         }
       },
     );
+
+    /**
+     * The race above rarely reaches the unique index: the loser is usually
+     * stopped at the cart first. So the check that recognises the index is
+     * tested on its own, against a real violation — its shape is Prisma's to
+     * change, and it did once without any race test noticing.
+     */
+    describe('recognising a duplicate key', () => {
+      /** The error a write throws, so a test can assert on it. */
+      const errorFrom = async (write: Promise<unknown>): Promise<unknown> => {
+        try {
+          await write;
+        } catch (error) {
+          return error;
+        }
+        throw new Error('Expected the write to fail');
+      };
+
+      it('recognises the idempotency key index', async () => {
+        const { user } = await createBuyer([]);
+        const data = { userId: user.id, subtotalCents: 0, currency: 'TWD', idempotencyKey: 'k' };
+        await prisma.order.create({ data });
+
+        expect(isDuplicateKey(await errorFrom(prisma.order.create({ data })))).toBe(true);
+      });
+
+      it('ignores a violation of some other unique index', async () => {
+        const { user } = await createBuyer([]);
+        const duplicateEmail = prisma.user.create({
+          data: { email: user.email, passwordHash: 'unused' },
+        });
+
+        expect(isDuplicateKey(await errorFrom(duplicateEmail))).toBe(false);
+      });
+    });
 
     it('treats a different key as a new attempt', async () => {
       const product = await createProduct(5);
