@@ -1,0 +1,96 @@
+# Checks every pull request, and main after a merge, with the same commands we
+# run locally. Four jobs rather than one so a red check names the failure in
+# the PR list, and so lint doesn't wait for a database to boot.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push to a PR cancels the run still working on the previous commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      # --frozen-lockfile: a lockfile that doesn't match package.json fails
+      # here rather than quietly resolving to different versions.
+      # postinstall generates the Prisma client, which is not in version control.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  test:
+    runs-on: ubuntu-latest
+
+    # Matches apps/api/.env.test exactly — that file is committed and holds
+    # only test values, so the suite needs no secrets. The database name must
+    # end in _test or global-setup refuses to reset it.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vinyl
+          POSTGRES_PASSWORD: vinyl
+          POSTGRES_DB: vinyl_test
+        ports:
+          - 5432:5432
+        # Without this the tests start before Postgres accepts connections.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The api imports @vinyl-order/shared at runtime from its dist, so the
+      # tests need it built — types alone resolve from src.
+      - run: pnpm --filter @vinyl-order/shared build
+      # test/global-setup.ts replays every migration into vinyl_test, so there
+      # is no migration step here.
+      - run: pnpm --filter api test:e2e
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Catches what tsc alone doesn't: the React Compiler, Next's route
+      # collection, and the Nest build.
+      - run: pnpm build
