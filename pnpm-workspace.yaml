@@ -2,9 +2,10 @@ packages:
   - apps/*
   - packages/*
 
-onlyBuiltDependencies:
-  - bcrypt
-
-ignoredBuiltDependencies:
-  - sharp
-  - unrs-resolver
+allowBuilds:
+  '@nestjs/core': false
+  '@prisma/engines': false
+  bcrypt: true
+  prisma: false
+  sharp: false
+  unrs-resolver: false
