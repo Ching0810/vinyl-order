@@ -69,17 +69,35 @@ export interface CheckoutResult {
   created: boolean;
 }
 
+/** Named by Prisma's default for `@@unique([userId, idempotencyKey])` on Order. */
+const IDEMPOTENCY_KEY_INDEX = 'Order_userId_idempotencyKey_key';
+
+/**
+ * The part of a P2002's `meta` that names the violated index. With a driver
+ * adapter there is no `meta.target`; @prisma/adapter-pg reports the index
+ * Postgres named, under `driverAdapterError.cause.constraint`.
+ */
+type UniqueViolationMeta = {
+  driverAdapterError?: { cause?: { constraint?: { index?: string } } };
+};
+
 /**
  * Did this write lose the race for an idempotency key?
  *
- * P2002 is Prisma's unique-constraint violation, and the target names the
- * index — so a clash on some other unique, were one added to Order, is not
- * mistaken for a repeated checkout.
+ * P2002 is Prisma's unique-constraint violation, and the index it names is
+ * checked too — so a clash on some other unique, were one added to Order, is
+ * not mistaken for a repeated checkout.
+ *
+ * Exported for its test, which pins the error shape this depends on: it
+ * belongs to Prisma, and changed once already without anything failing.
  */
-const isDuplicateKey = (error: unknown): boolean =>
-  error instanceof Prisma.PrismaClientKnownRequestError &&
-  error.code === 'P2002' &&
-  JSON.stringify(error.meta?.target ?? '').includes('idempotencyKey');
+export const isDuplicateKey = (error: unknown): boolean => {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+    return false;
+  }
+  const meta = error.meta as UniqueViolationMeta | undefined;
+  return meta?.driverAdapterError?.cause?.constraint?.index === IDEMPOTENCY_KEY_INDEX;
+};
 
 /** 409 body: a code the web can branch on, not a message it has to match. */
 const conflict = (code: string, message: string, extra: object = {}): ConflictException =>
