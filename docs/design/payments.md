@@ -147,6 +147,7 @@ interface PaymentProvider {
     amountCents: number;
     currency: string;
     expiresAt: Date;
+    /** Names this attempt: /orders/:orderId/payments/:paymentId (§9). */
     returnUrl: string;
   }): Promise<{ providerSessionId: string; redirectUrl: string }>;
 
@@ -263,13 +264,14 @@ orders nobody can pay for.
 
 ## 7. API
 
-| Method & path                   | Who               | What                                                |
-| ------------------------------- | ----------------- | --------------------------------------------------- |
-| `POST /orders/:id/payment`      | the order's owner | start a payment; returns `{ redirectUrl }`          |
-| `POST /orders/:id/cancel`       | the order's owner | cancel a `pending` order; returns the order         |
-| `POST /payments/webhook`        | the provider      | signed event; `2xx` once handled or already handled |
-| `GET /admin/orders?status=paid` | admin             | orders waiting to ship, cursor-paginated            |
-| `POST /admin/orders/:id/ship`   | admin             | `paid` → `shipped`; returns the order               |
+| Method & path                         | Who               | What                                                |
+| ------------------------------------- | ----------------- | --------------------------------------------------- |
+| `POST /orders/:id/payment`            | the order's owner | start a payment; returns `{ redirectUrl }`          |
+| `GET /orders/:id/payments/:paymentId` | the order's owner | one attempt's status, with its order's status       |
+| `POST /orders/:id/cancel`             | the order's owner | cancel a `pending` order; returns the order         |
+| `POST /payments/webhook`              | the provider      | signed event; `2xx` once handled or already handled |
+| `GET /admin/orders?status=paid`       | admin             | orders waiting to ship, cursor-paginated            |
+| `POST /admin/orders/:id/ship`         | admin             | `paid` → `shipped`; returns the order               |
 
 **Errors** follow the checkout contract (a `code` the web branches on):
 
@@ -288,6 +290,11 @@ cannot fix.
 **`POST /orders/:id/payment` is safe to repeat:** if the order has a `pending`
 `Payment` whose session is still open, it returns that session's URL instead of
 starting a second one.
+
+**The `Payment` id exists before the session does.** The return URL has to name
+the attempt (§9), but the provider only hands back its session id once asked.
+So the API generates the `Payment` id first, builds the return URL from it,
+calls `createSession`, and then inserts the row with both ids.
 
 ## 8. Algorithms
 
@@ -373,14 +380,58 @@ calls and another state, so it is left for when refunds arrive.
 - `paid` / `shipped` / `cancelled`: the status and its timestamp; a cancelled
   order says whether it expired or was cancelled.
 
-**Returning from MockPay:** the browser lands on `/orders/[id]?payment=returned`.
-That redirect **proves nothing** — anyone can type the URL — so the page does
-not show "paid" because of it. It shows "Confirming your payment…" and polls
-`GET /orders/:id` every 2 seconds until the status changes, giving up after 30
-seconds with "still processing, refresh later". Only the webhook makes an order
-`paid`.
+### 9.1 The payment return route
 
-**Admin:** a list of `paid` orders with a **Mark shipped** button per row.
+After **Pay** or **Decline**, MockPay sends the browser to:
+
+```
+/orders/[id]/payments/[paymentId]
+```
+
+**Why the attempt is in the path.** An order can have several attempts — a
+declined card, then a second try. A return URL that only says "you came back"
+(`/orders/[id]?payment=returned`) cannot tell attempt 1's decline from attempt
+2's success, so a slow webhook for the first could be shown as the result of
+the second. Naming the attempt means the page asks about exactly the payment
+the customer just made.
+
+**Route shape.**
+
+- **Plural `/orders`**, matching the existing `/orders` and `/orders/[id]`
+  routes and the API.
+- **A named `payments/` segment** under the order detail: the result page is a
+  child of `/orders/[id]`, not a second mode of it, and the path reads as "this
+  order's payment".
+
+**What the page does.** The redirect **proves nothing** — anyone can type the
+URL — so the page never shows "paid" because it was reached. It renders the
+order and polls `GET /orders/:id/payments/:paymentId` every 2 seconds:
+
+| Payment     | Order       | Page shows                                                  |
+| ----------- | ----------- | ----------------------------------------------------------- |
+| `pending`   | `pending`   | "Confirming your payment…" (keep polling)                   |
+| `succeeded` | `paid`      | the paid order                                              |
+| `failed`    | `pending`   | "Payment declined", with **Pay now** to start a new attempt |
+| `succeeded` | `cancelled` | "Paid after the order expired — we will refund you" (§8.4)  |
+
+It stops after 30 seconds with "Still processing — refresh later". Only the
+webhook changes these statuses; the page only reads them.
+
+**Another customer's payment id** is a `404`, and so is a `paymentId` that
+belongs to a different order — the same rule as `GET /orders/:id`.
+
+**Route file:** `apps/web/app/(routes)/orders/[id]/payments/[paymentId]/page.tsx`,
+kept thin as usual — it reads the params and hands rendering to a component
+under `app/_components/`.
+
+**Later:** if paying grows its own UI on our side — choosing a method,
+installments, invoice details — it gets a dedicated page such as
+`/orders/[id]/pay`. While MockPay hosts the form, a button on the order detail
+is enough.
+
+### 9.2 Admin
+
+A list of `paid` orders with a **Mark shipped** button per row.
 
 ## 10. Testing
 
@@ -414,6 +465,14 @@ row lock or a unique index, which a mock would pass while proving nothing.
   still taken, or `cancelled` with stock returned — never both, never neither.
 - The losing-payment case appears in the "paid but cancelled" admin query.
 
+**Payment return (§9.1)**
+
+- A declined attempt followed by a successful one: each attempt's
+  `GET /orders/:id/payments/:paymentId` reports its own result, even when the
+  first attempt's webhook arrives last.
+- Another customer's payment, and a payment id under the wrong order, are `404`.
+- The return URL MockPay receives names the `Payment` row that was inserted.
+
 **Time** is injected (a `Clock` provider), so expiry tests set `now` instead of
 waiting 15 minutes.
 
@@ -423,10 +482,11 @@ waiting 15 minutes.
    `PaymentEvent`. Shared contract gains the new fields.
 2. `cancelOrder` + `POST /orders/:id/cancel`, with the restock-once tests.
 3. The sweeper and the `Clock`, with the expiry tests.
-4. `PaymentProvider`, MockPay, `POST /orders/:id/payment`.
+4. `PaymentProvider`, MockPay, `POST /orders/:id/payment`,
+   `GET /orders/:id/payments/:paymentId`.
 5. The webhook, with the signature, duplicate and race tests.
 6. Admin list and ship.
-7. Web: detail page actions, return polling, admin page.
+7. Web: detail page actions, the payment return route (§9.1), admin page.
 
 Cancelling comes first because it is the smallest complete use of the new
 lifecycle, and the sweeper and the late-payment race both build on it.
