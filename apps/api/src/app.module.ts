@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AuthModule } from './auth/auth.module';
@@ -37,6 +38,10 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
       // concurrent-checkout spec alone fires dozens of requests at once.
       skipIf: () => NODE_ENV === 'test',
     }),
+    // Runs @Cron jobs such as the order expiry sweep. Left out under test: a
+    // sweep firing mid-test would cancel orders a test is still racing on, so
+    // tests call the jobs themselves instead.
+    ...(NODE_ENV === 'test' ? [] : [ScheduleModule.forRoot()]),
     PrismaModule,
     UsersModule,
     AuthModule,
