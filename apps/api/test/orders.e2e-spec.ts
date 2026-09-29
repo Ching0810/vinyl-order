@@ -422,6 +422,108 @@ describe('Orders (e2e)', () => {
     });
   });
 
+  describe('cancelling', () => {
+    /** POST /orders/:id/cancel as the given customer. */
+    const cancel = (token: string, orderId: string) =>
+      request(app.getHttpServer())
+        .post(`/orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${token}`);
+
+    /**
+     * A customer with a real placed order, so stock was actually taken and a
+     * cancel has something to give back.
+     */
+    const placeOrder = async (stock: number, quantity: number) => {
+      const product = await createProduct(stock);
+      const buyer = await createBuyer([{ productId: product.id, quantity }]);
+      const placed = await checkout(buyer.token).expect(201);
+      return { ...buyer, product, order: placed.body as Order };
+    };
+
+    const stockOf = async (productId: string) =>
+      (await prisma.product.findUniqueOrThrow({ where: { id: productId } })).stock;
+
+    type NotPendingError = { code: string; status: string };
+
+    it('cancels a pending order and returns its stock', async () => {
+      const { token, product, order } = await placeOrder(5, 2);
+      expect(await stockOf(product.id)).toBe(3);
+
+      const res = await cancel(token, order.id).expect(200);
+
+      const body = res.body as Order;
+      expect(body.status).toBe('cancelled');
+      expect(body.cancelReason).toBe('customer');
+      expect(body.cancelledAt).not.toBeNull();
+      expect(await stockOf(product.id)).toBe(5);
+    });
+
+    it('refuses a second cancel and returns the stock only once', async () => {
+      const { token, product, order } = await placeOrder(5, 2);
+
+      await cancel(token, order.id).expect(200);
+      const second = await cancel(token, order.id).expect(409);
+
+      expect(second.body as NotPendingError).toEqual(
+        expect.objectContaining({ code: 'ORDER_NOT_PENDING', status: 'cancelled' }),
+      );
+      expect(await stockOf(product.id)).toBe(5);
+    });
+
+    /**
+     * The guarantee the sweeper will lean on: however many cancellers arrive
+     * together, one wins and the copies come back once. Repeated for the same
+     * reason as the checkout races.
+     */
+    it.each([1, 2, 3, 4, 5])(
+      'returns the stock once when two cancels race (round %i)',
+      async () => {
+        const { token, product, order } = await placeOrder(5, 2);
+
+        const responses = await Promise.all([cancel(token, order.id), cancel(token, order.id)]);
+
+        expect(responses.map((res) => res.status).sort()).toEqual([200, 409]);
+        expect(await stockOf(product.id)).toBe(5);
+      },
+    );
+
+    it('skips a line whose product was deleted and restocks the rest', async () => {
+      const [kept, deleted] = await Promise.all([createProduct(5), createProduct(5)]);
+      const { token } = await createBuyer([
+        { productId: kept.id, quantity: 2 },
+        { productId: deleted.id, quantity: 1 },
+      ]);
+      const order = (await checkout(token).expect(201)).body as Order;
+      await prisma.product.delete({ where: { id: deleted.id } });
+
+      await cancel(token, order.id).expect(200);
+
+      expect(await stockOf(kept.id)).toBe(5);
+    });
+
+    it("hides another customer's order and leaves it pending", async () => {
+      const { order } = await placeOrder(5, 1);
+      const stranger = await createBuyer([]);
+
+      await cancel(stranger.token, order.id).expect(404);
+
+      const after = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(after.status).toBe('pending');
+    });
+
+    it('refuses to cancel a paid order and keeps its stock taken', async () => {
+      const { token, product, order } = await placeOrder(5, 2);
+      await prisma.order.update({ where: { id: order.id }, data: { status: 'paid' } });
+
+      const res = await cancel(token, order.id).expect(409);
+
+      expect(res.body as NotPendingError).toEqual(
+        expect.objectContaining({ code: 'ORDER_NOT_PENDING', status: 'paid' }),
+      );
+      expect(await stockOf(product.id)).toBe(3);
+    });
+  });
+
   describe('order history', () => {
     /**
      * An order written directly, with a chosen timestamp so tests know the

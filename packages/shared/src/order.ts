@@ -117,6 +117,9 @@ export type Order = z.infer<typeof orderSchema>;
  * - CHECKOUT_IN_PROGRESS: an earlier request carrying this idempotency key is
  *   still running, so the order it will create can't be read back yet. Retry
  *   with the same key in a moment; nothing was ordered twice.
+ * - ORDER_NOT_PENDING: the order has already left `pending` (paid, shipped or
+ *   cancelled), so it can no longer be cancelled. The body carries its current
+ *   `status` so the page can re-render without another request.
  */
 export const orderErrorCodeSchema = z.enum([
   'CART_EMPTY',
@@ -124,6 +127,7 @@ export const orderErrorCodeSchema = z.enum([
   'MIXED_CURRENCY',
   'CART_CHANGED',
   'CHECKOUT_IN_PROGRESS',
+  'ORDER_NOT_PENDING',
 ]);
 export type OrderErrorCode = z.infer<typeof orderErrorCodeSchema>;
 

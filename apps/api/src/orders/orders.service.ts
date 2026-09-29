@@ -206,6 +206,59 @@ export class OrdersService {
     }
   }
 
+  /**
+   * Cancel one of the user's pending orders and return its stock.
+   *
+   * 404 for someone else's order, as in findOne. 409 ORDER_NOT_PENDING once
+   * the order has left `pending`, carrying its current status.
+   */
+  async cancel(userId: string, id: string): Promise<OrderContract> {
+    if (await this.cancelOrder({ id, userId }, 'customer')) {
+      return this.findOne(userId, id);
+    }
+
+    // The update in cancelOrder already decided; this read only explains why
+    // it changed nothing.
+    const order = await this.prisma.order.findFirst({
+      where: { id, userId },
+      select: { status: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    throw conflict('ORDER_NOT_PENDING', 'This order can no longer be cancelled.', {
+      status: order.status,
+    });
+  }
+
+  /**
+   * Move a pending order to `cancelled` and return its stock — exactly once.
+   *
+   * The conditional update is the whole decision. Of any number of concurrent
+   * cancellers (the customer, the expiry sweeper, a second tab), only the one
+   * that still finds the order `pending` changes a row, and only that one
+   * restocks. Restocking unconditionally would return the same copies twice.
+   *
+   * Knows nothing of HTTP, so the sweeper can call it too.
+   *
+   * @param order - the order to cancel, scoped to its owner when a customer acts
+   * @param reason - who ended it: the customer, or the payment deadline
+   * @returns whether this call cancelled the order
+   */
+  async cancelOrder(
+    order: { id: string; userId?: string },
+    reason: CancelReason,
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      const { count } = await transaction.order.updateMany({
+        where: { ...order, status: 'pending' },
+        data: { status: 'cancelled', cancelledAt: new Date(), cancelReason: reason },
+      });
+      if (count === 0) return false;
+
+      await this.returnStock(transaction, order.id);
+      return true;
+    });
+  }
+
   /** The order an earlier request placed under this key, if it has committed. */
   private async findByIdempotencyKey(
     userId: string,
@@ -430,6 +483,32 @@ export class OrdersService {
     // Throwing rolls back the decrements that did succeed: the customer gets
     // every record or none, never a partial order.
     if (shortItems.length > 0) throw new ShortStockError(shortItems);
+  }
+
+  /**
+   * Put a cancelled order's copies back on sale.
+   *
+   * Lines whose product has since been deleted are skipped: there is nothing
+   * to put them back on. Products are locked in takeStock's order, so a cancel
+   * and a checkout over the same records queue instead of deadlocking.
+   */
+  private async returnStock(transaction: Prisma.TransactionClient, orderId: string): Promise<void> {
+    const items = await transaction.orderItem.findMany({
+      where: { orderId },
+      select: { productId: true, quantity: true },
+    });
+    const lines = items
+      .flatMap(({ productId, quantity }) => (productId ? [{ productId, quantity }] : []))
+      .sort((a, b) => a.productId.localeCompare(b.productId));
+
+    for (const line of lines) {
+      // updateMany, not update: a product deleted since the read above is
+      // skipped rather than failing the cancel.
+      await transaction.product.updateMany({
+        where: { id: line.productId },
+        data: { stock: { increment: line.quantity } },
+      });
+    }
   }
 
   /** Shape an order row for the wire. Nothing here reads a live product. */
