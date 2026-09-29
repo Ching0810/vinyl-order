@@ -1,12 +1,11 @@
 'use client';
 
 import { Accordion, Button, Skeleton, Stack, Text } from '@chakra-ui/react';
-import type { PageArgs } from '@vinyl-order/shared';
 import NextLink from 'next/link';
-import { useState } from 'react';
 
 import EmptyState from '@/components/ui/empty-state';
 import Paginator from '@/components/ui/paginator';
+import { type PageTarget, pageCount, useCursorPages } from '@/hooks/useCursorPages';
 import { useMe } from '@/services/queries/auth/useMe';
 import { useOrders } from '@/services/queries/orders/useOrders';
 
@@ -28,14 +27,13 @@ const HistorySkeleton = () => (
  * record in it. Several can be open at once, and `lazyMount` keeps an order's
  * lines unfetched until it is first opened.
  *
- * Paging is cursor-based like the catalogue: Previous and Next step to the
- * adjacent page, and `pageNum` only tells the customer roughly where they are.
+ * Paging is cursor-based like the catalogue (see useCursorPages): first,
+ * adjacent and last pages.
  */
 export default function OrderHistory() {
   const { data: user, isPending: authPending } = useMe();
-  const [args, setArgs] = useState<PageArgs>({ first: PAGE_SIZE });
-  const [pageNum, setPageNum] = useState(1);
-  const { data, isPending, isError, isPlaceholderData } = useOrders(args);
+  const pages = useCursorPages(PAGE_SIZE);
+  const { data, isPending, isError, isPlaceholderData } = useOrders(pages.args);
 
   if (authPending) return <HistorySkeleton />;
 
@@ -57,9 +55,8 @@ export default function OrderHistory() {
   if (isError) return <Text color="fg.error">Couldn&apos;t load your orders. Please retry.</Text>;
 
   const orders = data.edges.map((edge) => edge.node);
-  const { pageInfo } = data;
 
-  if (orders.length === 0 && pageNum === 1) {
+  if (orders.length === 0 && pages.page === 1) {
     return (
       <EmptyState
         title="No orders yet"
@@ -73,9 +70,8 @@ export default function OrderHistory() {
     );
   }
 
-  const turn = (next: PageArgs, step: number) => {
-    setArgs(next);
-    setPageNum((n) => Math.max(1, n + step));
+  const turn = (target: PageTarget) => {
+    pages.go(target, data);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -90,12 +86,12 @@ export default function OrderHistory() {
       </Accordion.Root>
 
       <Paginator
-        pageNum={pageNum}
-        hasPrevious={pageInfo.hasPreviousPage}
-        hasNext={pageInfo.hasNextPage}
+        page={pages.page}
+        totalPages={pageCount(data.totalCount, PAGE_SIZE)}
+        hasPrevious={data.pageInfo.hasPreviousPage}
+        hasNext={data.pageInfo.hasNextPage}
         busy={isPlaceholderData}
-        onPrevious={() => turn({ last: PAGE_SIZE, before: pageInfo.startCursor ?? undefined }, -1)}
-        onNext={() => turn({ first: PAGE_SIZE, after: pageInfo.endCursor ?? undefined }, 1)}
+        onChange={turn}
       />
     </>
   );
