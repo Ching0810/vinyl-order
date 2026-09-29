@@ -48,7 +48,7 @@ export default function Row({ order }: { order: OrderSummary }) {
 
           <Stack gap="1.5" align="end" flexShrink="0">
             <Text fontWeight="bold">{formatPrice(order.subtotalCents, order.currency)}</Text>
-            <StatusBadge status={order.status} />
+            <StatusBadge status={order.status} cancelReason={order.cancelReason} />
           </Stack>
         </Flex>
 
