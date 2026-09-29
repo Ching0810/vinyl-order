@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { SearchIcon } from '@/components/ui/icons';
-import { useDebouncedValue } from '@/lib/core/useDebouncedValue';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { searchProducts } from '@/services/api/products/search';
 
 import Results from './_components/results';

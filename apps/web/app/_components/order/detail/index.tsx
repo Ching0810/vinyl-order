@@ -13,7 +13,13 @@ import { orderReference } from '@/lib/utils/order';
 import { useMe } from '@/services/queries/auth/useMe';
 import { useOrder } from '@/services/queries/orders/useOrder';
 
+import CancelledNote from './_components/cancelled-note';
 import Line from './_components/line';
+import PaymentWindow from './_components/payment-window';
+
+/** How long checkout holds the records, as the order itself records it. */
+const holdMinutes = (order: { createdAt: string; expiresAt: string }): number =>
+  Math.round((Date.parse(order.expiresAt) - Date.parse(order.createdAt)) / 60_000);
 
 const DetailSkeleton = () => (
   <Stack gap="3">
@@ -81,7 +87,8 @@ export default function OrderDetail({ id, placed }: { id: string; placed: boolea
           <Alert.Content>
             <Alert.Title>Thank you — your order is placed</Alert.Title>
             <Alert.Description>
-              These records are set aside for you. You can find this order any time under Orders.
+              These records are held for you for {holdMinutes(order)} minutes while you pay. You can
+              find this order any time under Orders.
             </Alert.Description>
           </Alert.Content>
         </Alert.Root>
@@ -98,11 +105,14 @@ export default function OrderDetail({ id, placed }: { id: string; placed: boolea
       />
 
       <HStack gap="3" wrap="wrap">
-        <StatusBadge status={order.status} />
+        <StatusBadge status={order.status} cancelReason={order.cancelReason} />
         <Text fontSize="sm" color="fg.muted">
           Placed {formatDateTime(order.createdAt)}
         </Text>
       </HStack>
+
+      {order.status === 'pending' ? <PaymentWindow order={order} /> : null}
+      {order.status === 'cancelled' ? <CancelledNote order={order} /> : null}
 
       <Stack gap="3">
         {order.items.map((item) => (

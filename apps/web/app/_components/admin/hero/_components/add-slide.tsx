@@ -6,7 +6,7 @@ import type { Product } from '@vinyl-order/shared';
 import Image from 'next/image';
 import { useState } from 'react';
 
-import { useDebouncedValue } from '@/lib/core/useDebouncedValue';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { searchProducts } from '@/services/api/products/search';
 import { productsQueryKey } from '@/services/queries/products/useProducts';
 

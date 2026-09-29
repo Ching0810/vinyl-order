@@ -1,5 +1,5 @@
 import { Badge } from '@chakra-ui/react';
-import type { OrderStatus } from '@vinyl-order/shared';
+import type { CancelReason, OrderStatus } from '@vinyl-order/shared';
 
 /**
  * Label and colour per status. A Record over OrderStatus, so adding a status
@@ -11,11 +11,29 @@ const STATUS: Record<OrderStatus, { label: string; palette: string }> = {
   shipped: { label: 'Shipped', palette: 'green' },
   cancelled: { label: 'Cancelled', palette: 'gray' },
 };
-/** Where an order is in its life, as a coloured badge. */
-export default function StatusBadge({ status }: { status: OrderStatus }) {
+
+/** A cancelled order nobody paid for reads differently from one the customer ended. */
+const EXPIRED = { label: 'Expired', palette: 'gray' };
+
+/**
+ * Where an order is in its life, as a coloured badge.
+ *
+ * @param status - the order's status
+ * @param cancelReason - why it was cancelled, if it was; `expired` shows as
+ *   Expired rather than Cancelled
+ */
+export default function StatusBadge({
+  status,
+  cancelReason = null,
+}: {
+  status: OrderStatus;
+  cancelReason?: CancelReason | null;
+}) {
+  const badge = status === 'cancelled' && cancelReason === 'expired' ? EXPIRED : STATUS[status];
+
   return (
-    <Badge colorPalette={STATUS[status].palette} variant="subtle" borderRadius="full" px="2.5">
-      {STATUS[status].label}
+    <Badge colorPalette={badge.palette} variant="subtle" borderRadius="full" px="2.5">
+      {badge.label}
     </Badge>
   );
 }

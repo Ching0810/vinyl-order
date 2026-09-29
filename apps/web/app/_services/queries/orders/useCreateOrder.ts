@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Cart } from '@vinyl-order/shared';
+import type { Cart, Order } from '@vinyl-order/shared';
 
 import { currentAttemptKey, endAttempt } from '@/lib/core/checkout-attempt';
 import { HttpError } from '@/lib/core/http';
@@ -29,8 +29,13 @@ export const createOrderMutationKey = ['createOrder'] as const;
  *
  * On a 409 the cart the page shows is out of date — stock moved, or another tab
  * changed it — so it is refetched to show the current lines and their stock.
+ *
+ * @param onPlaced - where to go once the order exists. Called here, before the
+ *   cart is emptied, rather than as a callback to `mutate`: emptying the cart
+ *   swaps the cart page to its empty state and unmounts the button, and
+ *   React Query skips `mutate` callbacks once their component has unmounted.
  */
-export const useCreateOrder = () => {
+export const useCreateOrder = ({ onPlaced }: { onPlaced: (order: Order) => void }) => {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -40,10 +45,12 @@ export const useCreateOrder = () => {
       // Placed — or already placed, and this was a retry answered with it.
       // Either way the attempt is over and the next press starts a new one.
       endAttempt();
+      // Seeded before leaving, so the order page renders from it at once.
+      queryClient.setQueryData(orderQueryKey(order.id), order);
+      onPlaced(order);
       queryClient.setQueryData<Cart>(cartQueryKey, (cart) =>
         cart ? { ...cart, items: [], itemCount: 0, subtotalCents: 0 } : cart,
       );
-      queryClient.setQueryData(orderQueryKey(order.id), order);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: cartQueryKey }),
         queryClient.invalidateQueries({ queryKey: productsQueryKey }),
