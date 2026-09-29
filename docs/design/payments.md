@@ -341,8 +341,11 @@ ORDER BY "expiresAt"
 LIMIT 100;
 ```
 
-…then `cancelOrder(id, 'expired')` for each. Scheduled with
-`@nestjs/schedule`.
+…then `cancelOrder(id, 'expired')` for each, one at a time. An order that
+fails is logged and left `pending` for the next sweep; it does not stop the
+rest of the batch. Scheduled with `@nestjs/schedule`, which is not loaded
+under test: a sweep firing mid-test would cancel orders a test is still racing
+on, so tests call the sweep directly.
 
 **Safe on any number of instances without coordination:** two instances may
 select the same orders, but `cancelOrder` lets only one of them win each order.
@@ -473,16 +476,21 @@ row lock or a unique index, which a mock would pass while proving nothing.
 - Another customer's payment, and a payment id under the wrong order, are `404`.
 - The return URL MockPay receives names the `Payment` row that was inserted.
 
-**Time** is injected (a `Clock` provider), so expiry tests set `now` instead of
-waiting 15 minutes.
+**Time** is not injected. An expiry test places an order normally and then
+moves its `expiresAt` into the past, which is the state the sweeper and the
+`ORDER_EXPIRED` check actually read. A `Clock` provider would do the same job
+with one more abstraction; it is worth adding only if a test needs to assert
+on a time the code computes from "now" and backdating cannot express it.
 
 ## 11. Implementation order
 
-1. Migration: `Order` timestamps, `expiresAt` with backfill, `Payment`,
-   `PaymentEvent`. Shared contract gains the new fields.
+1. Migration: `expiresAt` with backfill, `cancelledAt`, `cancelReason`, the
+   sweeper index. Shared contract gains the new fields. _(Done, #26.)_
 2. `cancelOrder` + `POST /orders/:id/cancel`, with the restock-once tests.
-3. The sweeper and the `Clock`, with the expiry tests.
-4. `PaymentProvider`, MockPay, `POST /orders/:id/payment`,
+   _(Done, #26.)_
+3. The sweeper, with the expiry tests.
+4. Migration: `paidAt`, `shippedAt`, `Payment`, `PaymentEvent`. Then
+   `PaymentProvider`, MockPay, `POST /orders/:id/payment`,
    `GET /orders/:id/payments/:paymentId`.
 5. The webhook, with the signature, duplicate and race tests.
 6. Admin list and ship.

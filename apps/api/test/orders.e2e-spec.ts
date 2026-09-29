@@ -16,6 +16,7 @@ import { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
 import type { JwtPayload } from '../src/auth/jwt.strategy';
+import { OrderExpiryService } from '../src/orders/order-expiry.service';
 import { isDuplicateKey, PAYMENT_WINDOW_MS } from '../src/orders/orders.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -85,6 +86,26 @@ describe('Orders (e2e)', () => {
       .set('Authorization', `Bearer ${token}`);
     return idempotencyKey ? call.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey) : call;
   };
+
+  /** POST /orders/:id/cancel as the given customer. */
+  const cancel = (token: string, orderId: string) =>
+    request(app.getHttpServer())
+      .post(`/orders/${orderId}/cancel`)
+      .set('Authorization', `Bearer ${token}`);
+
+  /**
+   * A customer with a real placed order, so stock was actually taken and a
+   * cancel has something to give back.
+   */
+  const placeOrder = async (stock: number, quantity: number) => {
+    const product = await createProduct(stock);
+    const buyer = await createBuyer([{ productId: product.id, quantity }]);
+    const placed = await checkout(buyer.token).expect(201);
+    return { ...buyer, product, order: placed.body as Order };
+  };
+
+  const stockOf = async (productId: string) =>
+    (await prisma.product.findUniqueOrThrow({ where: { id: productId } })).stock;
 
   /**
    * The test the design doc calls "the one that matters": ten buyers, one
@@ -423,26 +444,6 @@ describe('Orders (e2e)', () => {
   });
 
   describe('cancelling', () => {
-    /** POST /orders/:id/cancel as the given customer. */
-    const cancel = (token: string, orderId: string) =>
-      request(app.getHttpServer())
-        .post(`/orders/${orderId}/cancel`)
-        .set('Authorization', `Bearer ${token}`);
-
-    /**
-     * A customer with a real placed order, so stock was actually taken and a
-     * cancel has something to give back.
-     */
-    const placeOrder = async (stock: number, quantity: number) => {
-      const product = await createProduct(stock);
-      const buyer = await createBuyer([{ productId: product.id, quantity }]);
-      const placed = await checkout(buyer.token).expect(201);
-      return { ...buyer, product, order: placed.body as Order };
-    };
-
-    const stockOf = async (productId: string) =>
-      (await prisma.product.findUniqueOrThrow({ where: { id: productId } })).stock;
-
     type NotPendingError = { code: string; status: string };
 
     it('cancels a pending order and returns its stock', async () => {
@@ -522,6 +523,98 @@ describe('Orders (e2e)', () => {
       );
       expect(await stockOf(product.id)).toBe(3);
     });
+  });
+
+  /**
+   * The sweep is called directly: the scheduler is not loaded under test, so
+   * nothing sweeps behind a test's back. Other tests' expired orders may be
+   * swept too, so assertions look at each test's own order, never at the count
+   * a sweep returns.
+   */
+  describe('expiring', () => {
+    let expiry: OrderExpiryService;
+
+    beforeAll(() => {
+      expiry = app.get(OrderExpiryService);
+    });
+
+    /** Move an order's deadline into the past, as if the window had run out. */
+    const expire = (orderId: string) =>
+      prisma.order.update({
+        where: { id: orderId },
+        data: { expiresAt: new Date(Date.now() - 1_000) },
+      });
+
+    const orderRow = (orderId: string) =>
+      prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+
+    it('cancels an order past its deadline and returns its stock', async () => {
+      const { product, order } = await placeOrder(5, 2);
+      await expire(order.id);
+
+      await expiry.sweep();
+
+      const after = await orderRow(order.id);
+      expect(after.status).toBe('cancelled');
+      expect(after.cancelReason).toBe('expired');
+      expect(after.cancelledAt).not.toBeNull();
+      expect(await stockOf(product.id)).toBe(5);
+    });
+
+    it('leaves an order alone before its deadline', async () => {
+      const { product, order } = await placeOrder(5, 2);
+
+      await expiry.sweep();
+
+      expect((await orderRow(order.id)).status).toBe('pending');
+      expect(await stockOf(product.id)).toBe(3);
+    });
+
+    it('leaves a paid order alone even past its deadline', async () => {
+      const { product, order } = await placeOrder(5, 2);
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: 'paid', expiresAt: new Date(Date.now() - 1_000) },
+      });
+
+      await expiry.sweep();
+
+      expect((await orderRow(order.id)).status).toBe('paid');
+      expect(await stockOf(product.id)).toBe(3);
+    });
+
+    /** What running on several instances looks like: overlapping sweeps. */
+    it.each([1, 2, 3, 4, 5])(
+      'returns the stock once when two sweeps overlap (round %i)',
+      async () => {
+        const { product, order } = await placeOrder(5, 2);
+        await expire(order.id);
+
+        await Promise.all([expiry.sweep(), expiry.sweep()]);
+
+        expect((await orderRow(order.id)).status).toBe('cancelled');
+        expect(await stockOf(product.id)).toBe(5);
+      },
+    );
+
+    /**
+     * The customer presses Cancel as the deadline passes. One of them wins,
+     * the order says which, and the copies come back once.
+     */
+    it.each([1, 2, 3, 4, 5])(
+      'returns the stock once when the customer and the sweep race (round %i)',
+      async () => {
+        const { token, product, order } = await placeOrder(5, 2);
+        await expire(order.id);
+
+        const [res] = await Promise.all([cancel(token, order.id), expiry.sweep()]);
+
+        const after = await orderRow(order.id);
+        expect(after.status).toBe('cancelled');
+        expect(after.cancelReason).toBe(res.status === 200 ? 'customer' : 'expired');
+        expect(await stockOf(product.id)).toBe(5);
+      },
+    );
   });
 
   describe('order history', () => {
