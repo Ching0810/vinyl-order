@@ -22,6 +22,16 @@ export const orderStatusSchema = z.enum(['pending', 'paid', 'shipped', 'cancelle
 export type OrderStatus = z.infer<typeof orderStatusSchema>;
 
 /**
+ * Why an order was cancelled. Must stay in sync with the `CancelReason` enum
+ * in the API's Prisma schema, like OrderStatus above.
+ *
+ * - customer: the customer cancelled it before paying.
+ * - expired: nobody paid before `expiresAt`, and the sweeper cancelled it.
+ */
+export const cancelReasonSchema = z.enum(['customer', 'expired']);
+export type CancelReason = z.infer<typeof cancelReasonSchema>;
+
+/**
  * One line of an order, built only from what was copied at checkout.
  *
  * No embedded product, unlike a cart line: the live product has the current
@@ -63,6 +73,14 @@ const orderBaseSchema = z.object({
    */
   lineCount: z.number().int(),
   createdAt: z.iso.datetime(),
+  /**
+   * Deadline to pay, fixed at checkout. The detail page counts down to it;
+   * after it, paying is refused even if the order still reads `pending`.
+   */
+  expiresAt: z.iso.datetime(),
+  /** Set exactly when status is `cancelled`, together with cancelReason. */
+  cancelledAt: z.iso.datetime().nullable(),
+  cancelReason: cancelReasonSchema.nullable(),
 });
 
 /**

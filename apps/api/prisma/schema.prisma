@@ -28,6 +28,12 @@ enum OrderStatus {
   cancelled
 }
 
+/// Why an order left `pending` without being paid.
+enum CancelReason {
+  customer
+  expired
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
@@ -106,15 +112,26 @@ model Order {
   /// number of them coexist.
   idempotencyKey String?
 
+  /// Deadline to pay, fixed at checkout (createdAt + 15 min) so changing the
+  /// window later does not move it for orders already placed.
+  expiresAt    DateTime
+  /// Set together with cancelReason, exactly when status is `cancelled`. A
+  /// CHECK constraint in the add_order_lifecycle migration enforces this;
+  /// Prisma's schema cannot express one.
+  cancelledAt  DateTime?
+  cancelReason CancelReason?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// "My orders, newest first", which is also the pagination order.
-  @@index([userId, createdAt(sort: Desc)])
   /// Scoped to the user: keys come from clients, so one customer's key must
   /// never collide with — or reveal — another's. Also the shape of the lookup
   /// that answers a retry.
   @@unique([userId, idempotencyKey])
+  /// "My orders, newest first", which is also the pagination order.
+  @@index([userId, createdAt(sort: Desc)])
+  /// The expiry sweeper: pending orders past their deadline.
+  @@index([status, expiresAt])
 }
 
 /// One line of an order, with the product copied in as it was at purchase.

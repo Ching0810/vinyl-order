@@ -1,15 +1,35 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
+  CancelReason,
   Connection,
   InsufficientStockItem,
   Order as OrderContract,
+  OrderStatus,
   OrderSummary,
   PageArgs,
 } from '@vinyl-order/shared';
 
 import { paginate } from '../common/pagination';
-import { Prisma } from '../generated/prisma/client';
+import type { SameUnion } from '../common/type-checks';
+import {
+  Prisma,
+  type CancelReason as DbCancelReason,
+  type OrderStatus as DbOrderStatus,
+} from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+// The database enums and the wire enums are written twice — once in the Prisma
+// schema, once in @vinyl-order/shared — so these fail to compile the moment
+// either side gains a value the other lacks.
+true satisfies SameUnion<DbOrderStatus, OrderStatus>;
+true satisfies SameUnion<DbCancelReason, CancelReason>;
+
+/**
+ * How long a pending order holds its stock before it expires. Applied once,
+ * at checkout, to fix the order's `expiresAt` — changing it later does not
+ * move the deadline of orders already placed.
+ */
+export const PAYMENT_WINDOW_MS = 15 * 60 * 1000;
 
 // OrderItem has no timestamps — lines are written once and never edited — so
 // title orders them, and id breaks ties between records sharing a title (two
@@ -241,6 +261,7 @@ export class OrdersService {
             // Null when the client sent no key. Nulls don't collide in a
             // Postgres unique index, so keyless checkouts never compete.
             idempotencyKey: idempotencyKey ?? null,
+            expiresAt: new Date(Date.now() + PAYMENT_WINDOW_MS),
             // status defaults to `pending` in the database — the one place
             // "a new order starts pending" is defined.
             items: {
@@ -436,7 +457,17 @@ export class OrdersService {
 
   /** The fields a summary and a full order share. */
   private toBase(
-    order: Pick<OrderWithItems, 'id' | 'status' | 'subtotalCents' | 'currency' | 'createdAt'>,
+    order: Pick<
+      OrderWithItems,
+      | 'id'
+      | 'status'
+      | 'subtotalCents'
+      | 'currency'
+      | 'createdAt'
+      | 'expiresAt'
+      | 'cancelledAt'
+      | 'cancelReason'
+    >,
     lineCount: number,
   ) {
     return {
@@ -445,8 +476,11 @@ export class OrdersService {
       subtotalCents: order.subtotalCents,
       currency: order.currency,
       lineCount,
-      // ISO string, matching what actually crosses JSON.
+      // ISO strings, matching what actually crosses JSON.
       createdAt: order.createdAt.toISOString(),
+      expiresAt: order.expiresAt.toISOString(),
+      cancelledAt: order.cancelledAt?.toISOString() ?? null,
+      cancelReason: order.cancelReason,
     };
   }
 }

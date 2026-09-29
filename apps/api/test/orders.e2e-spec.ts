@@ -16,7 +16,7 @@ import { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
 import type { JwtPayload } from '../src/auth/jwt.strategy';
-import { isDuplicateKey } from '../src/orders/orders.service';
+import { isDuplicateKey, PAYMENT_WINDOW_MS } from '../src/orders/orders.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 /**
@@ -350,7 +350,13 @@ describe('Orders (e2e)', () => {
 
       it('recognises the idempotency key index', async () => {
         const { user } = await createBuyer([]);
-        const data = { userId: user.id, subtotalCents: 0, currency: 'TWD', idempotencyKey: 'k' };
+        const data = {
+          userId: user.id,
+          subtotalCents: 0,
+          currency: 'TWD',
+          idempotencyKey: 'k',
+          expiresAt: new Date(Date.now() + PAYMENT_WINDOW_MS),
+        };
         await prisma.order.create({ data });
 
         expect(isDuplicateKey(await errorFrom(prisma.order.create({ data })))).toBe(true);
@@ -432,6 +438,7 @@ describe('Orders (e2e)', () => {
           currency: 'TWD',
           subtotalCents: 1_000 * lines.length,
           createdAt,
+          expiresAt: new Date(createdAt.getTime() + PAYMENT_WINDOW_MS),
           items: {
             create: lines.map(({ title, quantity = 1 }) => ({
               title,
