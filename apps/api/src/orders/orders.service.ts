@@ -1,15 +1,35 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
+  CancelReason,
   Connection,
   InsufficientStockItem,
   Order as OrderContract,
+  OrderStatus,
   OrderSummary,
   PageArgs,
 } from '@vinyl-order/shared';
 
 import { paginate } from '../common/pagination';
-import { Prisma } from '../generated/prisma/client';
+import type { SameUnion } from '../common/type-checks';
+import {
+  Prisma,
+  type CancelReason as DbCancelReason,
+  type OrderStatus as DbOrderStatus,
+} from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+// The database enums and the wire enums are written twice — once in the Prisma
+// schema, once in @vinyl-order/shared — so these fail to compile the moment
+// either side gains a value the other lacks.
+true satisfies SameUnion<DbOrderStatus, OrderStatus>;
+true satisfies SameUnion<DbCancelReason, CancelReason>;
+
+/**
+ * How long a pending order holds its stock before it expires. Applied once,
+ * at checkout, to fix the order's `expiresAt` — changing it later does not
+ * move the deadline of orders already placed.
+ */
+export const PAYMENT_WINDOW_MS = 15 * 60 * 1000;
 
 // OrderItem has no timestamps — lines are written once and never edited — so
 // title orders them, and id breaks ties between records sharing a title (two
@@ -186,6 +206,59 @@ export class OrdersService {
     }
   }
 
+  /**
+   * Cancel one of the user's pending orders and return its stock.
+   *
+   * 404 for someone else's order, as in findOne. 409 ORDER_NOT_PENDING once
+   * the order has left `pending`, carrying its current status.
+   */
+  async cancel(userId: string, id: string): Promise<OrderContract> {
+    if (await this.cancelOrder({ id, userId }, 'customer')) {
+      return this.findOne(userId, id);
+    }
+
+    // The update in cancelOrder already decided; this read only explains why
+    // it changed nothing.
+    const order = await this.prisma.order.findFirst({
+      where: { id, userId },
+      select: { status: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    throw conflict('ORDER_NOT_PENDING', 'This order can no longer be cancelled.', {
+      status: order.status,
+    });
+  }
+
+  /**
+   * Move a pending order to `cancelled` and return its stock — exactly once.
+   *
+   * The conditional update is the whole decision. Of any number of concurrent
+   * cancellers (the customer, the expiry sweeper, a second tab), only the one
+   * that still finds the order `pending` changes a row, and only that one
+   * restocks. Restocking unconditionally would return the same copies twice.
+   *
+   * Knows nothing of HTTP, so the sweeper can call it too.
+   *
+   * @param order - the order to cancel, scoped to its owner when a customer acts
+   * @param reason - who ended it: the customer, or the payment deadline
+   * @returns whether this call cancelled the order
+   */
+  async cancelOrder(
+    order: { id: string; userId?: string },
+    reason: CancelReason,
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      const { count } = await transaction.order.updateMany({
+        where: { ...order, status: 'pending' },
+        data: { status: 'cancelled', cancelledAt: new Date(), cancelReason: reason },
+      });
+      if (count === 0) return false;
+
+      await this.returnStock(transaction, order.id);
+      return true;
+    });
+  }
+
   /** The order an earlier request placed under this key, if it has committed. */
   private async findByIdempotencyKey(
     userId: string,
@@ -241,6 +314,7 @@ export class OrdersService {
             // Null when the client sent no key. Nulls don't collide in a
             // Postgres unique index, so keyless checkouts never compete.
             idempotencyKey: idempotencyKey ?? null,
+            expiresAt: new Date(Date.now() + PAYMENT_WINDOW_MS),
             // status defaults to `pending` in the database — the one place
             // "a new order starts pending" is defined.
             items: {
@@ -411,6 +485,32 @@ export class OrdersService {
     if (shortItems.length > 0) throw new ShortStockError(shortItems);
   }
 
+  /**
+   * Put a cancelled order's copies back on sale.
+   *
+   * Lines whose product has since been deleted are skipped: there is nothing
+   * to put them back on. Products are locked in takeStock's order, so a cancel
+   * and a checkout over the same records queue instead of deadlocking.
+   */
+  private async returnStock(transaction: Prisma.TransactionClient, orderId: string): Promise<void> {
+    const items = await transaction.orderItem.findMany({
+      where: { orderId },
+      select: { productId: true, quantity: true },
+    });
+    const lines = items
+      .flatMap(({ productId, quantity }) => (productId ? [{ productId, quantity }] : []))
+      .sort((a, b) => a.productId.localeCompare(b.productId));
+
+    for (const line of lines) {
+      // updateMany, not update: a product deleted since the read above is
+      // skipped rather than failing the cancel.
+      await transaction.product.updateMany({
+        where: { id: line.productId },
+        data: { stock: { increment: line.quantity } },
+      });
+    }
+  }
+
   /** Shape an order row for the wire. Nothing here reads a live product. */
   private toContract(order: OrderWithItems): OrderContract {
     const items = order.items.map((item) => ({
@@ -436,7 +536,17 @@ export class OrdersService {
 
   /** The fields a summary and a full order share. */
   private toBase(
-    order: Pick<OrderWithItems, 'id' | 'status' | 'subtotalCents' | 'currency' | 'createdAt'>,
+    order: Pick<
+      OrderWithItems,
+      | 'id'
+      | 'status'
+      | 'subtotalCents'
+      | 'currency'
+      | 'createdAt'
+      | 'expiresAt'
+      | 'cancelledAt'
+      | 'cancelReason'
+    >,
     lineCount: number,
   ) {
     return {
@@ -445,8 +555,11 @@ export class OrdersService {
       subtotalCents: order.subtotalCents,
       currency: order.currency,
       lineCount,
-      // ISO string, matching what actually crosses JSON.
+      // ISO strings, matching what actually crosses JSON.
       createdAt: order.createdAt.toISOString(),
+      expiresAt: order.expiresAt.toISOString(),
+      cancelledAt: order.cancelledAt?.toISOString() ?? null,
+      cancelReason: order.cancelReason,
     };
   }
 }

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   HttpStatus,
   Param,
   Post,
@@ -101,5 +102,15 @@ export class OrdersController {
 
     response.status(created ? HttpStatus.CREATED : HttpStatus.OK);
     return order;
+  }
+
+  /**
+   * POST /orders/:id/cancel — cancel one of the user's pending orders and
+   * return its stock. 200 rather than POST's default 201: nothing is created.
+   */
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  cancel(@CurrentUser() user: PublicUser, @Param('id') id: string): Promise<Order> {
+    return this.orders.cancel(user.id, id);
   }
 }

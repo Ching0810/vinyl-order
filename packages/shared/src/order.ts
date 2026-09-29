@@ -22,6 +22,16 @@ export const orderStatusSchema = z.enum(['pending', 'paid', 'shipped', 'cancelle
 export type OrderStatus = z.infer<typeof orderStatusSchema>;
 
 /**
+ * Why an order was cancelled. Must stay in sync with the `CancelReason` enum
+ * in the API's Prisma schema, like OrderStatus above.
+ *
+ * - customer: the customer cancelled it before paying.
+ * - expired: nobody paid before `expiresAt`, and the sweeper cancelled it.
+ */
+export const cancelReasonSchema = z.enum(['customer', 'expired']);
+export type CancelReason = z.infer<typeof cancelReasonSchema>;
+
+/**
  * One line of an order, built only from what was copied at checkout.
  *
  * No embedded product, unlike a cart line: the live product has the current
@@ -63,6 +73,14 @@ const orderBaseSchema = z.object({
    */
   lineCount: z.number().int(),
   createdAt: z.iso.datetime(),
+  /**
+   * Deadline to pay, fixed at checkout. The detail page counts down to it;
+   * after it, paying is refused even if the order still reads `pending`.
+   */
+  expiresAt: z.iso.datetime(),
+  /** Set exactly when status is `cancelled`, together with cancelReason. */
+  cancelledAt: z.iso.datetime().nullable(),
+  cancelReason: cancelReasonSchema.nullable(),
 });
 
 /**
@@ -99,6 +117,9 @@ export type Order = z.infer<typeof orderSchema>;
  * - CHECKOUT_IN_PROGRESS: an earlier request carrying this idempotency key is
  *   still running, so the order it will create can't be read back yet. Retry
  *   with the same key in a moment; nothing was ordered twice.
+ * - ORDER_NOT_PENDING: the order has already left `pending` (paid, shipped or
+ *   cancelled), so it can no longer be cancelled. The body carries its current
+ *   `status` so the page can re-render without another request.
  */
 export const orderErrorCodeSchema = z.enum([
   'CART_EMPTY',
@@ -106,6 +127,7 @@ export const orderErrorCodeSchema = z.enum([
   'MIXED_CURRENCY',
   'CART_CHANGED',
   'CHECKOUT_IN_PROGRESS',
+  'ORDER_NOT_PENDING',
 ]);
 export type OrderErrorCode = z.infer<typeof orderErrorCodeSchema>;
 
