@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { OrdersService } from './orders.service';
+import { OrderLifecycleService } from './order-lifecycle.service';
 
 /** Orders one sweep cancels at most. Anything left over waits for the next. */
 const SWEEP_BATCH_SIZE = 100;
@@ -21,7 +21,7 @@ export class OrderExpiryService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly orders: OrdersService,
+    private readonly lifecycle: OrderLifecycleService,
   ) {}
 
   /**
@@ -54,7 +54,7 @@ export class OrderExpiryService {
     // that many connections at once for nothing.
     for (const { id } of expired) {
       try {
-        if (await this.orders.cancelOrder({ id }, 'expired')) cancelled += 1;
+        if (await this.lifecycle.cancelOrder({ id }, 'expired')) cancelled += 1;
       } catch (error) {
         // One failing order must not strand the rest of the batch. It is still
         // pending, so the next sweep tries it again.
