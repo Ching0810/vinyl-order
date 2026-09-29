@@ -39,6 +39,7 @@ export class ProductsService {
       args,
       (window) => this.prisma.product.findMany({ where, orderBy: this.pageOrder, ...window }),
       (product) => product,
+      () => this.prisma.product.count({ where }),
     );
   }
 

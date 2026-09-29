@@ -1,15 +1,15 @@
 'use client';
 
 import { Container, Text } from '@chakra-ui/react';
-import type { PageArgs } from '@vinyl-order/shared';
 import { redirect, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense } from 'react';
 
 import PageShell from '@/components/layout/page-shell';
 import Grid from '@/components/product/grid';
 import GridSkeleton from '@/components/product/grid-skeleton';
 import Paginator from '@/components/ui/paginator';
 import SectionHeading from '@/components/ui/section-heading';
+import { type PageTarget, pageCount, useCursorPages } from '@/hooks/useCursorPages';
 import { useCategories } from '@/services/queries/categories/useCategories';
 import { useProducts } from '@/services/queries/products/useProducts';
 
@@ -22,34 +22,23 @@ const PAGE_SIZE = 12;
  * readable and survives a tab being renamed — the whole reason categories carry
  * a slug separate from their display name.
  *
- * Paging is cursor-based, so there is no page-number jumping by design;
- * `pageNum` is display-only, to tell the visitor roughly where they are.
+ * Paging is cursor-based (see useCursorPages): first, adjacent and last pages,
+ * no jumping to an arbitrary page. Switching category starts again on page 1.
  *
  * @param slug - the category being browsed
  */
 const Catalogue = ({ slug }: { slug: string }) => {
   const { data: categories } = useCategories();
 
-  const [args, setArgs] = useState<PageArgs>({ first: PAGE_SIZE });
-  const [pageNum, setPageNum] = useState(1);
-
-  // Cursors belong to the list they came from. Switching tabs has to rewind to
-  // the first page, or the next request pages from a cursor into a different
-  // result set.
-  useEffect(() => {
-    setArgs({ first: PAGE_SIZE });
-    setPageNum(1);
-  }, [slug]);
-
-  const { data, isPending, isError, isPlaceholderData } = useProducts(args, slug);
+  const pages = useCursorPages(PAGE_SIZE, slug);
+  const { data, isPending, isError, isPlaceholderData } = useProducts(pages.args, slug);
 
   const products = data?.edges?.map((edge) => edge.node) ?? [];
-  const pageInfo = data?.pageInfo;
   const active = categories?.find((category) => category.slug === slug);
 
-  const turn = (next: PageArgs, step: number) => {
-    setArgs(next);
-    setPageNum((n) => Math.max(1, n + step));
+  const turn = (target: PageTarget) => {
+    if (!data) return;
+    pages.go(target, data);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -70,16 +59,14 @@ const Catalogue = ({ slug }: { slug: string }) => {
 
       {renderBody()}
 
-      {products.length > 0 ? (
+      {data && products.length > 0 ? (
         <Paginator
-          pageNum={pageNum}
-          hasPrevious={Boolean(pageInfo?.hasPreviousPage)}
-          hasNext={Boolean(pageInfo?.hasNextPage)}
+          page={pages.page}
+          totalPages={pageCount(data.totalCount, PAGE_SIZE)}
+          hasPrevious={data.pageInfo.hasPreviousPage}
+          hasNext={data.pageInfo.hasNextPage}
           busy={isPlaceholderData}
-          onPrevious={() =>
-            turn({ last: PAGE_SIZE, before: pageInfo?.startCursor ?? undefined }, -1)
-          }
-          onNext={() => turn({ first: PAGE_SIZE, after: pageInfo?.endCursor ?? undefined }, 1)}
+          onChange={turn}
         />
       ) : null}
     </Container>

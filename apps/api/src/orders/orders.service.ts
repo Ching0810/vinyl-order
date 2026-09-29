@@ -55,6 +55,7 @@ export class OrdersService {
           ...window,
         }),
       toOrderSummary,
+      () => this.prisma.order.count({ where: { userId } }),
     );
   }
 

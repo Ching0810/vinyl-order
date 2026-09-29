@@ -677,6 +677,8 @@ describe('Orders (e2e)', () => {
       expect(summary.lineCount).toBe(5);
       expect(summary).not.toHaveProperty('items');
       expect(page.pageInfo).toMatchObject({ hasNextPage: false, hasPreviousPage: false });
+      // Counts my orders only, like the page itself.
+      expect(page.totalCount).toBe(3);
     });
 
     it('pages forward and backward over every order exactly once', async () => {
@@ -748,6 +750,7 @@ describe('Orders (e2e)', () => {
           startCursor: null,
           endCursor: null,
         },
+        totalCount: 0,
       });
 
       await createOrder(user.id, at(1));

@@ -47,6 +47,22 @@ export const ChevronRightIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+/** Chevron against a bar: jump to the first item (the first page). */
+export const ChevronFirstIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <path d="m17 18-6-6 6-6" />
+    <path d="M7 6v12" />
+  </svg>
+);
+
+/** Chevron against a bar: jump to the last item (the last page). */
+export const ChevronLastIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <path d="m7 18 6-6-6-6" />
+    <path d="M17 6v12" />
+  </svg>
+);
+
 export const ChevronUpIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...props}>
     <path d="m18 15-6-6-6 6" />

@@ -32,14 +32,39 @@ export interface PageWindow {
  * since a timestamp can tie — or pages can skip and repeat rows. One extra row
  * is fetched to learn whether a further page exists in the paging direction.
  *
+ * `last` without `before` is the final page of the list: walking backward from
+ * no cursor starts at the end.
+ *
  * An unknown cursor yields an empty page rather than an error: Prisma finds
  * nothing to anchor on.
+ *
+ * @param count - how many rows the whole list holds; must use the same `where`
+ *   as `fetch`. Runs alongside the page query, not after it.
  */
 export async function paginate<Row extends { id: string }, Node>(
   args: PageArgs,
   fetch: (window: PageWindow) => Promise<Row[]>,
   toNode: (row: Row) => Node,
+  count: () => Promise<number>,
 ): Promise<Connection<Node>> {
+  const [page, totalCount] = await Promise.all([fetchPage(args, fetch), count()]);
+  const edges = page.rows.map((row) => ({ node: toNode(row), cursor: encodeCursor(row.id) }));
+  return {
+    edges,
+    pageInfo: {
+      ...page.flags,
+      startCursor: edges[0]?.cursor ?? null,
+      endCursor: edges[edges.length - 1]?.cursor ?? null,
+    },
+    totalCount,
+  };
+}
+
+/** One page of rows, and whether there are more in each direction. */
+async function fetchPage<Row extends { id: string }>(
+  args: PageArgs,
+  fetch: (window: PageWindow) => Promise<Row[]>,
+): Promise<{ rows: Row[]; flags: { hasNextPage: boolean; hasPreviousPage: boolean } }> {
   const backward = args.last !== undefined || args.before !== undefined;
 
   if (backward) {
@@ -51,12 +76,11 @@ export async function paginate<Row extends { id: string }, Node>(
       ...(beforeId ? { cursor: { id: beforeId }, skip: 1 } : {}),
     });
     const hasPreviousPage = rows.length > size;
-    // The extra row is at the start when walking backward.
-    const pageRows = hasPreviousPage ? rows.slice(rows.length - size) : rows;
-    return toConnection(pageRows, toNode, {
-      hasPreviousPage,
-      hasNextPage: Boolean(args.before),
-    });
+    return {
+      // The extra row is at the start when walking backward.
+      rows: hasPreviousPage ? rows.slice(rows.length - size) : rows,
+      flags: { hasPreviousPage, hasNextPage: Boolean(args.before) },
+    };
   }
 
   const size = clampSize(args.first);
@@ -67,26 +91,9 @@ export async function paginate<Row extends { id: string }, Node>(
     ...(afterId ? { cursor: { id: afterId }, skip: 1 } : {}),
   });
   const hasNextPage = rows.length > size;
-  const pageRows = hasNextPage ? rows.slice(0, size) : rows;
-  return toConnection(pageRows, toNode, {
-    hasNextPage,
-    hasPreviousPage: Boolean(args.after),
-  });
-}
-
-function toConnection<Row extends { id: string }, Node>(
-  rows: Row[],
-  toNode: (row: Row) => Node,
-  flags: { hasNextPage: boolean; hasPreviousPage: boolean },
-): Connection<Node> {
-  const edges = rows.map((row) => ({ node: toNode(row), cursor: encodeCursor(row.id) }));
   return {
-    edges,
-    pageInfo: {
-      ...flags,
-      startCursor: edges[0]?.cursor ?? null,
-      endCursor: edges[edges.length - 1]?.cursor ?? null,
-    },
+    rows: hasNextPage ? rows.slice(0, size) : rows,
+    flags: { hasNextPage, hasPreviousPage: Boolean(args.after) },
   };
 }
 
