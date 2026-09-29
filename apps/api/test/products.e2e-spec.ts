@@ -138,6 +138,33 @@ describe('Products (e2e)', () => {
     expect(backward).toEqual(newestFirst);
   });
 
+  it('counts the whole category on every page, not just the page', async () => {
+    const { slug } = await createCategory([at(1), at(2), at(3), at(4), at(5)]);
+
+    const first = await listPage(`category=${slug}&first=2`);
+    const next = await listPage(`category=${slug}&first=2&after=${first.pageInfo.endCursor}`);
+
+    expect(first.totalCount).toBe(5);
+    expect(next.totalCount).toBe(5);
+  });
+
+  /**
+   * What the Last page button asks for: `last` sized to what is left over,
+   * with no cursor. 5 records at 2 a page end on a page of 1.
+   */
+  it('serves the final page from `last` with no cursor', async () => {
+    const { slug, newestFirst } = await createCategory([at(1), at(2), at(3), at(4), at(5)]);
+
+    const page = await listPage(`category=${slug}&last=1`);
+
+    expect(page.edges.map((edge) => edge.node.id)).toEqual(newestFirst.slice(-1));
+    expect(page.pageInfo).toMatchObject({ hasNextPage: false, hasPreviousPage: true });
+
+    // Stepping back from it lands on whole pages again.
+    const previous = await listPage(`category=${slug}&last=2&before=${page.pageInfo.startCursor}`);
+    expect(previous.edges.map((edge) => edge.node.id)).toEqual(newestFirst.slice(2, 4));
+  });
+
   it('falls back to the default page size for a missing or unparseable size', async () => {
     const { slug, newestFirst } = await createCategory(
       Array.from({ length: 12 }, (_, i) => at(i + 1)),

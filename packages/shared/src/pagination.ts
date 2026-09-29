@@ -4,7 +4,9 @@
 // Cursors are opaque strings: the client never parses them, it just echoes a
 // previous `endCursor` back as `after` (forward) or `startCursor` as `before`
 // (backward). This stays correct under inserts/deletes and is fast at any depth,
-// unlike offset paging — the trade-off is no arbitrary "jump to page N".
+// unlike offset paging — the trade-off is no arbitrary "jump to page N". What a
+// client can reach is the first page, the adjacent pages, and the last page
+// (`last` with no cursor); `totalCount` says how many pages that last one is.
 
 /**
  * Forward (`first`/`after`) or backward (`last`/`before`) page request.
@@ -42,4 +44,10 @@ export interface Edge<T> {
 export interface Connection<T> {
   edges: Edge<T>[];
   pageInfo: PageInfo;
+  /**
+   * How many items the whole list holds, across every page — enough to number
+   * the pages and size the last one. Counted alongside the page, not in the
+   * same snapshot, so a concurrent insert can make it briefly off by one.
+   */
+  totalCount: number;
 }
