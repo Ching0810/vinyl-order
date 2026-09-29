@@ -88,12 +88,11 @@ const describeProblem = (error: unknown): CheckoutProblem => {
  */
 export default function PlaceOrder({ disabled }: { disabled: boolean }) {
   const router = useRouter();
-  const createOrder = useCreateOrder();
+  const createOrder = useCreateOrder({
+    onPlaced: (order) => router.push(`/orders/${order.id}?placed=1`),
+  });
 
-  const place = () =>
-    createOrder.mutate(undefined, {
-      onSuccess: (order) => router.push(`/orders/${order.id}?placed=1`),
-    });
+  const place = () => createOrder.mutate();
 
   const problem = createOrder.isError ? describeProblem(createOrder.error) : null;
 
