@@ -24,6 +24,7 @@ import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { toPageArgs } from '../common/pagination';
+import { CheckoutService } from './checkout.service';
 import { OrdersService } from './orders.service';
 
 /**
@@ -52,7 +53,10 @@ const readIdempotencyKey = (header?: string): string | undefined => {
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
 export class OrdersController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly checkouts: CheckoutService,
+  ) {}
 
   /**
    * GET /orders — order history, newest first. Forward: `?first=&after=`;
@@ -95,7 +99,7 @@ export class OrdersController {
     @Res({ passthrough: true }) response: Response,
     @Headers(IDEMPOTENCY_KEY_HEADER) idempotencyKey?: string,
   ): Promise<Order> {
-    const { order, created } = await this.orders.checkout(
+    const { order, created } = await this.checkouts.checkout(
       user.id,
       readIdempotencyKey(idempotencyKey),
     );

@@ -16,8 +16,8 @@ import { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
 import type { JwtPayload } from '../src/auth/jwt.strategy';
+import { isDuplicateKey, PAYMENT_WINDOW_MS } from '../src/orders/checkout.service';
 import { OrderExpiryService } from '../src/orders/order-expiry.service';
-import { isDuplicateKey, PAYMENT_WINDOW_MS } from '../src/orders/orders.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 /**
