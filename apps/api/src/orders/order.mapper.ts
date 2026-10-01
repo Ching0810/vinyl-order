@@ -77,6 +77,8 @@ const toBase = (
     | 'expiresAt'
     | 'cancelledAt'
     | 'cancelReason'
+    | 'paidAt'
+    | 'shippedAt'
   >,
   lineCount: number,
 ) => ({
@@ -90,4 +92,6 @@ const toBase = (
   expiresAt: order.expiresAt.toISOString(),
   cancelledAt: order.cancelledAt?.toISOString() ?? null,
   cancelReason: order.cancelReason,
+  paidAt: order.paidAt?.toISOString() ?? null,
+  shippedAt: order.shippedAt?.toISOString() ?? null,
 });

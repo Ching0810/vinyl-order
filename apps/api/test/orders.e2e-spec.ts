@@ -514,7 +514,10 @@ describe('Orders (e2e)', () => {
 
     it('refuses to cancel a paid order and keeps its stock taken', async () => {
       const { token, product, order } = await placeOrder(5, 2);
-      await prisma.order.update({ where: { id: order.id }, data: { status: 'paid' } });
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: 'paid', paidAt: new Date() },
+      });
 
       const res = await cancel(token, order.id).expect(409);
 
@@ -574,7 +577,7 @@ describe('Orders (e2e)', () => {
       const { product, order } = await placeOrder(5, 2);
       await prisma.order.update({
         where: { id: order.id },
-        data: { status: 'paid', expiresAt: new Date(Date.now() - 1_000) },
+        data: { status: 'paid', paidAt: new Date(), expiresAt: new Date(Date.now() - 1_000) },
       });
 
       await expiry.sweep();
