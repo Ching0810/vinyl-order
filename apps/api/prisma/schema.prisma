@@ -34,6 +34,14 @@ enum CancelReason {
   expired
 }
 
+/// Where one payment attempt stands. Only the provider's webhook moves it off
+/// `pending`; the customer returning from the payment page proves nothing.
+enum PaymentStatus {
+  pending
+  succeeded
+  failed
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
@@ -120,6 +128,13 @@ model Order {
   /// Prisma's schema cannot express one.
   cancelledAt  DateTime?
   cancelReason CancelReason?
+  /// Set exactly when status is `paid` or `shipped`, and shippedAt exactly
+  /// when it is `shipped` — CHECK constraints in the add_payments migration.
+  paidAt       DateTime?
+  shippedAt    DateTime?
+
+  /// Every attempt to pay this order: a declined card and a retry are two.
+  payments Payment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -155,6 +170,37 @@ model OrderItem {
   artist         String
   imageUrl       String?
 
+  @@index([orderId])
+}
+
+/// One attempt to pay an order through the payment provider.
+///
+/// An attempt, not the order's payment: each needs its own provider id, so a
+/// late webhook for a declined first attempt is never read as the result of
+/// the second.
+model Payment {
+  id      String @id @default(uuid())
+  /// Restrict: a record of money asked for must not vanish with its order.
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  /// The provider's id for this attempt — what its webhooks name, since the
+  /// provider never learns ours. Unique: one row per provider session.
+  providerSessionId String        @unique
+  status            PaymentStatus @default(pending)
+  /// What the provider was asked to collect. A webhook reporting any other
+  /// amount or currency is not accepted as payment for the order.
+  amountCents       Int
+  currency          String
+  /// The provider's payment page, so asking to pay again while this attempt
+  /// is still open returns the same page instead of starting another.
+  redirectUrl       String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Postgres does not index foreign keys itself; "this order's attempts" is
+  /// the lookup starting a payment makes.
   @@index([orderId])
 }
 
@@ -203,13 +249,13 @@ model Product {
 /// identity — renaming a genre string would silently unassign every record and
 /// break any shared link. A row gives each tab a slug that outlives its label.
 model Category {
-  id   String @id @default(uuid())
+  id        String @id @default(uuid())
   /// URL identity, e.g. "mandarin". Stable across renames of `name`.
-  slug String @unique
+  slug      String @unique
   /// Display label, e.g. "華語".
-  name String
+  name      String
   /// Ascending order in the tab bar.
-  sortOrder Int @default(0)
+  sortOrder Int    @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

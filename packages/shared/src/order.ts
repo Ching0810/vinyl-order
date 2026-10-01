@@ -81,6 +81,10 @@ const orderBaseSchema = z.object({
   /** Set exactly when status is `cancelled`, together with cancelReason. */
   cancelledAt: z.iso.datetime().nullable(),
   cancelReason: cancelReasonSchema.nullable(),
+  /** When payment was confirmed. Set once the order is `paid`, and kept after it ships. */
+  paidAt: z.iso.datetime().nullable(),
+  /** When the order was marked shipped. Set exactly when status is `shipped`. */
+  shippedAt: z.iso.datetime().nullable(),
 });
 
 /**
