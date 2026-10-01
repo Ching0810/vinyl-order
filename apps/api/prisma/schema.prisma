@@ -201,6 +201,12 @@ model Payment {
 
   /// Postgres does not index foreign keys itself; "this order's attempts" is
   /// the lookup starting a payment makes.
+  ///
+  /// At most one `pending` attempt per order, so two Pay presses at once can't
+  /// open two payment pages for one order. Failed and succeeded attempts don't
+  /// count, so a declined card can still be retried. A partial unique index in
+  /// the one_pending_payment_per_order migration enforces this; Prisma's
+  /// schema cannot express one.
   @@index([orderId])
 }
 
