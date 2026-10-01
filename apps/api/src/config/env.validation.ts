@@ -35,6 +35,10 @@ const envSchema = z.object({
   STORAGE_DRIVER: z.enum(['local', 'gcs']).default('local'),
   UPLOAD_DIR: z.string().min(1).default('./uploads'),
   PUBLIC_API_URL: z.string().min(1).default('http://localhost:3001'),
+
+  // The web app's public address — one URL, unlike the WEB_ORIGIN list. Builds
+  // the page a payment provider sends the customer's browser back to.
+  PUBLIC_WEB_URL: z.url().default('http://localhost:3000'),
 });
 
 export type Env = z.infer<typeof envSchema>;

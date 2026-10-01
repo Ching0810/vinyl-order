@@ -1,5 +1,5 @@
 // Order contract shared by apps/web (confirmation page, order history) and
-// apps/api (response shaping, checkout errors). One source of truth so
+// apps/api (response shaping, order errors). One source of truth so
 // storefront and API can't drift.
 //
 // An order is a fact, not an intention. Where the cart reads prices from the
@@ -108,8 +108,9 @@ export const orderSchema = orderBaseSchema.extend({
 export type Order = z.infer<typeof orderSchema>;
 
 /**
- * Why a checkout was refused (all 409). A code rather than just a message, so
- * the web can branch on which failure it got without matching on text.
+ * Why an order request was refused (all 409): placing, cancelling or paying
+ * for one. A code rather than just a message, so the web can branch on which
+ * failure it got without matching on text.
  *
  * - CART_EMPTY: nothing to order.
  * - INSUFFICIENT_STOCK: at least one line wants more copies than remain.
@@ -122,8 +123,11 @@ export type Order = z.infer<typeof orderSchema>;
  *   still running, so the order it will create can't be read back yet. Retry
  *   with the same key in a moment; nothing was ordered twice.
  * - ORDER_NOT_PENDING: the order has already left `pending` (paid, shipped or
- *   cancelled), so it can no longer be cancelled. The body carries its current
- *   `status` so the page can re-render without another request.
+ *   cancelled), so it can no longer be cancelled or paid. The body carries its
+ *   current `status` so the page can re-render without another request.
+ * - ORDER_EXPIRED: the order's payment deadline (`expiresAt`) has passed, so it
+ *   can no longer be paid. It may still read `pending` until the expiry sweep
+ *   cancels it; the deadline decides, not the sweep.
  */
 export const orderErrorCodeSchema = z.enum([
   'CART_EMPTY',
@@ -132,6 +136,7 @@ export const orderErrorCodeSchema = z.enum([
   'CART_CHANGED',
   'CHECKOUT_IN_PROGRESS',
   'ORDER_NOT_PENDING',
+  'ORDER_EXPIRED',
 ]);
 export type OrderErrorCode = z.infer<typeof orderErrorCodeSchema>;
 

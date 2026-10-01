@@ -7,4 +7,5 @@ export * from './category';
 export * from './discogs';
 export * from './order';
 export * from './pagination';
+export * from './payment';
 export * from './product';
