@@ -3,6 +3,7 @@ import type { InsufficientStockItem, Order as OrderContract } from '@vinyl-order
 
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { violatesUniqueIndex } from '../prisma/unique-violation';
 import { conflict } from './order.errors';
 import { toOrderContract, withItems } from './order.mapper';
 import { byProductId } from './stock-locks';
@@ -41,32 +42,9 @@ export interface CheckoutResult {
 /** Named by Prisma's default for `@@unique([userId, idempotencyKey])` on Order. */
 const IDEMPOTENCY_KEY_INDEX = 'Order_userId_idempotencyKey_key';
 
-/**
- * The part of a P2002's `meta` that names the violated index. With a driver
- * adapter there is no `meta.target`; @prisma/adapter-pg reports the index
- * Postgres named, under `driverAdapterError.cause.constraint`.
- */
-type UniqueViolationMeta = {
-  driverAdapterError?: { cause?: { constraint?: { index?: string } } };
-};
-
-/**
- * Did this write lose the race for an idempotency key?
- *
- * P2002 is Prisma's unique-constraint violation, and the index it names is
- * checked too — so a clash on some other unique, were one added to Order, is
- * not mistaken for a repeated checkout.
- *
- * Exported for its test, which pins the error shape this depends on: it
- * belongs to Prisma, and changed once already without anything failing.
- */
-export const isDuplicateKey = (error: unknown): boolean => {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
-    return false;
-  }
-  const meta = error.meta as UniqueViolationMeta | undefined;
-  return meta?.driverAdapterError?.cause?.constraint?.index === IDEMPOTENCY_KEY_INDEX;
-};
+/** Did this write lose the race for an idempotency key? */
+const isDuplicateKey = (error: unknown): boolean =>
+  violatesUniqueIndex(error, IDEMPOTENCY_KEY_INDEX);
 
 /**
  * Turning a cart into a pending order.
