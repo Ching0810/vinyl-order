@@ -10,6 +10,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { StorageModule } from './storage/storage.module';
@@ -48,6 +49,7 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
     ProductsModule,
     CartModule,
     OrdersModule,
+    PaymentsModule,
     CategoriesModule,
     StorageModule,
     HealthModule,
