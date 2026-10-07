@@ -1,7 +1,8 @@
 # Payments & Order Lifecycle
 
-- **Status:** Draft — decisions marked ⚖️ are open
-- **Date:** 2026-09-24
+- **Status:** In progress — steps 1–4 built (§11); decisions still marked ⚖️
+  are open
+- **Date:** 2026-09-24 · **Updated:** 2026-10-07
 - **Scope:** paying for a `pending` order through a simulated payment provider,
   expiring unpaid orders after 15 minutes, letting a customer cancel an unpaid
   order, and letting an admin mark a paid order shipped
@@ -129,7 +130,7 @@ the sweeper's query is a plain indexed comparison.
 
 ## 5. The payment provider
 
-### 5.1 ⚖️ A simulator, behind an interface
+### 5.1 A simulator, behind an interface
 
 We build **MockPay**, a fake provider, instead of integrating Stripe or ECPay.
 The point of this feature is how our side behaves when the provider is slow,
@@ -140,9 +141,10 @@ It stays honest by talking to the API **only over HTTP**, exactly as a real
 provider would: it never imports our services or touches our database.
 
 ```ts
-interface PaymentProvider {
+// apps/api/src/payments/payment-provider.ts
+abstract class PaymentProvider {
   /** Start a payment; returns where to send the customer's browser. */
-  createSession(input: {
+  abstract createSession(input: {
     orderId: string;
     amountCents: number;
     currency: string;
@@ -151,29 +153,68 @@ interface PaymentProvider {
     returnUrl: string;
   }): Promise<{ providerSessionId: string; redirectUrl: string }>;
 
-  /** Authenticate a webhook and parse it, or throw. */
-  verifyWebhook(rawBody: Buffer, headers: Record<string, string>): PaymentEvent;
+  // Added in step 5, with its first caller:
+  // verifyWebhook(rawBody: Buffer, headers: Record<string, string>): PaymentEvent;
 }
 ```
 
-Swapping in Stripe later means one new class implementing this, not a change
-to orders.
+An abstract class rather than an interface because it is also the Nest
+injection token: interfaces do not exist at runtime. Swapping in Stripe later
+means one new class implementing this, not a change to orders or payments.
 
-**Where MockPay lives** ⚖️: a separate Nest module (`apps/api/src/mockpay`)
-mounted under `/mockpay`, enabled only outside production. A separate app
-would be more realistic but doubles the deploy and dev setup for no extra
+**Where MockPay lives** (decided): a Nest module (`apps/api/src/mockpay`)
+mounted under `/mockpay`, and left out of `AppModule` in production. A separate
+app would be more realistic but doubles the deploy and dev setup for no extra
 learning — the HTTP-only rule already keeps the boundary real.
+
+**The client is the adapter.** `MockPayProvider` (`apps/api/src/payments`) is
+the one place that knows MockPay's format. It turns our request into MockPay's
+and MockPay's answer into ours, and treats that answer as outside input:
+
+- **Validated, not cast.** MockPay's response is parsed with a Zod schema
+  declared on our side, not imported from `mockpay/`. A malformed answer fails
+  here instead of leaving an undefined session id in the database.
+- **Bounded.** Each call times out after 5 seconds, so a provider that hangs
+  does not hang the customer's request.
+- **One failure for the customer.** Unreachable, timed out, an error status,
+  an unreadable answer: all are `502`, the detail goes to the log, and no
+  `Payment` row is written.
+
+Configuration: `PAYMENT_PROVIDER` (only `mockpay` so far) chooses the
+implementation in `PaymentsModule`, which **refuses to boot with `mockpay` in
+production** — MockPay is not mounted there and takes no real money, so the
+mistake shows at deploy rather than when a customer presses Pay.
+`MOCKPAY_URL` is optional: unset, the client calls this API itself, at the port
+it is listening on, read per call because e2e suites listen on a random port.
+
+**Dependency direction.** Payments depend on orders, never the reverse: an
+order does not need to know how it gets paid for. `payments/` owns the
+`Payment` table and its routes, which share the `/orders` prefix because they
+read as actions on an order.
 
 ### 5.2 What MockPay does
 
-1. `createSession` stores a session and returns `/mockpay/checkout/:sessionId`.
-2. That page shows the amount and two buttons: **Pay** and **Decline**.
-3. On either, it redirects the browser to `returnUrl`, **and separately** POSTs
-   a webhook to `POST /payments/webhook` after a configurable delay.
-4. A session carries the order's `expiresAt`; after it, the page refuses to pay.
+1. `POST /mockpay/sessions` validates what the merchant sends, stores a
+   session, and answers `{ sessionId, checkoutUrl }`. These are MockPay's own
+   names, deliberately not ours (`providerSessionId`, `redirectUrl`), so the
+   adapter has to translate as it would for a real provider. Session ids are
+   prefixed `mps_`, and sessions live in memory: MockPay must not share our
+   database, and losing them on restart is fine for a stand-in.
+2. `GET /mockpay/checkout/:sessionId` shows the amount and two buttons,
+   **Pay** and **Decline**. Everything the merchant sent is HTML-escaped before
+   it reaches the page.
+3. Each button POSTs to `/mockpay/checkout/:sessionId/pay` or `/decline`, which
+   records the outcome and answers **`303`** to `returnUrl` — `303` because the
+   button was a POST and the browser must follow with a GET. **And separately**
+   _(step 5)_, it POSTs a webhook to `POST /payments/webhook` after a
+   configurable delay. The redirect never waits for the webhook, so either can
+   arrive first (§9.1).
+4. A session is settled once (`409` after that) and carries the order's
+   `expiresAt`; after it, the session refuses to pay (`410`). An unknown
+   session is `404`.
 
-Test-only knobs, set per session: webhook delay, **deliver twice**, and
-**deliver out of order** (a `payment.failed` arriving after
+_(Step 5)_ Test-only knobs, set per session: webhook delay, **deliver twice**,
+and **deliver out of order** (a `payment.failed` arriving after
 `payment.succeeded`). §10 uses each.
 
 ### 5.3 Webhook authentication
@@ -237,15 +278,19 @@ model Payment {
   /// What the provider was asked to collect — checked against the webhook.
   amountCents       Int
   currency          String
+  /// The provider's payment page, so pressing Pay again while this attempt is
+  /// open returns the same page instead of opening a second one.
+  redirectUrl       String
 
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
   @@index([orderId])
+  // Plus, in SQL only: UNIQUE ("orderId") WHERE status = 'pending' (below).
 }
 
-/// Every webhook we have acted on. The unique id is what makes a redelivery a
-/// no-op — the same device as the idempotency key on checkout.
+/// Step 5. Every webhook we have acted on. The unique id is what makes a
+/// redelivery a no-op — the same device as the idempotency key on checkout.
 model PaymentEvent {
   id              String   @id  // the provider's event id
   type            String
@@ -256,6 +301,32 @@ model PaymentEvent {
 **Why a `Payment` table and not columns on `Order`:** an order can have several
 attempts — declined card, then a second try — and each needs its own provider
 id so a late webhook for attempt 1 is not mistaken for attempt 2.
+
+**At most one pending attempt per order** — a partial unique index, added in
+its own migration (`one_pending_payment_per_order`) because Prisma's schema
+cannot express one:
+
+```sql
+CREATE UNIQUE INDEX "Payment_orderId_pending_key"
+  ON "Payment" ("orderId") WHERE status = 'pending';
+```
+
+Two Pay presses at once both find no pending attempt and both open a provider
+session; without the index, both rows are inserted and the customer has two
+payment pages for one order — and can pay twice. With it, the second insert
+fails and that request answers with the first one's page. **Partial**, because
+failed and succeeded attempts must not count: a declined card has to be
+retryable. **An index, not a lock:** locking the order would hold the lock
+across the provider call, so a slow provider would block cancel and the
+sweeper on that order. The losing request leaves an unused session at the
+provider, which is harmless — nobody is sent to it, and it expires with the
+order.
+
+**Fields that must agree with `status`** are CHECK constraints, also in SQL
+only: `cancelledAt` and `cancelReason` are set exactly when an order is
+`cancelled`; `paidAt` exactly when it is `paid` or `shipped`; `shippedAt`
+exactly when it is `shipped`. A test or a manual edit that sets a status
+without its timestamp is refused by the database.
 
 **Existing rows:** the migration backfills `expiresAt = createdAt + 15 min`.
 Every existing `pending` order is therefore already expired, and the first
@@ -281,6 +352,8 @@ orders nobody can pay for.
   yet. The deadline is the deadline; the sweeper is only cleanup.
 - `409 ORDER_NOT_PAID` — ship anything that isn't `paid`.
 - `404` — someone else's order, as in `GET /orders/:id`.
+- `502` — the provider could not be reached or answered badly (§5.1). Nothing
+  is recorded, so pressing Pay again starts cleanly.
 
 **The webhook answers `2xx` for anything it has already processed.** Providers
 retry on non-`2xx`; answering a redelivery with an error would make it retry
@@ -288,8 +361,19 @@ forever. `400` only for a bad signature or an unparseable body — things a retr
 cannot fix.
 
 **`POST /orders/:id/payment` is safe to repeat:** if the order has a `pending`
-`Payment` whose session is still open, it returns that session's URL instead of
-starting a second one.
+`Payment`, it returns that payment's page instead of starting a second one —
+`201` when it started a payment, `200` when it returned the pending one, the
+same rule as checkout. The lookup only saves a provider call; requests that
+arrive together both miss it, and the partial unique index (§6) decides which
+attempt is kept. The deadline and status checks come first, so an order that
+can no longer be paid never gets its old page back.
+
+**`GET /orders/:id/payments/:paymentId`** answers
+`{ id, status, order: { id, status } }` and nothing more: the return page polls
+it every 2 seconds (§9.1), and those two statuses are all it branches on. The
+order's lines are read once from `GET /orders/:id`. The payment must belong to
+the order and the order to the user, checked in one query, so anything else is
+`404`.
 
 **The `Payment` id exists before the session does.** The return URL has to name
 the attempt (§9), but the provider only hands back its session id once asked.
@@ -488,11 +572,16 @@ on a time the code computes from "now" and backdating cannot express it.
    sweeper index. Shared contract gains the new fields. _(Done, #26.)_
 2. `cancelOrder` + `POST /orders/:id/cancel`, with the restock-once tests.
    _(Done, #26.)_
-3. The sweeper, with the expiry tests.
-4. Migration: `paidAt`, `shippedAt`, `Payment`, `PaymentEvent`. Then
-   `PaymentProvider`, MockPay, `POST /orders/:id/payment`,
-   `GET /orders/:id/payments/:paymentId`.
-5. The webhook, with the signature, duplicate and race tests.
+3. The sweeper, with the expiry tests. _(Done, #27.)_
+4. Migration: `paidAt`, `shippedAt`, `Payment`, and the one-pending-payment
+   index. Then `PaymentProvider`, MockPay, `POST /orders/:id/payment`,
+   `GET /orders/:id/payments/:paymentId`. _(Done, #31–#37.)_ Built
+   outside-in: the endpoint first against a fake provider, then MockPay, then
+   the client that connects them.
+5. `PaymentEvent`, `verifyWebhook`, MockPay's webhooks and test knobs, and the
+   webhook itself, with the signature, duplicate and race tests.
+   `PaymentEvent` moved here from step 4: only the webhook uses it, so it
+   arrives with its first caller.
 6. Admin list and ship.
 7. Web: detail page actions, the payment return route (§9.1), admin page.
 
@@ -501,7 +590,8 @@ lifecycle, and the sweeper and the late-payment race both build on it.
 
 ## 12. Open questions
 
-1. ⚖️ MockPay as a module inside the API (§5.1), or its own app from the start?
+1. ~~MockPay as a module inside the API, or its own app from the start?~~
+   Decided: a module, mounted outside production only (§5.1).
 2. ⚖️ Accept the paid-after-cancelled window with an admin list (§8.4), or do
    authorise/capture now?
 3. Should the sweeper also run lazily — expire an order when it is read after
