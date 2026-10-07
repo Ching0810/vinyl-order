@@ -39,6 +39,14 @@ const envSchema = z.object({
   // The web app's public address — one URL, unlike the WEB_ORIGIN list. Builds
   // the page a payment provider sends the customer's browser back to.
   PUBLIC_WEB_URL: z.url().default('http://localhost:3000'),
+
+  // Which payment provider collects money. Only MockPay so far, which is
+  // refused in production (PaymentsModule): it takes no real money.
+  PAYMENT_PROVIDER: z.enum(['mockpay']).default('mockpay'),
+  // MockPay's address for server-to-server calls. Unset: this API itself,
+  // since MockPay is mounted inside it — read per call, as tests listen on a
+  // random port. Set it once MockPay runs anywhere else.
+  MOCKPAY_URL: z.url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

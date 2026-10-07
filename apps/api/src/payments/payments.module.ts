@@ -1,25 +1,40 @@
-import { Module, ServiceUnavailableException } from '@nestjs/common';
+import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { HttpAdapterHost } from '@nestjs/core';
 
-import { PaymentProvider, PaymentSession } from './payment-provider';
+import { MockPayProvider } from './mockpay.provider';
+import { PaymentProvider } from './payment-provider';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 
 /**
- * Temporary: stands in until MockPayProvider replaces it, so the API boots and
- * PaymentsService can be built. Starting a payment answers 503 until then.
- */
-class UnconfiguredPaymentProvider extends PaymentProvider {
-  createSession(): Promise<PaymentSession> {
-    throw new ServiceUnavailableException('Payment provider not configured');
-  }
-}
-
-/**
  * Paying for orders. Depends on orders, never the reverse: orders don't need
  * to know how they get paid for.
+ *
+ * The PaymentProvider is chosen by PAYMENT_PROVIDER, so PaymentsService
+ * depends on the contract rather than a specific provider.
  */
 @Module({
   controllers: [PaymentsController],
-  providers: [PaymentsService, { provide: PaymentProvider, useClass: UnconfiguredPaymentProvider }],
+  providers: [
+    PaymentsService,
+    {
+      provide: PaymentProvider,
+      inject: [ConfigService, HttpAdapterHost],
+      useFactory: (config: ConfigService, adapterHost: HttpAdapterHost): PaymentProvider => {
+        const provider = config.get<string>('PAYMENT_PROVIDER') ?? 'mockpay';
+        if (provider === 'mockpay') {
+          // MockPay takes no real money and is not mounted in production, so
+          // there every payment would fail. Refuse to boot instead: the mistake
+          // shows at deploy, not when a customer presses Pay.
+          if (config.get<string>('NODE_ENV') === 'production') {
+            throw new Error('PAYMENT_PROVIDER=mockpay is not allowed in production');
+          }
+          return new MockPayProvider(config, adapterHost);
+        }
+        throw new Error(`Unsupported PAYMENT_PROVIDER: ${provider}`);
+      },
+    },
+  ],
 })
 export class PaymentsModule {}
