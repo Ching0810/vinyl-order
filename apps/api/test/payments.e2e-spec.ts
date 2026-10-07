@@ -4,7 +4,7 @@ import { BadGatewayException, INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import type { StartPaymentResponse } from '@vinyl-order/shared';
+import type { PaymentResult, StartPaymentResponse } from '@vinyl-order/shared';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
@@ -255,6 +255,100 @@ describe('Payments (e2e)', () => {
       await startPayment(token, order.id).expect(502);
 
       expect(await paymentsOf(order.id)).toHaveLength(0);
+    });
+  });
+
+  describe('reading a payment result', () => {
+    const readResult = (token: string, orderId: string, paymentId: string) =>
+      request(app.getHttpServer())
+        .get(`/orders/${orderId}/payments/${paymentId}`)
+        .set('Authorization', `Bearer ${token}`);
+
+    /** A customer with an order and one pending payment on it. */
+    const placeAndStart = async () => {
+      const placed = await placeOrder();
+      await startPayment(placed.token, placed.order.id).expect(201);
+      const [payment] = await paymentsOf(placed.order.id);
+      return { ...placed, payment };
+    };
+
+    it('reports a payment that has just started as pending', async () => {
+      const { order, token, payment } = await placeAndStart();
+
+      const res = await readResult(token, order.id, payment.id).expect(200);
+
+      expect(res.body as PaymentResult).toEqual({
+        id: payment.id,
+        status: 'pending',
+        order: { id: order.id, status: 'pending' },
+      });
+    });
+
+    // Stands in for the webhook, which will be what moves both statuses.
+    it('reports the result once the payment has been settled', async () => {
+      const { order, token, payment } = await placeAndStart();
+      await prisma.payment.update({ where: { id: payment.id }, data: { status: 'succeeded' } });
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: 'paid', paidAt: new Date() },
+      });
+
+      const res = await readResult(token, order.id, payment.id).expect(200);
+
+      expect(res.body as PaymentResult).toMatchObject({
+        status: 'succeeded',
+        order: { status: 'paid' },
+      });
+    });
+
+    // Why the attempt is in the URL: each return page asks about its own
+    // attempt, so a declined first try never shows as the second's result.
+    it('reports each attempt on an order as its own', async () => {
+      const { order, token, payment: first } = await placeAndStart();
+      await prisma.payment.update({ where: { id: first.id }, data: { status: 'failed' } });
+      await startPayment(token, order.id).expect(201);
+      const second = (await paymentsOf(order.id))[1];
+
+      const firstRes = await readResult(token, order.id, first.id).expect(200);
+      const secondRes = await readResult(token, order.id, second.id).expect(200);
+
+      expect((firstRes.body as PaymentResult).status).toBe('failed');
+      expect((secondRes.body as PaymentResult).status).toBe('pending');
+    });
+
+    it("answers 404 for another customer's payment", async () => {
+      const { order, payment } = await placeAndStart();
+      const { token: stranger } = await placeOrder();
+
+      await readResult(stranger, order.id, payment.id).expect(404);
+    });
+
+    it('answers 404 for a payment under a different order of the same customer', async () => {
+      const { order, token, payment } = await placeAndStart();
+      const other = await prisma.order.create({
+        data: {
+          userId: order.userId,
+          subtotalCents: 500,
+          currency: 'TWD',
+          expiresAt: new Date(Date.now() + PAYMENT_WINDOW_MS),
+        },
+      });
+
+      await readResult(token, other.id, payment.id).expect(404);
+    });
+
+    it('answers 404 for a payment that does not exist', async () => {
+      const { order, token } = await placeOrder();
+
+      await readResult(token, order.id, randomUUID()).expect(404);
+    });
+
+    it('answers 401 without a session', async () => {
+      const { order, payment } = await placeAndStart();
+
+      await request(app.getHttpServer())
+        .get(`/orders/${order.id}/payments/${payment.id}`)
+        .expect(401);
     });
   });
 });

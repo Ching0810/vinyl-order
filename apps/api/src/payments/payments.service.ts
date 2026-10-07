@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { StartPaymentResponse } from '@vinyl-order/shared';
+import type { PaymentResult, StartPaymentResponse } from '@vinyl-order/shared';
 
 import { conflict } from '../orders/order.errors';
 import { PrismaService } from '../prisma/prisma.service';
@@ -122,6 +122,23 @@ export class PaymentsService {
     }
 
     return { payment: { redirectUrl: session.redirectUrl }, created: true };
+  }
+
+  /**
+   * One payment attempt's status, with its order's.
+   *
+   * 404 unless the payment belongs to this order and the order to this user —
+   * all three in one query, so another customer's payment, or a payment id put
+   * under the wrong order, is simply not found. 404 rather than 403, as in
+   * OrdersService: a 403 would confirm the id exists.
+   */
+  async findOne(userId: string, orderId: string, paymentId: string): Promise<PaymentResult> {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, orderId, order: { userId } },
+      select: { id: true, status: true, order: { select: { id: true, status: true } } },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    return payment;
   }
 
   /** The order's pending payment's page, if it has one. */

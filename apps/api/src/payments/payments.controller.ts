@@ -1,5 +1,5 @@
-import { Controller, HttpStatus, Param, Post, Res, UseGuards } from '@nestjs/common';
-import type { PublicUser, StartPaymentResponse } from '@vinyl-order/shared';
+import { Controller, Get, HttpStatus, Param, Post, Res, UseGuards } from '@nestjs/common';
+import type { PaymentResult, PublicUser, StartPaymentResponse } from '@vinyl-order/shared';
 import type { Response } from 'express';
 
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -37,5 +37,21 @@ export class PaymentsController {
 
     response.status(created ? HttpStatus.CREATED : HttpStatus.OK);
     return payment;
+  }
+
+  /**
+   * GET /orders/:id/payments/:paymentId — how one attempt stands.
+   *
+   * Polled by the page the provider sends the customer back to. Reaching that
+   * page proves nothing, so it shows what this reports, which only the
+   * provider's webhook changes.
+   */
+  @Get(':id/payments/:paymentId')
+  findOne(
+    @CurrentUser() user: PublicUser,
+    @Param('id') id: string,
+    @Param('paymentId') paymentId: string,
+  ): Promise<PaymentResult> {
+    return this.payments.findOne(user.id, id, paymentId);
   }
 }
