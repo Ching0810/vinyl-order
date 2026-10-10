@@ -1,11 +1,18 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Server } from 'node:net';
 
-import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpAdapterHost } from '@nestjs/core';
 import { z } from 'zod';
 
-import { CreateSessionInput, PaymentProvider, PaymentSession } from './payment-provider';
+import {
+  CreateSessionInput,
+  PaymentProvider,
+  PaymentSession,
+  PaymentWebhookEvent,
+  WebhookHeaders,
+} from './payment-provider';
 
 /**
  * How long to wait for MockPay. A provider that hangs must not hang the
@@ -28,6 +35,34 @@ const mockPaySessionSchema = z.object({
 
 /** What the customer sees for any provider failure; the detail goes to the log. */
 const providerUnavailable = () => new BadGatewayException('Payment provider unavailable');
+
+/** Carries `t=<unix seconds>,v1=<hex HMAC-SHA256>`. Node lower-cases header names. */
+const SIGNATURE_HEADER = 'mockpay-signature';
+
+/**
+ * How far a webhook's timestamp may be from now, either way. Older is refused
+ * so a captured webhook cannot be replayed later; newer, so a forged future
+ * timestamp cannot stretch that window.
+ */
+const SIGNATURE_TOLERANCE_SECONDS = 5 * 60;
+
+/**
+ * MockPay's webhook body, as it arrives over the wire — again declared here,
+ * not imported. Only the fields we read: requiring the rest would make us
+ * refuse a webhook over a field we ignore.
+ */
+const mockPayWebhookSchema = z.object({
+  id: z.string().min(1),
+  type: z.enum(['payment.succeeded', 'payment.failed']),
+  data: z.object({
+    sessionId: z.string().min(1),
+    amountCents: z.number().int(),
+    currency: z.string().min(1),
+  }),
+});
+
+/** Who sent this can't be proven: no detail in the response, which an attacker reads. */
+const invalidSignature = () => new BadRequestException('Invalid webhook signature');
 
 /**
  * Our client for MockPay: turns our request into MockPay's, and its answer
@@ -81,6 +116,61 @@ export class MockPayProvider extends PaymentProvider {
   }
 
   /**
+   * Prove a webhook came from MockPay, then read it — in that order: nothing
+   * is parsed, let alone trusted, until the signature holds.
+   *
+   * MockPay signs `<t>.<raw body>` with HMAC-SHA256 under the shared secret
+   * (Stripe's scheme). Without the secret nobody can produce a matching
+   * signature, and changing one byte of the body breaks it.
+   */
+  verifyWebhook(rawBody: Buffer, headers: WebhookHeaders): PaymentWebhookEvent {
+    const header = headers[SIGNATURE_HEADER];
+    const signature = typeof header === 'string' ? parseSignature(header) : null;
+    if (!signature) {
+      this.logger.warn('Webhook refused: missing or malformed signature header');
+      throw invalidSignature();
+    }
+
+    const ageSeconds = Math.abs(Date.now() / 1000 - signature.timestamp);
+    if (ageSeconds > SIGNATURE_TOLERANCE_SECONDS) {
+      this.logger.warn(`Webhook refused: timestamp ${signature.timestamp} is outside tolerance`);
+      throw invalidSignature();
+    }
+
+    const expected = createHmac('sha256', this.config.getOrThrow<string>('MOCKPAY_WEBHOOK_SECRET'))
+      .update(`${signature.timestamp}.`)
+      .update(rawBody)
+      .digest();
+    // timingSafeEqual takes as long wherever the bytes differ, so response time
+    // reveals nothing about how much of a guess was right. It throws on unequal
+    // lengths, so those are refused first.
+    if (
+      signature.digest.length !== expected.length ||
+      !timingSafeEqual(signature.digest, expected)
+    ) {
+      this.logger.warn('Webhook refused: signature does not match');
+      throw invalidSignature();
+    }
+
+    const parsed = mockPayWebhookSchema.safeParse(parseJson(rawBody));
+    if (!parsed.success) {
+      // Signed by MockPay but unreadable: worth a loud log, since it means the
+      // two sides disagree on the format.
+      this.logger.error(`MockPay webhook in an unexpected shape: ${parsed.error.message}`);
+      throw new BadRequestException('Malformed webhook payload');
+    }
+
+    const { id, type, data } = parsed.data;
+    return {
+      id,
+      type,
+      providerSessionId: data.sessionId,
+      amountCents: data.amountCents,
+      currency: data.currency,
+    };
+  }
+
+  /**
    * MockPay's server-to-server address, without a trailing slash. MOCKPAY_URL
    * when set; otherwise this process, where MockPay is mounted. Read per call,
    * not at boot, because e2e suites listen on a random port.
@@ -99,3 +189,31 @@ export class MockPayProvider extends PaymentProvider {
     return `http://127.0.0.1:${address.port}/mockpay`;
   }
 }
+
+/**
+ * Read `t=<unix seconds>,v1=<hex>`, or null if it isn't exactly that. Strict
+ * on purpose: anything unexpected is refused rather than guessed at.
+ */
+const parseSignature = (header: string): { timestamp: number; digest: Buffer } | null => {
+  const parts = new Map(
+    header.split(',').map((part) => {
+      const [key, ...rest] = part.trim().split('=');
+      return [key, rest.join('=')] as const;
+    }),
+  );
+  const t = parts.get('t');
+  const v1 = parts.get('v1');
+  if (!t || !/^\d+$/.test(t) || !v1 || !/^[0-9a-f]+$/i.test(v1) || v1.length % 2 !== 0) {
+    return null;
+  }
+  return { timestamp: Number(t), digest: Buffer.from(v1, 'hex') };
+};
+
+/** The body as JSON, or undefined — which the schema then refuses. */
+const parseJson = (rawBody: Buffer): unknown => {
+  try {
+    return JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    return undefined;
+  }
+};
