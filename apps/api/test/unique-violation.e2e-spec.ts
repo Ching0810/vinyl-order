@@ -66,6 +66,17 @@ describe('violatesUniqueIndex (e2e)', () => {
     expect(violatesUniqueIndex(error, 'Order_userId_idempotencyKey_key')).toBe(true);
   });
 
+  // A primary key is enforced by a unique index of its own, named <table>_pkey;
+  // the webhook handler recognises a redelivered event by it.
+  it('recognises a primary key the write broke', async () => {
+    const data = { id: `evt_${randomUUID()}`, type: 'payment.succeeded' };
+    await prisma.paymentEvent.create({ data });
+
+    const error = await errorFrom(prisma.paymentEvent.create({ data }));
+
+    expect(violatesUniqueIndex(error, 'PaymentEvent_pkey')).toBe(true);
+  });
+
   it('ignores a violation of some other unique index', async () => {
     const user = await createUser();
     const duplicateEmail = prisma.user.create({

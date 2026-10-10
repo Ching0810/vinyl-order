@@ -8,7 +8,10 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // rawBody keeps each request's exact bytes on req.rawBody beside the parsed
+  // req.body: a webhook's signature is computed over those bytes, and
+  // re-serialising the parsed JSON would not reproduce them.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   const config = app.get(ConfigService);
 
   // Parse the Cookie header into req.cookies (JwtStrategy reads the JWT cookie).

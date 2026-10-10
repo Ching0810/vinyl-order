@@ -1,16 +1,20 @@
 import { randomUUID } from 'node:crypto';
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { PaymentResult, StartPaymentResponse } from '@vinyl-order/shared';
 
+import { OrderLifecycleService } from '../orders/order-lifecycle.service';
 import { conflict } from '../orders/order.errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { violatesUniqueIndex } from '../prisma/unique-violation';
-import { PaymentProvider } from './payment-provider';
+import { PaymentProvider, PaymentWebhookEvent } from './payment-provider';
 
 /** Made in the one_pending_payment_per_order migration: one pending payment per order. */
 const PENDING_PAYMENT_INDEX = 'Payment_orderId_pending_key';
+
+/** PaymentEvent's primary key: an event id seen before means a redelivery. */
+const PAYMENT_EVENT_KEY = 'PaymentEvent_pkey';
 
 /** What starting a payment answered with, and whether it created a new payment. */
 export interface StartPaymentResult {
@@ -25,20 +29,23 @@ export interface StartPaymentResult {
  *
  * Payments depend on orders, never the reverse — an order does not need to
  * know how it gets paid for. So this module owns the Payment table and reaches
- * into orders only for what an order is: its errors, and later its status
+ * into orders only for what an order is: its errors, and its status
  * transitions.
  *
  * Starting a payment never changes the order's status — only the provider's
- * webhook does — so this does not go through OrderLifecycleService. Queries
- * are scoped by userId, as in OrdersService, so another customer's order is
- * simply not found.
+ * webhook does, through OrderLifecycleService. Customer queries are scoped by
+ * userId, as in OrdersService, so another customer's order is simply not
+ * found.
  */
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly provider: PaymentProvider,
     private readonly config: ConfigService,
+    private readonly lifecycle: OrderLifecycleService,
   ) {}
 
   /**
@@ -139,6 +146,80 @@ export class PaymentsService {
     });
     if (!payment) throw new NotFoundException('Payment not found');
     return payment;
+  }
+
+  /**
+   * Act on a verified webhook: settle the payment it names, and pay the order
+   * when it succeeded (docs/design/payments.md §8.1).
+   *
+   * One transaction, opened by recording the event id. A redelivery fails on
+   * that key and changes nothing — including one arriving while the first is
+   * still running, which waits on the key and then fails. Anything that goes
+   * wrong after the record rolls it back too, so the provider's retry is
+   * processed afresh rather than mistaken for a redelivery.
+   *
+   * Returns normally whenever retrying could not change the outcome — handled,
+   * already handled, or about a session we don't know — so the provider stops
+   * resending. Only a real failure (the database, say) throws, and the
+   * provider's retry is then what we want.
+   */
+  async handleWebhook(event: PaymentWebhookEvent): Promise<void> {
+    try {
+      await this.prisma.$transaction(async (transaction) => {
+        await transaction.paymentEvent.create({ data: { id: event.id, type: event.type } });
+
+        const payment = await transaction.payment.findUnique({
+          where: { providerSessionId: event.providerSessionId },
+        });
+        if (!payment) {
+          // Not ours, or older than our records. A retry can't change that.
+          this.logger.warn(`Webhook ${event.id} names unknown session ${event.providerSessionId}`);
+          return;
+        }
+
+        if (event.type === 'payment.failed') {
+          // Only a pending attempt can fail: a decline arriving after a success
+          // for the same session must not undo it.
+          await transaction.payment.updateMany({
+            where: { id: payment.id, status: 'pending' },
+            data: { status: 'failed' },
+          });
+          return;
+        }
+
+        if (event.amountCents !== payment.amountCents || event.currency !== payment.currency) {
+          // Paid, but not what was asked. Never accepted as payment for the
+          // order; loud, because someone has to look at this money by hand.
+          await transaction.payment.updateMany({
+            where: { id: payment.id, status: 'pending' },
+            data: { status: 'failed' },
+          });
+          this.logger.error(
+            `Webhook ${event.id}: payment ${payment.id} collected ${event.amountCents} ${event.currency}, ` +
+              `expected ${payment.amountCents} ${payment.currency}; not accepted`,
+          );
+          return;
+        }
+
+        // Succeeded, even over an earlier decline for this session: the money
+        // has been taken, so a success is the last word.
+        await transaction.payment.update({
+          where: { id: payment.id },
+          data: { status: 'succeeded' },
+        });
+        if (!(await this.lifecycle.markPaid(transaction, payment.orderId))) {
+          // Already paid by an earlier attempt, or cancelled first — usually by
+          // the expiry sweeper (§8.4). The payment is recorded as succeeded
+          // against an order that isn't waiting for it: money to hand back.
+          this.logger.warn(
+            `Payment ${payment.id} succeeded but order ${payment.orderId} was no longer pending; refund it`,
+          );
+        }
+      });
+    } catch (error) {
+      if (violatesUniqueIndex(error, PAYMENT_EVENT_KEY)) return;
+      throw error;
+    }
   }
 
   /** The order's pending payment's page, if it has one. */

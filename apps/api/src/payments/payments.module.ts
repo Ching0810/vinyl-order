@@ -2,20 +2,25 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpAdapterHost } from '@nestjs/core';
 
+import { OrdersModule } from '../orders/orders.module';
 import { MockPayProvider } from './mockpay.provider';
 import { PaymentProvider } from './payment-provider';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { WebhooksController } from './webhooks.controller';
 
 /**
  * Paying for orders. Depends on orders, never the reverse: orders don't need
- * to know how they get paid for.
+ * to know how they get paid for. The import is for OrderLifecycleService, so a
+ * settled payment moves its order through the same transitions as everything
+ * else.
  *
  * The PaymentProvider is chosen by PAYMENT_PROVIDER, so PaymentsService
  * depends on the contract rather than a specific provider.
  */
 @Module({
-  controllers: [PaymentsController],
+  imports: [OrdersModule],
+  controllers: [PaymentsController, WebhooksController],
   providers: [
     PaymentsService,
     {

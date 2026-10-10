@@ -50,6 +50,26 @@ export class OrderLifecycleService {
   }
 
   /**
+   * Move a pending order to `paid` — exactly once.
+   *
+   * Runs in the caller's transaction rather than its own: the payment webhook
+   * settles the payment and the order together, so either both change or
+   * neither does. When payment and expiry reach the same order at once, both
+   * conditional updates wait on the row lock and only one finds it `pending`.
+   *
+   * @param transaction - the caller's, so this commits or rolls back with it
+   * @returns whether this call paid the order; false means it had already left
+   *   `pending` — paid by an earlier event, or cancelled first
+   */
+  async markPaid(transaction: Prisma.TransactionClient, orderId: string): Promise<boolean> {
+    const { count } = await transaction.order.updateMany({
+      where: { id: orderId, status: 'pending' },
+      data: { status: 'paid', paidAt: new Date() },
+    });
+    return count === 1;
+  }
+
+  /**
    * Put a cancelled order's copies back on sale.
    *
    * Lines whose product has since been deleted are skipped: there is nothing
