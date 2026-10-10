@@ -1,8 +1,8 @@
 # Payments & Order Lifecycle
 
-- **Status:** In progress — steps 1–4 built (§11); decisions still marked ⚖️
+- **Status:** In progress — steps 1–5 built (§11); decisions still marked ⚖️
   are open
-- **Date:** 2026-09-24 · **Updated:** 2026-10-07
+- **Date:** 2026-09-24 · **Updated:** 2026-10-10
 - **Scope:** paying for a `pending` order through a simulated payment provider,
   expiring unpaid orders after 15 minutes, letting a customer cancel an unpaid
   order, and letting an admin mark a paid order shipped
@@ -153,14 +153,28 @@ abstract class PaymentProvider {
     returnUrl: string;
   }): Promise<{ providerSessionId: string; redirectUrl: string }>;
 
-  // Added in step 5, with its first caller:
-  // verifyWebhook(rawBody: Buffer, headers: Record<string, string>): PaymentEvent;
+  /** Prove a webhook came from the provider and parse it, or throw 400. */
+  abstract verifyWebhook(rawBody: Buffer, headers: WebhookHeaders): PaymentWebhookEvent;
+}
+
+/** A provider's webhook, verified and in our terms. */
+interface PaymentWebhookEvent {
+  id: string; // the provider's event id: what a redelivery repeats
+  type: 'payment.succeeded' | 'payment.failed';
+  providerSessionId: string;
+  amountCents: number;
+  currency: string;
 }
 ```
 
 An abstract class rather than an interface because it is also the Nest
 injection token: interfaces do not exist at runtime. Swapping in Stripe later
 means one new class implementing this, not a change to orders or payments.
+
+`PaymentWebhookEvent` is named apart from the `PaymentEvent` table (§6), which
+only records the ids of events we have handled. It carries no order id: the
+payment is found by its session, and the order through the payment — never by
+what the provider says the order is.
 
 **Where MockPay lives** (decided): a Nest module (`apps/api/src/mockpay`)
 mounted under `/mockpay`, and left out of `AppModule` in production. A separate
@@ -206,16 +220,44 @@ read as actions on an order.
 3. Each button POSTs to `/mockpay/checkout/:sessionId/pay` or `/decline`, which
    records the outcome and answers **`303`** to `returnUrl` — `303` because the
    button was a POST and the browser must follow with a GET. **And separately**
-   _(step 5)_, it POSTs a webhook to `POST /payments/webhook` after a
-   configurable delay. The redirect never waits for the webhook, so either can
-   arrive first (§9.1).
+   it schedules a webhook — `payment.succeeded` or `payment.failed` — to the
+   merchant. The redirect never waits for the webhook, so either can arrive
+   first (§9.1).
 4. A session is settled once (`409` after that) and carries the order's
    `expiresAt`; after it, the session refuses to pay (`410`). An unknown
    session is `404`.
 
-_(Step 5)_ Test-only knobs, set per session: webhook delay, **deliver twice**,
-and **deliver out of order** (a `payment.failed` arriving after
-`payment.succeeded`). §10 uses each.
+**Delivering webhooks** works as a real provider's does, because that is what
+our side has to survive:
+
+- **Signed** with the §5.3 scheme. The signing is written inside `mockpay/`,
+  not shared with the verifying code in `payments/`: the two sides of a
+  provider integration share a scheme, never code.
+- **At least once.** Anything but a `2xx` — an error status, a timeout after
+  5 seconds, no connection — is retried, after 0.5 s and then 2 s, three
+  attempts in all; then MockPay gives up and logs it. A real provider keeps
+  trying for days; a stand-in only needs to show that it retries.
+- **The same event, each time.** Every retry repeats the event id (`mpe_…`)
+  and the exact body bytes, which is what lets our side recognise a
+  redelivery (§8.1). Each attempt is **signed afresh**, so a retry made
+  minutes later still falls inside the timestamp window.
+- **Where:** `MOCKPAY_WEBHOOK_URL` — what a merchant would enter in a real
+  provider's dashboard. Unset, this API's own `/payments/webhook`, at the port
+  it is listening on.
+- Pending deliveries are cancelled when the app shuts down, so nothing outlives
+  it — tests included.
+
+**One test knob, not three.** The plan had per-session knobs for the webhook
+delay, **deliver twice**, and **deliver out of order**. Only the delay was
+built: the webhook tests sign events and send them to our endpoint
+themselves, which produces a redelivery or a `failed` after a `succeeded`
+exactly and at once — the knobs would have produced the same cases through
+asynchronous delivery and timing. `webhookDelayMs` is an optional field on
+`POST /mockpay/sessions` (default **1 second**, which our client never
+overrides). The default is deliberate: the customer is usually back before the
+result arrives, the order a real provider tends to produce and the one the
+return page must handle — a zero delay in one process would hide that path
+in development.
 
 ### 5.3 Webhook authentication
 
@@ -230,9 +272,21 @@ MockPay-Signature: t=1727170000,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>
   reorder keys and break the signature. Nest needs `rawBody: true`.
 - Compared with `crypto.timingSafeEqual`, so response time leaks nothing about
   how much of the signature matched.
-- `t` older than 5 minutes is refused, so a captured webhook cannot be
-  replayed later.
-- The secret is `MOCKPAY_WEBHOOK_SECRET`, validated at boot like the others.
+- `t` more than 5 minutes from now is refused — either way: older, so a
+  captured webhook cannot be replayed later; newer, so a forged future
+  timestamp cannot stretch that window.
+- **The signature is checked before the body is parsed.** Nothing from an
+  unproven sender is read, let alone trusted.
+- **Every signature failure is the same `400 Invalid webhook signature`.** The
+  reason — missing, stale, mismatched — goes to the log only; telling the
+  sender which check failed would help a forger adjust.
+- A signed but unreadable body is `400 Malformed webhook payload`, logged
+  loudly: it means the two sides disagree on the format. The body's Zod schema
+  requires only the fields we read, so a provider adding or dropping a field
+  we ignore does not get its webhooks refused.
+- The secret is `MOCKPAY_WEBHOOK_SECRET`, required and validated at boot, with
+  **no default** — a secret with a default is public. Tests and CI read a
+  test-only value from the committed `.env.test`.
 
 This is Stripe's scheme, deliberately, so it is the scheme you would explain in
 an interview.
@@ -289,14 +343,20 @@ model Payment {
   // Plus, in SQL only: UNIQUE ("orderId") WHERE status = 'pending' (below).
 }
 
-/// Step 5. Every webhook we have acted on. The unique id is what makes a
+/// Every webhook we have acted on. The primary key is what makes a
 /// redelivery a no-op — the same device as the idempotency key on checkout.
 model PaymentEvent {
-  id              String   @id  // the provider's event id
-  type            String
+  id              String   @id  // the provider's event id, not ours
+  type            String        // the provider's name for it, for tracing
   receivedAt      DateTime @default(now())
 }
 ```
+
+**`PaymentEvent` has no relation to `Payment`:** an event naming a session we
+don't know is recorded too, so its redelivery is not processed again either.
+A redelivery is recognised by the insert failing on `PaymentEvent_pkey` — the
+same `violatesUniqueIndex` check checkout and starting a payment use, pinned
+by its own test since the error's shape is Prisma's to change.
 
 **Why a `Payment` table and not columns on `Order`:** an order can have several
 attempts — declined card, then a second try — and each needs its own provider
@@ -384,21 +444,45 @@ calls `createSession`, and then inserts the row with both ids.
 
 ### 8.1 Handling a webhook
 
-One transaction:
+`WebhooksController` takes the raw body (the app is created with
+`rawBody: true`), and `PaymentsService.handleWebhook` does the rest:
 
-1. Verify the signature (§5.3) — before anything touches the database.
-2. `INSERT INTO "PaymentEvent" (id, …)`. On a unique violation, this event was
-   already handled: commit nothing, answer `200`.
+1. Verify the signature (§5.3) — before anything touches the database. `400`
+   if it fails.
+2. Open one transaction with `INSERT INTO "PaymentEvent" (id, …)`. On a
+   unique violation this event was already handled: the transaction rolls
+   back and we answer `200`. A copy arriving while the first is still running
+   waits on the key, then fails the same way.
 3. Find the `Payment` by `providerSessionId`. Unknown → `200` and log it; it is
    not ours, or it predates us, and a retry will not change that.
 4. `payment.succeeded`:
    - Amount or currency differs from the `Payment` row → mark the payment
-     `failed`, log loudly, leave the order alone.
-   - Otherwise mark the payment `succeeded`, then run the
-     `pending → paid` conditional update (§4.1).
-   - 0 rows updated means the order was already cancelled — see §8.4.
+     `failed` **if it is still `pending`**, log loudly, leave the order alone.
+   - Otherwise mark the payment `succeeded` — **even over an earlier
+     `failed`** for the same session, since the money has been taken — then
+     run the `pending → paid` conditional update (`markPaid`, §4.1) in the same
+     transaction, so payment and order change together or not at all.
+   - 0 rows updated means the order was no longer `pending`: cancelled first
+     (§8.4), or already paid by another attempt. Either way the money is
+     recorded as `succeeded` and logged as one to refund.
 5. `payment.failed`: mark the payment `failed` **only if it is still
    `pending`**. A `failed` arriving after `succeeded` changes nothing.
+
+Any other error — the database, say — rolls back the event record as well, so
+the provider's retry is processed afresh instead of being taken for a
+redelivery. That is also why only "a retry could not change this" answers
+`200` and real failures answer `500`.
+
+The endpoint is not throttled (`@SkipThrottle`): a provider can deliver in
+bursts, and a dropped webhook is a payment we do not hear about until it is
+resent. It needs no login guard; the signature is the authentication.
+
+**Known limitation.** `failed` does not record why: a decline and a refused
+amount look the same. So a later correct `succeeded` for the same session
+turns a refused payment into `succeeded`. One session reporting two different
+amounts means the provider itself is broken, so this is left until it
+matters; a failure reason on `Payment`, or a separate `rejected` status that a
+success cannot overwrite, would close it.
 
 ### 8.2 Cancelling (customer or sweeper)
 
@@ -452,7 +536,8 @@ Two defences, both in this iteration:
    flight at the deadline.
 2. **What is left is recorded, not hidden.** The payment stays `succeeded`
    against a `cancelled` order, and an admin query lists exactly those — money
-   to hand back by hand until refunds exist.
+   to hand back by hand until refunds exist. _(Recorded and logged since step
+   5; the admin list comes with step 6.)_
 
 The real fix is **authorise, then capture**: the provider only _holds_ the
 money; we capture after the `pending → paid` update wins, and void the hold if
@@ -531,14 +616,28 @@ row lock or a unique index, which a mock would pass while proving nothing.
   pair returns its `409` code.
 - Paying after `expiresAt` is `ORDER_EXPIRED` before the sweeper has run.
 
-**Webhooks**
+**Webhooks** — the tests sign events and send them to the endpoint
+themselves, so they choose exactly what arrives and when (§5.2)
 
-- A bad signature, a stale timestamp, and a modified body are each `400` and
-  change nothing.
-- The same event delivered twice: one transition, one `PaymentEvent` row, two
-  `200`s.
-- `failed` after `succeeded` leaves the order `paid`.
+- A wrong secret, a timestamp too old or too far ahead, a modified body, and a
+  missing or malformed header are each `400` and change nothing; so is a
+  signed body that is not a webhook. _(webhook-signature, webhooks specs)_
+- The same event delivered twice, and **five copies at once**: one transition,
+  one `PaymentEvent` row, all `200`s.
+- `failed` after `succeeded` leaves the order `paid`; `succeeded` after
+  `failed` pays it.
 - An amount mismatch leaves the order `pending` and the payment `failed`.
+- A session we don't know is `200` and recorded.
+
+**MockPay's delivery** — what it sends, captured by replacing `fetch`
+
+- Pay and Decline each send the right event type, to `/payments/webhook`,
+  signed with the secret.
+- The redirect returns before the webhook is sent.
+- A webhook answered `500` is retried as **the same event id**, each attempt
+  validly signed; after three attempts it stops.
+- End to end, nothing replaced: pressing Pay pays the order, pressing Decline
+  fails the payment and leaves the order payable.
 
 **Restock exactly once**
 
@@ -548,9 +647,12 @@ row lock or a unique index, which a mock would pass while proving nothing.
 
 **Payment vs expiry**
 
-- Webhook and sweeper fired together: the order ends either `paid` with stock
-  still taken, or `cancelled` with stock returned — never both, never neither.
-- The losing-payment case appears in the "paid but cancelled" admin query.
+- Webhook and sweeper fired together, five rounds: the order ends either
+  `paid` with stock still taken, or `cancelled` with stock returned — never
+  both, never neither — and the payment is `succeeded` either way.
+- A success landing after the order was cancelled is recorded and leaves the
+  order `cancelled`. _(Its appearance in the "paid but cancelled" admin query
+  waits for step 6.)_
 
 **Payment return (§9.1)**
 
@@ -578,10 +680,13 @@ on a time the code computes from "now" and backdating cannot express it.
    `GET /orders/:id/payments/:paymentId`. _(Done, #31–#37.)_ Built
    outside-in: the endpoint first against a fake provider, then MockPay, then
    the client that connects them.
-5. `PaymentEvent`, `verifyWebhook`, MockPay's webhooks and test knobs, and the
-   webhook itself, with the signature, duplicate and race tests.
+5. `PaymentEvent`, `verifyWebhook`, the webhook itself, and MockPay's
+   webhooks, with the signature, duplicate and race tests. _(Done, #39–#42.)_
    `PaymentEvent` moved here from step 4: only the webhook uses it, so it
-   arrives with its first caller.
+   arrives with its first caller. Built in small merged steps: the table, the
+   signature check, the endpoint against hand-signed webhooks, then MockPay
+   sending them — the payment flow worked end to end only at the last. Only
+   one of the three planned test knobs was built (§5.2).
 6. Admin list and ship.
 7. Web: detail page actions, the payment return route (§9.1), admin page.
 
@@ -619,3 +724,10 @@ lifecycle, and the sweeper and the late-payment race both build on it.
   `SKIP LOCKED` or a queue if it matters (§8.3).
 - **"Why sign the raw body?"** → JSON re-serialisation is not byte-stable; the
   signature must cover exactly what was sent (§5.3).
+- **"What does at-least-once delivery mean for the sender?"** → retry anything
+  not acknowledged, always as the same event id — that id is the only thing
+  that lets the receiver recognise a redelivery — and sign each attempt afresh
+  so a late retry still fits the receiver's time window (§5.2).
+- **"Why `timingSafeEqual` and not `===`?"** → `===` stops at the first
+  differing byte, so response time reveals how much of a guessed signature was
+  right; a constant-time compare reveals nothing (§5.3).
