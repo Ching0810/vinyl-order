@@ -210,6 +210,24 @@ model Payment {
   @@index([orderId])
 }
 
+/// Every webhook we have acted on, by the provider's event id.
+///
+/// The primary key is what makes a redelivery a no-op: providers deliver at
+/// least once, so the same event can arrive twice, and the second insert fails
+/// on this key before anything else changes — the same device as the
+/// idempotency key on checkout.
+///
+/// Not related to Payment: an event naming a session we don't know is
+/// recorded too, so it is not reprocessed either.
+model PaymentEvent {
+  /// The provider's event id, not ours: it is what a redelivery repeats.
+  id         String   @id
+  /// e.g. "payment.succeeded" — the provider's name, kept for tracing what we
+  /// acted on, so a string rather than an enum.
+  type       String
+  receivedAt DateTime @default(now())
+}
+
 /// A vinyl product the store sells. Metadata is usually imported from Discogs
 /// (discogsReleaseId), but price/stock/image are owned by us. Money is stored as
 /// integer cents to avoid floating-point rounding.
