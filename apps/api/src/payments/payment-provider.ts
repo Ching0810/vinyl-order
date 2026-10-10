@@ -18,6 +18,26 @@ export interface PaymentSession {
 }
 
 /**
+ * A provider's webhook, verified and in our terms.
+ *
+ * Named apart from the PaymentEvent table, which records the ids of events we
+ * have handled. No order id: the payment is found by its session, and the
+ * order through the payment — not by what the provider says the order is.
+ */
+export interface PaymentWebhookEvent {
+  /** The provider's event id: what a redelivery repeats. */
+  id: string;
+  type: 'payment.succeeded' | 'payment.failed';
+  providerSessionId: string;
+  /** What the provider says it collected, checked against the payment. */
+  amountCents: number;
+  currency: string;
+}
+
+/** Request headers as Node hands them over: lower-cased names. */
+export type WebhookHeaders = Record<string, string | string[] | undefined>;
+
+/**
  * Abstracts WHO collects the money. This is both the DI token and the contract,
  * so orders depend on this alone: swapping MockPay for a real provider means
  * one new class implementing it, not a change to orders.
@@ -25,4 +45,12 @@ export interface PaymentSession {
 export abstract class PaymentProvider {
   /** Start a payment attempt; throws if the provider cannot be reached. */
   abstract createSession(input: CreateSessionInput): Promise<PaymentSession>;
+
+  /**
+   * Prove a webhook came from the provider and parse it, or throw 400.
+   *
+   * Takes the raw body, not parsed JSON: a signature is computed over exact
+   * bytes, and re-serialising can reorder keys or change whitespace.
+   */
+  abstract verifyWebhook(rawBody: Buffer, headers: WebhookHeaders): PaymentWebhookEvent;
 }

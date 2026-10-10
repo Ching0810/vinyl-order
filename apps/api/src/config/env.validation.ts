@@ -47,6 +47,11 @@ const envSchema = z.object({
   // since MockPay is mounted inside it — read per call, as tests listen on a
   // random port. Set it once MockPay runs anywhere else.
   MOCKPAY_URL: z.url().optional(),
+  // Shared with MockPay; signs every webhook, so only MockPay can tell us a
+  // payment succeeded. No default: a secret with a default is public.
+  MOCKPAY_WEBHOOK_SECRET: z
+    .string()
+    .min(32, 'MOCKPAY_WEBHOOK_SECRET must be at least 32 characters (openssl rand -hex 32)'),
 });
 
 export type Env = z.infer<typeof envSchema>;
