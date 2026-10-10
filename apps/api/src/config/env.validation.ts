@@ -52,6 +52,10 @@ const envSchema = z.object({
   MOCKPAY_WEBHOOK_SECRET: z
     .string()
     .min(32, 'MOCKPAY_WEBHOOK_SECRET must be at least 32 characters (openssl rand -hex 32)'),
+  // Where MockPay sends webhooks — what a merchant would enter in a real
+  // provider's dashboard. Unset: this API's own /payments/webhook, at the port
+  // it is listening on, read per delivery.
+  MOCKPAY_WEBHOOK_URL: z.url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

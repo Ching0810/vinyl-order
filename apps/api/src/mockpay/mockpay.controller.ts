@@ -5,6 +5,7 @@ import { ZodValidationPipe } from 'nestjs-zod';
 import { CreateSessionDto, type CreateSessionResponse } from './dto/create-session.dto';
 import { renderCheckoutPage } from './mockpay.page';
 import { MockPaySessions } from './mockpay.sessions';
+import { MockPayWebhooks } from './mockpay.webhooks';
 
 /** Where a settled session sends the browser. 303 so it follows with a GET. */
 interface ReturnRedirect {
@@ -23,6 +24,7 @@ interface ReturnRedirect {
 export class MockPayController {
   constructor(
     private readonly sessions: MockPaySessions,
+    private readonly webhooks: MockPayWebhooks,
     private readonly config: ConfigService,
   ) {}
 
@@ -53,21 +55,25 @@ export class MockPayController {
   @Post('checkout/:sessionId/pay')
   @Redirect()
   pay(@Param('sessionId') sessionId: string): ReturnRedirect {
-    return this.returnTo(this.sessions.settle(sessionId, 'paid').returnUrl);
+    return this.end(sessionId, 'paid');
   }
 
   /** POST /mockpay/checkout/:sessionId/decline — the customer declines. */
   @Post('checkout/:sessionId/decline')
   @Redirect()
   decline(@Param('sessionId') sessionId: string): ReturnRedirect {
-    return this.returnTo(this.sessions.settle(sessionId, 'declined').returnUrl);
+    return this.end(sessionId, 'declined');
   }
 
   /**
-   * Back to the merchant. 303, not 302: the button was a POST, and 303 tells
-   * the browser to follow with a GET rather than repeat it.
+   * Record the choice, schedule the webhook that reports it, and send the
+   * browser back to the merchant — without waiting for the webhook. 303, not
+   * 302: the button was a POST, and 303 tells the browser to follow with a GET
+   * rather than repeat it.
    */
-  private returnTo(url: string): ReturnRedirect {
-    return { url, statusCode: 303 };
+  private end(sessionId: string, outcome: 'paid' | 'declined'): ReturnRedirect {
+    const session = this.sessions.settle(sessionId, outcome);
+    this.webhooks.schedule(session);
+    return { url: session.returnUrl, statusCode: 303 };
   }
 }

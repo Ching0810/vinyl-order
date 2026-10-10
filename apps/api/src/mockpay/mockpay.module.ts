@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { MockPayController } from './mockpay.controller';
 import { MockPaySessions } from './mockpay.sessions';
+import { MockPayWebhooks } from './mockpay.webhooks';
 
 /**
  * MockPay, a fake payment provider for development and tests
@@ -13,6 +14,6 @@ import { MockPaySessions } from './mockpay.sessions';
  */
 @Module({
   controllers: [MockPayController],
-  providers: [MockPaySessions],
+  providers: [MockPaySessions, MockPayWebhooks],
 })
 export class MockPayModule {}
