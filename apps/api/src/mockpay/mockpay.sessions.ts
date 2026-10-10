@@ -16,6 +16,8 @@ export interface MockPaySession {
   expiresAt: Date;
   /** Where the customer's browser goes once they pay or decline. */
   returnUrl: string;
+  /** How long after the customer chooses the webhook is sent. */
+  webhookDelayMs: number;
   outcome: MockPayOutcome;
 }
 

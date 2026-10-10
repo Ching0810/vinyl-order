@@ -20,8 +20,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
  * payments.e2e-spec covers which orders may be paid, against a fake provider.
  * This covers the wiring between the two sides — that what our API asks for is
  * what MockPay shows, and that MockPay sends the customer back to the attempt
- * our API recorded — and that every way MockPay can fail is a 502 that records
- * nothing.
+ * our API recorded, then tells our API how it ended — and that every way
+ * MockPay can fail is a 502 that records nothing.
  */
 describe('Payment flow through MockPay (e2e)', () => {
   let app: INestApplication<App>;
@@ -31,9 +31,11 @@ describe('Payment flow through MockPay (e2e)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication();
-    // Listen for real: with MOCKPAY_URL unset, the MockPay client calls this
-    // process at the port it is listening on.
+    // rawBody as main.ts sets it: MockPay's webhooks really reach the endpoint
+    // here, and their signatures are checked over the raw body.
+    app = moduleRef.createNestApplication({ rawBody: true });
+    // Listen for real: with MOCKPAY_URL and MOCKPAY_WEBHOOK_URL unset, both
+    // sides call this process at the port it is listening on.
     await app.listen(0);
     prisma = app.get(PrismaService);
     jwt = app.get(JwtService);
@@ -114,9 +116,24 @@ describe('Payment flow through MockPay (e2e)', () => {
       },
     );
 
-    // The browser coming back proves nothing; only the provider's webhook
-    // (not built yet) may settle a payment and mark the order paid.
-    it('leaves the payment and the order pending after the customer pays', async () => {
+    /**
+     * Wait for the order's payment to leave `pending`. The webhook arrives a
+     * second after the button by default and separately from the redirect, so
+     * nothing can be read straight after pressing it.
+     */
+    const settledPaymentOf = async (orderId: string, timeoutMs = 5_000) => {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const payment = await prisma.payment.findFirstOrThrow({ where: { orderId } });
+        if (payment.status !== 'pending') return payment;
+        if (Date.now() > deadline) throw new Error('The webhook never settled the payment');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    };
+
+    // The browser coming back proves nothing; it is MockPay's webhook, sent
+    // separately, that settles the payment and pays the order.
+    it('pays the order once MockPay reports the payment', async () => {
       const { order, token } = await placeOrder();
       const started = await startPayment(token, order.id).expect(201);
 
@@ -124,19 +141,40 @@ describe('Payment flow through MockPay (e2e)', () => {
         .post(`${checkoutPathOf(started)}/pay`)
         .expect(303);
 
-      const payment = await prisma.payment.findFirstOrThrow({ where: { orderId: order.id } });
+      expect((await settledPaymentOf(order.id)).status).toBe('succeeded');
       const after = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
-      expect(payment.status).toBe('pending');
+      expect(after.status).toBe('paid');
+    });
+
+    it('fails the payment and leaves the order payable once MockPay reports a decline', async () => {
+      const { order, token } = await placeOrder();
+      const started = await startPayment(token, order.id).expect(201);
+
+      await request(app.getHttpServer())
+        .post(`${checkoutPathOf(started)}/decline`)
+        .expect(303);
+
+      expect((await settledPaymentOf(order.id)).status).toBe('failed');
+      const after = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
       expect(after.status).toBe('pending');
     });
   });
 
   /**
-   * MockPay failing in each way the client distinguishes. Only the next fetch
-   * is replaced — supertest does not use fetch, so the test's own requests are
-   * untouched.
+   * MockPay failing in each way the client distinguishes. Only the call that
+   * opens a session is replaced: MockPay's webhooks also use fetch, and one
+   * left over from an earlier test must not take this failure in its place.
+   * supertest does not use fetch, so the tests' own requests are untouched.
    */
   describe('when MockPay fails', () => {
+    const failOpeningSessions = (failure: () => Promise<Response>) => {
+      const realFetch = global.fetch;
+      jest.spyOn(global, 'fetch').mockImplementation((input, init) => {
+        const url = input instanceof Request ? input.url : input.toString();
+        return url.endsWith('/mockpay/sessions') ? failure() : realFetch(input, init);
+      });
+    };
+
     it.each([
       ['is unreachable', () => Promise.reject(new TypeError('fetch failed'))],
       ['answers with an error', () => Promise.resolve(new Response('oops', { status: 500 }))],
@@ -147,7 +185,7 @@ describe('Payment flow through MockPay (e2e)', () => {
       ['answers with something other than JSON', () => Promise.resolve(new Response('<html>'))],
     ])('answers 502 and records nothing when MockPay %s', async (_case, failure) => {
       const { order, token } = await placeOrder();
-      jest.spyOn(global, 'fetch').mockImplementationOnce(failure);
+      failOpeningSessions(failure);
 
       await startPayment(token, order.id).expect(502);
 

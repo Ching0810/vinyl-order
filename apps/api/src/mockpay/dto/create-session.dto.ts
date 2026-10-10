@@ -14,6 +14,13 @@ const createSessionSchema = z.object({
   expiresAt: z.iso.datetime(),
   /** http(s) only: the customer's browser is redirected here. */
   returnUrl: z.url({ protocol: /^https?$/ }),
+  /**
+   * Test-only: how long after Pay or Decline the webhook is sent. A second by
+   * default, so the customer is usually back before the result arrives — the
+   * order a real provider tends to produce, and the one the return page must
+   * handle (docs/design/payments.md §9.1).
+   */
+  webhookDelayMs: z.number().int().min(0).max(60_000).default(1_000),
 });
 
 /** Request body for POST /mockpay/sessions. */
