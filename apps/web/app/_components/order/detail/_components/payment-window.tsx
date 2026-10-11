@@ -7,9 +7,11 @@ import { useCountdown } from '@/hooks/useCountdown';
 import { formatCountdown, formatDateTime } from '@/lib/utils/date';
 
 import CancelOrder from './cancel-order';
+import PayNow from './pay-now';
 
 /**
- * A pending order's deadline: how long is left to pay, and the way out.
+ * A pending order's deadline: how long is left to pay, the way to pay, and
+ * the way out.
  *
  * Once the countdown reaches zero the order is still `pending` until the
  * server's expiry sweep cancels it, which can take up to a minute. The page
@@ -61,6 +63,7 @@ export default function PaymentWindow({ order }: { order: Order }) {
           </Alert.Description>
         </Alert.Content>
         <HStack gap="3" wrap="wrap">
+          <PayNow orderId={order.id} />
           <CancelOrder orderId={order.id} />
         </HStack>
       </Stack>
