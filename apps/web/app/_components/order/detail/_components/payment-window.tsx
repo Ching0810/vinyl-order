@@ -3,11 +3,11 @@
 import { Alert, HStack, Stack } from '@chakra-ui/react';
 import type { Order } from '@vinyl-order/shared';
 
+import PayNow from '@/components/order/pay-now';
 import { useCountdown } from '@/hooks/useCountdown';
 import { formatCountdown, formatDateTime } from '@/lib/utils/date';
 
 import CancelOrder from './cancel-order';
-import PayNow from './pay-now';
 
 /**
  * A pending order's deadline: how long is left to pay, the way to pay, and
