@@ -2,8 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import { ConflictException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 
-/** How a session ended, or `open` while the customer has not chosen yet. */
-export type MockPayOutcome = 'open' | 'paid' | 'declined';
+/**
+ * How a session ended, or `open` while the customer has not chosen yet.
+ * `expired` is the merchant voiding it before the customer chose.
+ */
+export type MockPayOutcome = 'open' | 'paid' | 'declined' | 'expired';
 
 /** One request to collect money, as MockPay — not our API — records it. */
 export interface MockPaySession {
@@ -50,11 +53,15 @@ export class MockPaySessions {
 
   /**
    * Record the customer's choice. A session is settled once: pressing again,
-   * from a second tab or the back button, is 409. After its deadline it takes
-   * nothing — 410 — so an order cannot be paid once it has expired.
+   * from a second tab or the back button, is 409. After its deadline, or once
+   * the merchant has voided it, it takes nothing — 410 — so an order cannot be
+   * paid once it has expired or been cancelled.
    */
-  settle(id: string, outcome: Exclude<MockPayOutcome, 'open'>): MockPaySession {
+  settle(id: string, outcome: 'paid' | 'declined'): MockPaySession {
     const session = this.find(id);
+    if (session.outcome === 'expired') {
+      throw new GoneException('This payment session has been cancelled');
+    }
     if (session.outcome !== 'open') {
       throw new ConflictException('This payment session has already ended');
     }
@@ -63,6 +70,20 @@ export class MockPaySessions {
     }
 
     session.outcome = outcome;
+    return session;
+  }
+
+  /**
+   * The merchant voids a session, so the customer can no longer pay it.
+   *
+   * Only an open session changes; one already paid or declined keeps its
+   * outcome, which the answer reports — so the merchant learns whether money
+   * was taken. Safe to repeat. MockPay runs in one thread, so a Pay press and
+   * a void never interleave: whichever comes first decides.
+   */
+  expire(id: string): MockPaySession {
+    const session = this.find(id);
+    if (session.outcome === 'open') session.outcome = 'expired';
     return session;
   }
 }

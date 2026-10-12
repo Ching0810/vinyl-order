@@ -1,8 +1,20 @@
-import { Body, Controller, Get, Header, Param, Post, Redirect, UsePipes } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Redirect,
+  UsePipes,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ZodValidationPipe } from 'nestjs-zod';
 
 import { CreateSessionDto, type CreateSessionResponse } from './dto/create-session.dto';
+import type { ExpireSessionResponse } from './dto/expire-session.dto';
 import { renderCheckoutPage } from './mockpay.page';
 import { MockPaySessions } from './mockpay.sessions';
 import { MockPayWebhooks } from './mockpay.webhooks';
@@ -41,6 +53,26 @@ export class MockPayController {
         `/mockpay/checkout/${session.id}`,
         this.config.getOrThrow<string>('PUBLIC_API_URL'),
       ).toString(),
+    };
+  }
+
+  /**
+   * POST /mockpay/sessions/:sessionId/expire — the merchant voids a session
+   * so it can no longer be paid, and learns how it stands: `expired`, or the
+   * customer's outcome if they already chose. 200, not 201: nothing is
+   * created. Safe to repeat.
+   */
+  @Post('sessions/:sessionId/expire')
+  @HttpCode(HttpStatus.OK)
+  expire(@Param('sessionId') sessionId: string): ExpireSessionResponse {
+    const session = this.sessions.expire(sessionId);
+    if (session.outcome === 'open') throw new Error(`Session ${session.id} is still open`);
+
+    return {
+      sessionId: session.id,
+      status: session.outcome,
+      amountCents: session.amountCents,
+      currency: session.currency,
     };
   }
 
