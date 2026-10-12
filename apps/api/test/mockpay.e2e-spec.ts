@@ -8,6 +8,7 @@ import { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
 import type { CreateSessionResponse } from '../src/mockpay/dto/create-session.dto';
+import type { ExpireSessionResponse } from '../src/mockpay/dto/expire-session.dto';
 
 /**
  * MockPay, driven over HTTP the way our API and a customer's browser reach it.
@@ -268,5 +269,63 @@ describe('MockPay (e2e)', () => {
 
       expect(sent).toHaveLength(3);
     }, 10_000);
+  });
+  /**
+   * The merchant voiding a session before cancelling its order. The answer is
+   * how the session stands afterwards, which is what tells the merchant
+   * whether money was taken.
+   */
+  describe('voiding a session', () => {
+    const expireSession = (sessionId: string) =>
+      request(app.getHttpServer()).post(`/mockpay/sessions/${sessionId}/expire`);
+
+    it('voids an open session, which can then no longer be paid', async () => {
+      const sessionId = await openSession();
+
+      const res = await expireSession(sessionId).expect(200);
+
+      expect(res.body as ExpireSessionResponse).toEqual({
+        sessionId,
+        status: 'expired',
+        amountCents: 1_750,
+        currency: 'TWD',
+      });
+      await press(sessionId, 'pay').expect(410);
+      const page = await checkoutPage(sessionId).expect(200);
+      expect(page.text).toContain('This payment session has been cancelled.');
+      expect(page.text).not.toContain('<form');
+    });
+
+    // Too late to void: the customer paid first, and the answer says so.
+    it('leaves a paid session paid, and says so', async () => {
+      const sessionId = await openSession();
+      await press(sessionId, 'pay').expect(303);
+
+      const res = await expireSession(sessionId).expect(200);
+
+      expect((res.body as ExpireSessionResponse).status).toBe('paid');
+    });
+
+    it('leaves a declined session declined', async () => {
+      const sessionId = await openSession();
+      await press(sessionId, 'decline').expect(303);
+
+      const res = await expireSession(sessionId).expect(200);
+
+      expect((res.body as ExpireSessionResponse).status).toBe('declined');
+    });
+
+    it('can be repeated', async () => {
+      const sessionId = await openSession();
+      await expireSession(sessionId).expect(200);
+
+      const again = await expireSession(sessionId).expect(200);
+
+      expect((again.body as ExpireSessionResponse).status).toBe('expired');
+    });
+
+    it('answers 404 for a session that does not exist', async () => {
+      await expireSession('mps_missing').expect(404);
+    });
   });
 });

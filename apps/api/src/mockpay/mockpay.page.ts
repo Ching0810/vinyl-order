@@ -17,6 +17,7 @@ const escapeHtml = (text: string): string =>
 const stateOf = (session: MockPaySession): string | null => {
   if (session.outcome === 'paid') return 'This payment has been made.';
   if (session.outcome === 'declined') return 'This payment was declined.';
+  if (session.outcome === 'expired') return 'This payment session has been cancelled.';
   if (session.expiresAt <= new Date()) return 'This payment session has expired.';
   return null;
 };

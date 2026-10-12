@@ -53,7 +53,11 @@ export class MockPayWebhooks implements OnModuleDestroy {
    * the merchant first.
    */
   schedule(session: MockPaySession): void {
-    if (session.outcome === 'open') throw new Error(`Session ${session.id} has not ended`);
+    // Only the customer's choice is announced; a session the merchant voided
+    // was the merchant's own doing.
+    if (session.outcome !== 'paid' && session.outcome !== 'declined') {
+      throw new Error(`Session ${session.id} was not paid or declined (${session.outcome})`);
+    }
 
     const event: MockPayWebhook = {
       id: `mpe_${randomUUID()}`,
