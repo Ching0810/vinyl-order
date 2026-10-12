@@ -54,7 +54,9 @@ export default function PayNow({ orderId }: { orderId: string }) {
         Pay now
       </Button>
       {failed ? (
-        <Text fontSize="sm" color="fg.error">
+        // Sits in a wrapping row of buttons: a full-width basis puts it on a
+        // line of its own, and order puts that line after every button.
+        <Text fontSize="sm" color="fg.error" flexBasis="100%" order={1}>
           {failureMessage(startPayment.error)}
         </Text>
       ) : null}
