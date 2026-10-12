@@ -32,7 +32,8 @@ export default function CancelOrder({ orderId }: { orderId: string }) {
         Cancel order
       </Button>
       {failed ? (
-        <Text fontSize="sm" color="fg.error">
+        // On its own line below the row of buttons, as PayNow's message is.
+        <Text fontSize="sm" color="fg.error" flexBasis="100%" order={1}>
           Couldn&apos;t cancel this order. Please try again.
         </Text>
       ) : null}
