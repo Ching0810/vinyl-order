@@ -34,6 +34,15 @@ export interface PaymentWebhookEvent {
   currency: string;
 }
 
+/**
+ * How a voided session stood: whether the customer had already paid, and if
+ * so what was collected — to check against the payment, as for a webhook. No
+ * amount when nothing was taken, so none can be read by mistake.
+ */
+export type ExpiredSession =
+  | { paid: false }
+  | { paid: true; amountCents: number; currency: string };
+
 /** Request headers as Node hands them over: lower-cased names. */
 export type WebhookHeaders = Record<string, string | string[] | undefined>;
 
@@ -45,6 +54,16 @@ export type WebhookHeaders = Record<string, string | string[] | undefined>;
 export abstract class PaymentProvider {
   /** Start a payment attempt; throws if the provider cannot be reached. */
   abstract createSession(input: CreateSessionInput): Promise<PaymentSession>;
+
+  /**
+   * Void a session so the customer can no longer pay it, and report whether
+   * they already had. Only "was money taken" matters here: a session voided
+   * just now and one the customer declined both answer `paid: false`.
+   *
+   * Throws (502) if the provider can't be reached — the caller then knows
+   * neither answer and must not act as if it did.
+   */
+  abstract expireSession(providerSessionId: string): Promise<ExpiredSession>;
 
   /**
    * Prove a webhook came from the provider and parse it, or throw 400.

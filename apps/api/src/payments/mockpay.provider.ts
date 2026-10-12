@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import {
   CreateSessionInput,
+  ExpiredSession,
   PaymentProvider,
   PaymentSession,
   PaymentWebhookEvent,
@@ -31,6 +32,13 @@ const REQUEST_TIMEOUT_MS = 5_000;
 const mockPaySessionSchema = z.object({
   sessionId: z.string().min(1),
   checkoutUrl: z.url(),
+});
+
+/** MockPay's answer to voiding a session: how it stands now, and its amount. */
+const mockPayExpiredSchema = z.object({
+  status: z.enum(['expired', 'paid', 'declined']),
+  amountCents: z.number().int(),
+  currency: z.string().min(1),
 });
 
 /** What the customer sees for any provider failure; the detail goes to the log. */
@@ -84,35 +92,26 @@ export class MockPayProvider extends PaymentProvider {
   }
 
   async createSession(input: CreateSessionInput): Promise<PaymentSession> {
-    const url = `${this.baseUrl()}/sessions`;
+    const session = await this.post('/sessions', mockPaySessionSchema, {
+      ...input,
+      // Dates cross JSON as ISO strings.
+      expiresAt: input.expiresAt.toISOString(),
+    });
+    return { providerSessionId: session.sessionId, redirectUrl: session.checkoutUrl };
+  }
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // Dates cross JSON as ISO strings.
-        body: JSON.stringify({ ...input, expiresAt: input.expiresAt.toISOString() }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-    } catch (error) {
-      // Connection refused, DNS failure, or the timeout above.
-      this.logger.error(`MockPay unreachable at ${url}: ${String(error)}`);
-      throw providerUnavailable();
-    }
-
-    if (!response.ok) {
-      this.logger.error(`MockPay createSession failed: ${response.status} ${response.statusText}`);
-      throw providerUnavailable();
-    }
-
-    const parsed = mockPaySessionSchema.safeParse(await response.json().catch(() => null));
-    if (!parsed.success) {
-      this.logger.error(`MockPay answered in an unexpected shape: ${parsed.error.message}`);
-      throw providerUnavailable();
-    }
-
-    return { providerSessionId: parsed.data.sessionId, redirectUrl: parsed.data.checkoutUrl };
+  /**
+   * Void the session. MockPay answers with how it stands: `expired` if it was
+   * still open, otherwise the customer's outcome — only `paid` means money.
+   */
+  async expireSession(providerSessionId: string): Promise<ExpiredSession> {
+    const session = await this.post(
+      `/sessions/${encodeURIComponent(providerSessionId)}/expire`,
+      mockPayExpiredSchema,
+    );
+    return session.status === 'paid'
+      ? { paid: true, amountCents: session.amountCents, currency: session.currency }
+      : { paid: false };
   }
 
   /**
@@ -168,6 +167,41 @@ export class MockPayProvider extends PaymentProvider {
       amountCents: data.amountCents,
       currency: data.currency,
     };
+  }
+
+  /**
+   * POST to MockPay and read its answer with `schema`, or throw 502. The one
+   * place a call to MockPay can fail — unreachable, too slow, an error status,
+   * an answer we cannot read — so every call fails the same way.
+   */
+  private async post<T>(path: string, schema: z.ZodType<T>, body?: unknown): Promise<T> {
+    const url = `${this.baseUrl()}${path}`;
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      // Connection refused, DNS failure, or the timeout above.
+      this.logger.error(`MockPay unreachable at ${url}: ${String(error)}`);
+      throw providerUnavailable();
+    }
+
+    if (!response.ok) {
+      this.logger.error(`MockPay ${path} failed: ${response.status} ${response.statusText}`);
+      throw providerUnavailable();
+    }
+
+    const parsed = schema.safeParse(await response.json().catch(() => null));
+    if (!parsed.success) {
+      this.logger.error(`MockPay ${path} answered in an unexpected shape: ${parsed.error.message}`);
+      throw providerUnavailable();
+    }
+    return parsed.data;
   }
 
   /**

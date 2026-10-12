@@ -11,7 +11,11 @@ import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import type { JwtPayload } from '../src/auth/jwt.strategy';
 import { PAYMENT_WINDOW_MS } from '../src/orders/checkout.service';
-import type { CreateSessionInput, PaymentSession } from '../src/payments/payment-provider';
+import type {
+  CreateSessionInput,
+  ExpiredSession,
+  PaymentSession,
+} from '../src/payments/payment-provider';
 import { PaymentProvider } from '../src/payments/payment-provider';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -39,6 +43,10 @@ describe('Payments (e2e)', () => {
       const providerSessionId = `sess_${randomUUID()}`;
       return { providerSessionId, redirectUrl: `https://pay.test/${providerSessionId}` };
     }),
+    // Nothing paid by default; a test that needs otherwise says so.
+    expireSession: jest.fn<Promise<ExpiredSession>, [string]>(() =>
+      Promise.resolve({ paid: false }),
+    ),
   };
 
   beforeAll(async () => {
