@@ -10,7 +10,8 @@ import { OrdersService } from './orders.service';
   controllers: [OrdersController],
   providers: [OrdersService, CheckoutService, OrderLifecycleService, OrderExpiryService],
   // Every order status change goes through the lifecycle, including the ones
-  // payments make; nothing else of orders is meant for other modules.
-  exports: [OrderLifecycleService],
+  // payments make. OrdersService is for payments' cancel route, which voids a
+  // pending payment before handing the cancellation back to orders.
+  exports: [OrderLifecycleService, OrdersService],
 })
 export class OrdersModule {}

@@ -266,6 +266,40 @@ describe('Payments (e2e)', () => {
     });
   });
 
+  /**
+   * When cancelling does not ask the provider: the provider is asked only to
+   * void a pending payment on a pending order of the customer's own.
+   */
+  describe('cancelling without a payment to void', () => {
+    const cancel = (token: string, orderId: string) =>
+      request(app.getHttpServer())
+        .post(`/orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${token}`);
+
+    beforeEach(() => {
+      provider.expireSession.mockClear();
+    });
+
+    it('cancels an order that has no payment under way', async () => {
+      const { order, token } = await placeOrder();
+
+      await cancel(token, order.id).expect(200);
+
+      expect(provider.expireSession).not.toHaveBeenCalled();
+    });
+
+    it("answers 404 for another customer's order without voiding its payment", async () => {
+      const { order, token } = await placeOrder();
+      await startPayment(token, order.id).expect(201);
+      const { token: stranger } = await placeOrder();
+
+      await cancel(stranger, order.id).expect(404);
+
+      expect(provider.expireSession).not.toHaveBeenCalled();
+      expect((await paymentsOf(order.id)).map((payment) => payment.status)).toEqual(['pending']);
+    });
+  });
+
   describe('reading a payment result', () => {
     const readResult = (token: string, orderId: string, paymentId: string) =>
       request(app.getHttpServer())

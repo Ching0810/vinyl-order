@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto';
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { PaymentResult, StartPaymentResponse } from '@vinyl-order/shared';
+import type { Order, PaymentResult, StartPaymentResponse } from '@vinyl-order/shared';
 
+import type { Payment, Prisma } from '../generated/prisma/client';
 import { OrderLifecycleService } from '../orders/order-lifecycle.service';
 import { conflict } from '../orders/order.errors';
+import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { violatesUniqueIndex } from '../prisma/unique-violation';
 import { PaymentProvider, PaymentWebhookEvent } from './payment-provider';
@@ -32,8 +34,9 @@ export interface StartPaymentResult {
  * into orders only for what an order is: its errors, and its status
  * transitions.
  *
- * Starting a payment never changes the order's status — only the provider's
- * webhook does, through OrderLifecycleService. Customer queries are scoped by
+ * Starting a payment never changes the order's status. What the provider
+ * reports does, through OrderLifecycleService — its webhook, or its answer
+ * when a session is voided before the order is cancelled. Customer queries are scoped by
  * userId, as in OrdersService, so another customer's order is simply not
  * found.
  */
@@ -46,6 +49,7 @@ export class PaymentsService {
     private readonly provider: PaymentProvider,
     private readonly config: ConfigService,
     private readonly lifecycle: OrderLifecycleService,
+    private readonly orders: OrdersService,
   ) {}
 
   /**
@@ -132,6 +136,56 @@ export class PaymentsService {
   }
 
   /**
+   * Cancel one of the customer's orders — after making sure no money has been
+   * taken for it.
+   *
+   * A pending order may have a payment the customer has already completed,
+   * whose webhook is late or lost. So before cancelling, its session is voided
+   * at the provider, which also says whether it was paid:
+   * - not paid: the session can no longer be paid, the attempt is marked
+   *   `failed`, and the order is cancelled;
+   * - paid: the payment is settled from that answer, as a webhook would have
+   *   settled it, so the order is now `paid` and cancelling it is a 409
+   *   ORDER_NOT_PENDING carrying that status.
+   *
+   * The provider is asked outside any transaction, as when starting a payment.
+   * If it can't be reached (502) nothing changes: without its answer, nobody
+   * knows whether the order was paid. Expiry needs none of this — a session's
+   * deadline is its order's.
+   *
+   * Everything else is OrdersService.cancel, unchanged: 404 for someone else's
+   * order, 409 once it has left `pending`, stock returned exactly once.
+   */
+  async cancelOrder(userId: string, orderId: string): Promise<Order> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, userId },
+      select: { status: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+
+    if (order.status === 'pending') {
+      const payment = await this.prisma.payment.findFirst({
+        where: { orderId, status: 'pending' },
+      });
+      if (payment) {
+        const session = await this.provider.expireSession(payment.providerSessionId);
+        if (session.paid) {
+          await this.prisma.$transaction((transaction) =>
+            this.settleSucceeded(transaction, payment, session, 'void on cancel'),
+          );
+        } else {
+          await this.prisma.payment.updateMany({
+            where: { id: payment.id, status: 'pending' },
+            data: { status: 'failed' },
+          });
+        }
+      }
+    }
+
+    return this.orders.cancel(userId, orderId);
+  }
+
+  /**
    * One payment attempt's status, with its order's.
    *
    * 404 unless the payment belongs to this order and the order to this user —
@@ -187,38 +241,62 @@ export class PaymentsService {
           return;
         }
 
-        if (event.amountCents !== payment.amountCents || event.currency !== payment.currency) {
-          // Paid, but not what was asked. Never accepted as payment for the
-          // order; loud, because someone has to look at this money by hand.
-          await transaction.payment.updateMany({
-            where: { id: payment.id, status: 'pending' },
-            data: { status: 'failed' },
-          });
-          this.logger.error(
-            `Webhook ${event.id}: payment ${payment.id} collected ${event.amountCents} ${event.currency}, ` +
-              `expected ${payment.amountCents} ${payment.currency}; not accepted`,
-          );
-          return;
-        }
-
-        // Succeeded, even over an earlier decline for this session: the money
-        // has been taken, so a success is the last word.
-        await transaction.payment.update({
-          where: { id: payment.id },
-          data: { status: 'succeeded' },
-        });
-        if (!(await this.lifecycle.markPaid(transaction, payment.orderId))) {
-          // Already paid by an earlier attempt, or cancelled first — usually by
-          // the expiry sweeper (§8.4). The payment is recorded as succeeded
-          // against an order that isn't waiting for it: money to hand back.
-          this.logger.warn(
-            `Payment ${payment.id} succeeded but order ${payment.orderId} was no longer pending; refund it`,
-          );
-        }
+        await this.settleSucceeded(transaction, payment, event, `webhook ${event.id}`);
       });
     } catch (error) {
       if (violatesUniqueIndex(error, PAYMENT_EVENT_KEY)) return;
       throw error;
+    }
+  }
+
+  /**
+   * Accept a payment the provider reports as succeeded — by webhook, or in its
+   * answer to voiding the session — and pay its order. Runs in the caller's
+   * transaction, so the payment and the order change together.
+   *
+   * A wrong amount or currency is never accepted as payment for the order.
+   * Otherwise the payment becomes `succeeded` — even over an earlier decline
+   * for the session, since the money has been taken — through a conditional
+   * update: when the webhook and a cancellation settle the same payment at
+   * once, the row lock lets one of them do it, and the other finds it done and
+   * stops, rather than reading "not pending" as an order that needs a refund.
+   *
+   * @param collected - what the provider says it took
+   * @param source - where the report came from, for the log
+   */
+  private async settleSucceeded(
+    transaction: Prisma.TransactionClient,
+    payment: Payment,
+    collected: { amountCents: number; currency: string },
+    source: string,
+  ): Promise<void> {
+    if (collected.amountCents !== payment.amountCents || collected.currency !== payment.currency) {
+      // Paid, but not what was asked. Loud, because someone has to look at
+      // this money by hand.
+      await transaction.payment.updateMany({
+        where: { id: payment.id, status: 'pending' },
+        data: { status: 'failed' },
+      });
+      this.logger.error(
+        `${source}: payment ${payment.id} collected ${collected.amountCents} ${collected.currency}, ` +
+          `expected ${payment.amountCents} ${payment.currency}; not accepted`,
+      );
+      return;
+    }
+
+    const { count } = await transaction.payment.updateMany({
+      where: { id: payment.id, status: { not: 'succeeded' } },
+      data: { status: 'succeeded' },
+    });
+    if (count === 0) return; // Already settled — by the other report, usually.
+
+    if (!(await this.lifecycle.markPaid(transaction, payment.orderId))) {
+      // Already paid by another attempt, or cancelled first — usually by the
+      // expiry sweeper (§8.4). Money recorded against an order that isn't
+      // waiting for it: to hand back.
+      this.logger.warn(
+        `Payment ${payment.id} succeeded but order ${payment.orderId} was no longer pending; refund it`,
+      );
     }
   }
 
