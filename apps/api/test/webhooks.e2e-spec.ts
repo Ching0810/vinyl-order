@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -233,6 +233,56 @@ describe('Payment webhooks (e2e)', () => {
       expect(after.payment.status).toBe('succeeded');
       expect(after.order.status).toBe('paid');
     });
+  });
+
+  /**
+   * A success reported twice under different event ids — the webhook, and the
+   * provider's answer when the session is voided on cancel, say. The second
+   * finds the payment already settled and stops; reading its order as "no
+   * longer pending" would wrongly log a refund.
+   */
+  describe('a payment already settled', () => {
+    /** Whether anything was logged as a refund to make. */
+    const watchForRefunds = () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn');
+      return () => {
+        const logged = warn.mock.calls.some(([message]) => String(message).includes('refund it'));
+        warn.mockRestore();
+        return logged;
+      };
+    };
+
+    it('is left as it is by a second report of its success', async () => {
+      const { order, payment } = await placeOrderWithPayment();
+      await deliver(webhook('payment.succeeded', payment.providerSessionId)).expect(200);
+      const refundLogged = watchForRefunds();
+
+      await deliver(webhook('payment.succeeded', payment.providerSessionId)).expect(200);
+
+      expect(refundLogged()).toBe(false);
+      const after = await statusOf(order.id, payment.id);
+      expect(after.payment.status).toBe('succeeded');
+      expect(after.order.status).toBe('paid');
+    });
+
+    // The conditional update lets one report settle it; the other stops.
+    it.each([1, 2, 3, 4, 5])(
+      'is settled once when two reports of its success arrive together (round %i)',
+      async () => {
+        const { order, payment } = await placeOrderWithPayment();
+        const refundLogged = watchForRefunds();
+
+        await Promise.all([
+          deliver(webhook('payment.succeeded', payment.providerSessionId)).expect(200),
+          deliver(webhook('payment.succeeded', payment.providerSessionId)).expect(200),
+        ]);
+
+        expect(refundLogged()).toBe(false);
+        const after = await statusOf(order.id, payment.id);
+        expect(after.payment.status).toBe('succeeded');
+        expect(after.order.status).toBe('paid');
+      },
+    );
   });
 
   describe('payment against expiry', () => {

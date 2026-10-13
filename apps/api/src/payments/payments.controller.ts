@@ -1,5 +1,5 @@
-import { Controller, Get, HttpStatus, Param, Post, Res, UseGuards } from '@nestjs/common';
-import type { PaymentResult, PublicUser, StartPaymentResponse } from '@vinyl-order/shared';
+import { Controller, Get, HttpCode, HttpStatus, Param, Post, Res, UseGuards } from '@nestjs/common';
+import type { Order, PaymentResult, PublicUser, StartPaymentResponse } from '@vinyl-order/shared';
 import type { Response } from 'express';
 
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -37,6 +37,21 @@ export class PaymentsController {
 
     response.status(created ? HttpStatus.CREATED : HttpStatus.OK);
     return payment;
+  }
+
+  /**
+   * POST /orders/:id/cancel — cancel one of the user's orders and return its
+   * stock. 200 rather than POST's default 201: nothing is created.
+   *
+   * Here rather than in OrdersController because a pending order's payment
+   * must be voided at the provider first — or, if the customer already paid,
+   * settled — and payments depend on orders, never the reverse. The URL is
+   * the same as before.
+   */
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  cancel(@CurrentUser() user: PublicUser, @Param('id') id: string): Promise<Order> {
+    return this.payments.cancelOrder(user.id, id);
   }
 
   /**

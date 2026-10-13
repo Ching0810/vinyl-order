@@ -79,6 +79,21 @@ describe('Payment flow through MockPay (e2e)', () => {
   const checkoutPathOf = (res: request.Response) =>
     new URL((res.body as StartPaymentResponse).redirectUrl).pathname;
 
+  /**
+   * Make the fetch calls to URLs ending in `suffix` fail with `failure`, and
+   * let every other call through. Our API's calls to MockPay and MockPay's
+   * webhooks both use fetch, so a test fails only the one it is about — one
+   * left over from an earlier test must not take the failure in its place.
+   * supertest does not use fetch, so the tests' own requests are untouched.
+   */
+  const failCallsTo = (suffix: string, failure: () => Promise<Response>) => {
+    const realFetch = global.fetch;
+    jest.spyOn(global, 'fetch').mockImplementation((input, init) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      return url.endsWith(suffix) ? failure() : realFetch(input, init);
+    });
+  };
+
   describe('paying', () => {
     it('records the MockPay session our API was given', async () => {
       const { order, token } = await placeOrder();
@@ -161,20 +176,10 @@ describe('Payment flow through MockPay (e2e)', () => {
   });
 
   /**
-   * MockPay failing in each way the client distinguishes. Only the call that
-   * opens a session is replaced: MockPay's webhooks also use fetch, and one
-   * left over from an earlier test must not take this failure in its place.
-   * supertest does not use fetch, so the tests' own requests are untouched.
+   * MockPay failing in each way the client distinguishes, on the call that
+   * opens a session.
    */
   describe('when MockPay fails', () => {
-    const failOpeningSessions = (failure: () => Promise<Response>) => {
-      const realFetch = global.fetch;
-      jest.spyOn(global, 'fetch').mockImplementation((input, init) => {
-        const url = input instanceof Request ? input.url : input.toString();
-        return url.endsWith('/mockpay/sessions') ? failure() : realFetch(input, init);
-      });
-    };
-
     it.each([
       ['is unreachable', () => Promise.reject(new TypeError('fetch failed'))],
       ['answers with an error', () => Promise.resolve(new Response('oops', { status: 500 }))],
@@ -185,11 +190,85 @@ describe('Payment flow through MockPay (e2e)', () => {
       ['answers with something other than JSON', () => Promise.resolve(new Response('<html>'))],
     ])('answers 502 and records nothing when MockPay %s', async (_case, failure) => {
       const { order, token } = await placeOrder();
-      failOpeningSessions(failure);
+      failCallsTo('/mockpay/sessions', failure);
 
       await startPayment(token, order.id).expect(502);
 
       expect(await prisma.payment.count({ where: { orderId: order.id } })).toBe(0);
+    });
+  });
+  /**
+   * Cancelling an order that has a payment under way. The session is voided at
+   * MockPay first, and its answer decides: unpaid, the order is cancelled;
+   * paid — the customer was quicker than the webhook, or the webhook was lost —
+   * the payment is settled from that answer and the order is paid instead.
+   */
+  describe('cancelling an order with a payment under way', () => {
+    const cancel = (token: string, orderId: string) =>
+      request(app.getHttpServer())
+        .post(`/orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${token}`);
+
+    const statusOf = async (orderId: string) => ({
+      order: (await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).status,
+      payment: (await prisma.payment.findFirstOrThrow({ where: { orderId } })).status,
+    });
+
+    it('voids an unpaid payment, so it can no longer be paid, and cancels the order', async () => {
+      const { order, token } = await placeOrder();
+      const started = await startPayment(token, order.id).expect(201);
+
+      const res = await cancel(token, order.id).expect(200);
+
+      expect((res.body as { status: string }).status).toBe('cancelled');
+      expect(await statusOf(order.id)).toEqual({ order: 'cancelled', payment: 'failed' });
+      await request(app.getHttpServer())
+        .post(`${checkoutPathOf(started)}/pay`)
+        .expect(410);
+    });
+
+    // The webhook is still on its way (a second by default) when Cancel is
+    // pressed; MockPay's answer to the void already says the money was taken.
+    it('pays the order instead when the customer paid before the webhook arrived', async () => {
+      const { order, token } = await placeOrder();
+      const started = await startPayment(token, order.id).expect(201);
+      await request(app.getHttpServer())
+        .post(`${checkoutPathOf(started)}/pay`)
+        .expect(303);
+
+      const res = await cancel(token, order.id).expect(409);
+
+      expect(res.body).toMatchObject({ code: 'ORDER_NOT_PENDING', status: 'paid' });
+      expect(await statusOf(order.id)).toEqual({ order: 'paid', payment: 'succeeded' });
+      // When the webhook does arrive, there is nothing left for it to change.
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      expect(await statusOf(order.id)).toEqual({ order: 'paid', payment: 'succeeded' });
+    });
+
+    // The webhook never arrives: only voiding the session tells us it was paid.
+    it('pays the order instead when the webhook was lost', async () => {
+      const { order, token } = await placeOrder();
+      const started = await startPayment(token, order.id).expect(201);
+      failCallsTo('/payments/webhook', () => Promise.reject(new TypeError('fetch failed')));
+      await request(app.getHttpServer())
+        .post(`${checkoutPathOf(started)}/pay`)
+        .expect(303);
+
+      const res = await cancel(token, order.id).expect(409);
+
+      expect(res.body).toMatchObject({ code: 'ORDER_NOT_PENDING', status: 'paid' });
+      expect(await statusOf(order.id)).toEqual({ order: 'paid', payment: 'succeeded' });
+    });
+
+    // Without MockPay's answer nobody knows whether the order was paid.
+    it('answers 502 and changes nothing when MockPay cannot be reached', async () => {
+      const { order, token } = await placeOrder();
+      await startPayment(token, order.id).expect(201);
+      failCallsTo('/expire', () => Promise.reject(new TypeError('fetch failed')));
+
+      await cancel(token, order.id).expect(502);
+
+      expect(await statusOf(order.id)).toEqual({ order: 'pending', payment: 'pending' });
     });
   });
 });
