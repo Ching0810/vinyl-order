@@ -399,7 +399,7 @@ orders nobody can pay for.
 | ------------------------------------- | ----------------- | --------------------------------------------------- |
 | `POST /orders/:id/payment`            | the order's owner | start a payment; returns `{ redirectUrl }`          |
 | `GET /orders/:id/payments/:paymentId` | the order's owner | one attempt's status, with its order's status       |
-| `POST /orders/:id/cancel`             | the order's owner | cancel a `pending` order; returns the order         |
+| `POST /orders/:id/cancel`             | the order's owner | void its payment, then cancel; returns the order    |
 | `POST /payments/webhook`              | the provider      | signed event; `2xx` once handled or already handled |
 | `GET /admin/orders?status=paid`       | admin             | orders waiting to ship, cursor-paginated            |
 | `POST /admin/orders/:id/ship`         | admin             | `paid` → `shipped`; returns the order               |
@@ -408,12 +408,16 @@ orders nobody can pay for.
 
 - `409 ORDER_NOT_PENDING` — pay or cancel on an order that already left
   `pending`. The body carries the current `status` so the page can re-render.
+  A cancel answers it with `status: 'paid'` also when voiding found the
+  customer had already paid (§8.2).
 - `409 ORDER_EXPIRED` — pay after `expiresAt`, even if the sweeper has not run
   yet. The deadline is the deadline; the sweeper is only cleanup.
 - `409 ORDER_NOT_PAID` — ship anything that isn't `paid`.
 - `404` — someone else's order, as in `GET /orders/:id`.
 - `502` — the provider could not be reached or answered badly (§5.1). Nothing
-  is recorded, so pressing Pay again starts cleanly.
+  is recorded, so pressing Pay again starts cleanly. The same for a cancel
+  that could not void its payment: the order stays `pending`, since without
+  the provider's answer nobody knows whether it was paid (§8.2).
 
 **The webhook answers `2xx` for anything it has already processed.** Providers
 retry on non-`2xx`; answering a redelivery with an error would make it retry
@@ -498,6 +502,73 @@ is what guarantees stock is returned **once**: a second canceller loses at
 step 1 and never reaches step 2. Doing the increment unconditionally would
 return the same copies twice.
 
+**A customer cancel asks the provider first.** Cancelling is irreversible —
+the stock goes back on sale — but our `pending` may be stale: the customer can
+have paid at the provider while the webhook is late or lost (§8.1). Cancelling
+on our own record alone would release the records _and_ keep the money, with
+nothing in the database to say so. The provider is the source of truth for
+"was money taken", so before cancelling, `PaymentsService.cancelOrder` voids
+the order's `pending` payment's session (`PaymentProvider.expireSession`) and
+acts on the answer:
+
+| Provider answers | Payment                         | Order                                         |
+| ---------------- | ------------------------------- | --------------------------------------------- |
+| not paid         | `failed`                        | cancelled, stock returned (the steps above)   |
+| paid             | `succeeded`, as a webhook would | `paid`; the cancel is `409 ORDER_NOT_PENDING` |
+| unreachable      | unchanged                       | unchanged; the cancel is `502`                |
+
+An order with no `pending` payment — never paid for, or its last attempt
+already `failed` — has nothing to ask about and is cancelled directly.
+
+**Void, then read — one call, not two.** Asking "has it been paid?" and then
+voiding leaves a gap: the customer can press **Pay** between the two, and we
+cancel an order that was just paid. `expireSession` closes the session and
+reports how it stood in one step, so the answer can no longer change once we
+have it. (MockPay runs both in one synchronous function, so a Pay press and a
+void cannot interleave; a real provider's "expire session" call gives the same
+guarantee.)
+
+**The provider is called outside any transaction**, as when starting a payment
+(§6): holding row locks across a network call would let a slow provider block
+the webhook and the sweeper on the same order. The gap this leaves is covered
+by the conditional updates: if a webhook settles the payment while we wait,
+both go through the same `settleSucceeded`, whose update on the payment's
+status lets only one of them change anything (§8.1).
+
+**Unreachable means do nothing.** If the provider cannot be reached, we know
+neither answer, and guessing "not paid" is exactly the mistake this step
+exists to prevent. So the cancel is `502`, nothing changes, and the customer
+can try again.
+
+**The sweeper does not void.** A session's deadline is its order's
+`expiresAt` (§8.4), so by the time the sweeper sees an order the session
+already refuses payment. What it cannot see is a payment completed before the
+deadline whose webhook never arrived; that is the open question in §12.
+
+**⚖️ Choices made here**
+
+- **No new error code for "already paid".** A cancel that loses to a payment
+  answers `409 ORDER_NOT_PENDING` with `status: 'paid'`, the same as a cancel
+  arriving after the webhook did. It falls out of the code rather than being
+  built: once the payment is settled, `cancelOrder` hands over to
+  `OrdersService.cancel` as always, which finds the order `paid` and refuses.
+  The web already refetches on that `409`, and the body's `status` is enough
+  to tell the customer why. An `ORDER_PAID` code would be one more branch for
+  the same outcome. The cost: the page can't tell "paid just now, during your
+  cancel" from "paid a while ago" — and doesn't need to.
+- **The cancel route moved to `PaymentsController`.** Voiding needs the
+  provider and the `Payment` table, which belong to `payments/`. Keeping the
+  route in `OrdersController` would have made orders import payments,
+  reversing the dependency direction (§5.1). Only the controller changed:
+  `POST /orders/:id/cancel` is the same path, so the web saw no difference.
+- **One way to settle a success.** The webhook and the void both report "the
+  provider took this money", so both go through `settleSucceeded`: same amount
+  check, same conditional update, same `markPaid`. Two copies would drift —
+  and when both reports arrive for the same payment at once, a shared
+  conditional update is what lets exactly one of them act. Before this was
+  shared, the loser read "payment not pending" as an order to refund and
+  logged a false refund warning.
+
 ### 8.3 The expiry sweeper
 
 Every minute:
@@ -529,12 +600,21 @@ cancelled the order at 15:00. The `pending → paid` update matches 0 rows —
 correctly, since the stock is already back on sale — but the customer has
 paid.
 
-Two defences, both in this iteration:
+A customer's own cancel can lose the same way: they pay, the webhook is late
+or lost, and they press **Cancel order** while our record still says
+`pending`.
+
+Three defences, all in this iteration:
 
 1. **The session expires with the order.** MockPay refuses to pay after the
    `expiresAt` it was given, which shrinks the window to a payment already in
    flight at the deadline.
-2. **What is left is recorded, not hidden.** The payment stays `succeeded`
+2. **A customer cancel voids the session first** (§8.2). The provider's
+   answer, not our stale `pending`, decides: a payment already taken is
+   settled and the cancel refused, so this path never releases stock for an
+   order that was paid. That closes the customer's version of the race; the
+   sweeper's version is left to the other two defences.
+3. **What is left is recorded, not hidden.** The payment stays `succeeded`
    against a `cancelled` order, and an admin query lists exactly those — money
    to hand back by hand until refunds exist. _(Recorded and logged since step
    5; the admin list comes with step 6.)_
@@ -551,6 +631,28 @@ calls and another state, so it is left for when refunds arrive.
 - `pending`: a countdown to `expiresAt`, **Pay now** and **Cancel order**.
 - `paid` / `shipped` / `cancelled`: the status and its timestamp; a cancelled
   order says whether it expired or was cancelled.
+
+**What a cancel can end in** (§8.2), and what the page says:
+
+| Answer                    | Page                                                                |
+| ------------------------- | ------------------------------------------------------------------- |
+| the order                 | redraws as `cancelled`                                              |
+| `409`, `status: 'paid'`   | redraws as `paid`, with "Your payment went through" above the order |
+| `409`, any other `status` | redraws in that status — another tab or the sweeper got there first |
+| `502`                     | "Couldn't reach the payment service, so the order wasn't cancelled" |
+| anything else             | "Couldn't cancel this order. Please try again."                     |
+
+Every `409` refetches the order, and the page draws whatever it is now.
+
+**Why the paid note isn't the button's message.** Error text normally sits
+under the button that failed. But after a `409` the order redraws as `paid`,
+the **Cancel order** button is no longer drawn, and its message would vanish
+with it — the customer would see a paid order and no word on why their cancel
+did nothing. So the mutation has a key (`['cancelOrder', id]`), and the order
+page itself reads the last failed cancel from React Query's mutation cache
+(`useMutationState`), which outlives the button. The `502` and generic
+messages stay under the button: the order hasn't changed, so the button is
+still there to show them.
 
 ### 9.1 The payment return route
 
@@ -585,9 +687,13 @@ order and polls `GET /orders/:id/payments/:paymentId` every 2 seconds:
 | `succeeded` | `paid`      | the paid order                                              |
 | `failed`    | `pending`   | "Payment declined", with **Pay now** to start a new attempt |
 | `succeeded` | `cancelled` | "Paid after the order expired — we will refund you" (§8.4)  |
+| `pending`   | `cancelled` | "This order has been cancelled" — refunded if it was paid   |
 
-It stops after 30 seconds with "Still processing — refresh later". Only the
-webhook changes these statuses; the page only reads them.
+It polls only while both are `pending`: once the order is cancelled — expired,
+usually, with the payment's webhook never having come — nothing more will
+change, so waiting out the 30 seconds would only delay the answer. Otherwise
+it stops after 30 seconds with "Still processing — refresh later". The webhook
+and a cancel's void (§8.2) change these statuses; the page only reads them.
 
 **Another customer's payment id** is a `404`, and so is a `paymentId` that
 belongs to a different order — the same rule as `GET /orders/:id`.
@@ -689,6 +795,17 @@ on a time the code computes from "now" and backdating cannot express it.
    one of the three planned test knobs was built (§5.2).
 6. Admin list and ship.
 7. Web: detail page actions, the payment return route (§9.1), admin page.
+   _(Pay now done, #44; the return route, #45; cancel outcomes, #49. The
+   admin page waits for step 6.)_ Pulled ahead of step 6 so the customer's
+   payment flow could be clicked through end to end first.
+
+**Added along the way: void before cancel (§8.2), #46–#49.** Not in the
+original plan — it came from asking what a lost webhook does to a customer's
+cancel. Built bottom-up, one merged step each: MockPay's expire endpoint
+(#46), `PaymentProvider.expireSession` and its MockPay client (#47), the
+cancel route moving to `PaymentsController` and voiding first, with
+`settleSucceeded` shared with the webhook (#48), then the web's messages and
+the return page's `pending` + `cancelled` row (#49).
 
 Cancelling comes first because it is the smallest complete use of the new
 lifecycle, and the sweeper and the late-payment race both build on it.
@@ -705,6 +822,14 @@ lifecycle, and the sweeper and the late-payment race both build on it.
    process in a worker) and the sweeper onto `SKIP LOCKED` or delayed jobs?
 5. Should cart quantities be capped at stock now that stock is released
    automatically, so fewer checkouts fail with a short line?
+6. ⚖️ Should the sweeper reconcile too? It cancels on our record alone (§8.2),
+   so a payment completed before the deadline whose webhook never arrives
+   leaves money taken against a `cancelled` order, found only if someone looks
+   at the provider. Voiding before each expiry would catch it, at the cost of
+   one provider call per expired order — and a provider outage would then
+   stall expiry, holding stock. A separate periodic job that asks the provider
+   about recently cancelled orders' sessions keeps the sweeper fast and
+   independent of the provider.
 
 ## 13. Interview talking points
 
@@ -719,6 +844,13 @@ lifecycle, and the sweeper and the late-payment race both build on it.
 - **"Payment succeeds just as the order expires?"** → one row, two conditional
   updates, one winner; the leftover case is recorded, and authorise/capture
   closes it for good (§8.4).
+- **"The webhook is lost and the customer presses Cancel — what then?"** →
+  our `pending` is stale, so before an irreversible step, ask the source of
+  truth. Void the session and read whether it was paid in one call — asking
+  first and voiding after leaves a gap to pay in — then act on the answer;
+  if the provider can't be reached, change nothing rather than guess
+  (§8.2). That is reconciliation: webhooks are the fast path, not the only
+  one.
 - **"How do you run a cron job on ten instances?"** → make the job idempotent
   so running it ten times is merely wasteful, then remove the waste with
   `SKIP LOCKED` or a queue if it matters (§8.3).
