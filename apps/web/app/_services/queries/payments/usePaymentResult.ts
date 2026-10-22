@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { PaymentResult } from '@vinyl-order/shared';
 import { useEffect, useState } from 'react';
 
 import { getPaymentResult } from '@/services/api/payments/result';
@@ -18,6 +19,14 @@ const POLL_MS = 2_000;
  */
 const POLL_FOR_MS = 30_000;
 
+/**
+ * Whether there is still a result to wait for: the payment is pending on an
+ * order that can still be paid. Once the order is cancelled — expired, say —
+ * nothing more will change, so polling stops.
+ */
+const waiting = (result: PaymentResult | undefined): boolean =>
+  result?.status === 'pending' && result.order.status === 'pending';
+
 /** Cache key for one payment attempt, under its order's key. */
 export const paymentResultQueryKey = (orderId: string, paymentId: string) =>
   [...orderQueryKey(orderId), 'payments', paymentId] as const;
@@ -28,8 +37,9 @@ export const paymentResultQueryKey = (orderId: string, paymentId: string) =>
  *
  * Only the provider's webhook settles a payment, and it travels separately
  * from the customer's redirect, so the customer is usually back first. This
- * asks every two seconds until the payment leaves `pending`, for at most
- * thirty; `timedOut` then says it is still unknown, not that it failed.
+ * asks every two seconds until the payment leaves `pending` or its order can
+ * no longer be paid, for at most thirty; `timedOut` then says it is still
+ * unknown, not that it failed.
  *
  * Once settled, the order's own detail and the history pages are refreshed,
  * so they show the new status straight away. A 404 is final, so not retried.
@@ -54,18 +64,18 @@ export const usePaymentResult = (orderId: string, paymentId: string) => {
     queryFn: () => getPaymentResult(orderId, paymentId),
     enabled: Boolean(user),
     retry: false,
-    refetchInterval: (current) =>
-      current.state.data?.status === 'pending' && !timedOut ? POLL_MS : false,
+    refetchInterval: (current) => (waiting(current.state.data) && !timedOut ? POLL_MS : false),
   });
 
-  const settledStatus = query.data?.status === 'pending' ? null : query.data?.status;
+  // Once either has moved, the order's other caches are out of date.
+  const settled = query.data !== undefined && !waiting(query.data);
   useEffect(() => {
-    if (!settledStatus) return;
+    if (!settled) return;
     // exact: this payment's key sits under the order's, and a prefix match
     // would refetch this query too.
     void queryClient.invalidateQueries({ queryKey: orderQueryKey(orderId), exact: true });
     void queryClient.invalidateQueries({ queryKey: orderPagesQueryKey });
-  }, [settledStatus, orderId, queryClient]);
+  }, [settled, orderId, queryClient]);
 
   return { ...query, timedOut };
 };

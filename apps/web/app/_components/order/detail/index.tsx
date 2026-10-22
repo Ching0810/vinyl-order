@@ -1,6 +1,7 @@
 'use client';
 
 import { Alert, Box, Button, Flex, HStack, Skeleton, Stack, Text } from '@chakra-ui/react';
+import { useMutationState } from '@tanstack/react-query';
 import NextLink from 'next/link';
 
 import StatusBadge from '@/components/order/status-badge';
@@ -11,6 +12,7 @@ import { formatPrice } from '@/lib/utils/currency';
 import { formatDateTime } from '@/lib/utils/date';
 import { orderReference } from '@/lib/utils/order';
 import { useMe } from '@/services/queries/auth/useMe';
+import { cancelOrderMutationKey, paidBeforeCancel } from '@/services/queries/orders/useCancelOrder';
 import { useOrder } from '@/services/queries/orders/useOrder';
 
 import CancelledNote from './_components/cancelled-note';
@@ -28,6 +30,34 @@ const DetailSkeleton = () => (
     <Skeleton h="28" borderRadius="card" />
   </Stack>
 );
+
+/**
+ * Says why a cancellation didn't happen when a payment got there first.
+ *
+ * Read from the mutation cache, not from the Cancel button: the order redraws
+ * as paid, and the button unmounts along with the message it would have shown.
+ */
+const PaidBeforeCancelNote = ({ orderId }: { orderId: string }) => {
+  const lastCancelError = useMutationState({
+    filters: { mutationKey: cancelOrderMutationKey(orderId), status: 'error' },
+    select: (mutation) => mutation.state.error,
+  }).at(-1);
+
+  if (!paidBeforeCancel(lastCancelError)) return null;
+  return (
+    <Alert.Root status="info" borderRadius="card">
+      <Alert.Indicator />
+      <Alert.Content>
+        <Alert.Title>Your payment went through</Alert.Title>
+        <Alert.Description>
+          It arrived before the order could be cancelled, so the order is paid and won&apos;t be
+          cancelled.
+        </Alert.Description>
+      </Alert.Content>
+    </Alert.Root>
+  );
+};
+
 /**
  * One of the customer's orders: status, date, every line and the total —
  * all from what was copied at checkout, so it reads the same after a record is
@@ -93,6 +123,8 @@ export default function OrderDetail({ id, placed }: { id: string; placed: boolea
           </Alert.Content>
         </Alert.Root>
       ) : null}
+
+      <PaidBeforeCancelNote orderId={order.id} />
 
       <SectionHeading
         eyebrow={`Order ${orderReference(order.id)}`}

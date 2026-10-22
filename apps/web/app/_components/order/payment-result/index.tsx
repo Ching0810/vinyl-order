@@ -65,6 +65,19 @@ const ResultFor = ({
 }) => {
   const orderId = result.order.id;
 
+  // The order ended while the payment's result was still unknown — it expired,
+  // usually. Nothing more will change, so this doesn't wait.
+  if (result.status === 'pending' && result.order.status === 'cancelled') {
+    return (
+      <Outcome
+        status="warning"
+        title="This order has been cancelled"
+        description="It was cancelled before your payment was confirmed. If you completed the payment, it will be refunded to you."
+        actions={<ViewOrder orderId={orderId} />}
+      />
+    );
+  }
+
   if (result.status === 'pending' && timedOut) {
     return (
       <Outcome
