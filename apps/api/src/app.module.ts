@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConditionalModule, ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -11,6 +11,7 @@ import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { MockPayModule } from './mockpay/mockpay.module';
 import { OrdersModule } from './orders/orders.module';
+import { mockPayAllowed } from './payments/mockpay-allowed';
 import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
@@ -52,8 +53,13 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
     OrdersModule,
     PaymentsModule,
     // A fake payment provider. It takes no real money, so it must not be
-    // reachable where real orders are: left out of production entirely.
-    ...(NODE_ENV === 'production' ? [] : [MockPayModule]),
+    // reachable where real orders are: left out of production unless
+    // PAYMENT_DEMO says otherwise. Registered once the env files are loaded
+    // and validated, so it reads the same values PaymentsModule does —
+    // PAYMENT_DEMO is then exactly "true" or "false".
+    ConditionalModule.registerWhen(MockPayModule, (env) =>
+      mockPayAllowed(env.NODE_ENV ?? 'development', env.PAYMENT_DEMO === 'true'),
+    ),
     CategoriesModule,
     StorageModule,
     HealthModule,
