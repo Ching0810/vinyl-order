@@ -24,6 +24,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "catalog:",
     "@prisma/client": "catalog:"
   },
   "peerDependencies": {

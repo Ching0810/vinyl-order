@@ -176,6 +176,9 @@ catalogs:
     '@nestjs/platform-express':
       specifier: ^11.2.8
       version: 11.2.8
+    '@prisma/adapter-pg':
+      specifier: ^7.10.1
+      version: 7.10.1
     '@prisma/client':
       specifier: ^7.10.1
       version: 7.10.1
@@ -239,7 +242,7 @@ importers:
         specifier: ^6.7.1
         version: 6.7.1(@nestjs/common@11.2.8(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/core@11.2.8)(reflect-metadata@0.2.2)
       '@prisma/adapter-pg':
-        specifier: ^7.10.1
+        specifier: 'catalog:'
         version: 7.10.1
       '@prisma/client':
         specifier: 'catalog:'
@@ -371,6 +374,9 @@ importers:
 
   apps/mockpay:
     dependencies:
+      '@prisma/adapter-pg':
+        specifier: 'catalog:'
+        version: 7.10.1
       '@prisma/client':
         specifier: 'catalog:'
         version: 7.10.1(prisma@7.10.1(@types/node@24.19.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(typescript@5.9.3)

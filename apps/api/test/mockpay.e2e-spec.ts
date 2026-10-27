@@ -19,11 +19,16 @@ describe('MockPay (e2e)', () => {
   let app: INestApplication<App>;
   let secret: string;
 
-  beforeAll(async () => {
+  const startApp = async (): Promise<INestApplication<App>> => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication();
+    const started = moduleRef.createNestApplication<INestApplication<App>>();
     // Listening, so MockPay can work out where to send its webhooks.
-    await app.listen(0);
+    await started.listen(0);
+    return started;
+  };
+
+  beforeAll(async () => {
+    app = await startApp();
     secret = app.get(ConfigService).getOrThrow<string>('MOCKPAY_WEBHOOK_SECRET');
   });
 
@@ -94,6 +99,9 @@ describe('MockPay (e2e)', () => {
 
   const press = (sessionId: string, button: 'pay' | 'decline') =>
     request(app.getHttpServer()).post(`/mockpay/checkout/${sessionId}/${button}`);
+
+  const expireSession = (sessionId: string) =>
+    request(app.getHttpServer()).post(`/mockpay/sessions/${sessionId}/expire`);
 
   describe('the payment page', () => {
     it('shows the amount with a Pay and a Decline button', async () => {
@@ -275,9 +283,6 @@ describe('MockPay (e2e)', () => {
    * whether money was taken.
    */
   describe('voiding a session', () => {
-    const expireSession = (sessionId: string) =>
-      request(app.getHttpServer()).post(`/mockpay/sessions/${sessionId}/expire`);
-
     it('voids an open session, which can then no longer be paid', async () => {
       const sessionId = await openSession();
 
@@ -325,6 +330,41 @@ describe('MockPay (e2e)', () => {
 
     it('answers 404 for a session that does not exist', async () => {
       await expireSession('mps_missing').expect(404);
+    });
+
+    // The case void-before-cancel exists for (payments.md §8.2): if both got
+    // through, the customer would be told they paid while the merchant is told
+    // nothing was taken, and cancels the order. One must win, and both answers
+    // must name the same winner. Repeated, as the two only overlap sometimes.
+    it('lets a Pay press and a void at the same moment agree on one outcome', async () => {
+      for (let round = 0; round < 20; round++) {
+        const sessionId = await openSession();
+
+        const [paid, voided] = await Promise.all([
+          press(sessionId, 'pay'),
+          expireSession(sessionId).expect(200),
+        ]);
+
+        const said = (voided.body as ExpireSessionResponse).status;
+        expect([paid.status, said]).toEqual(paid.status === 303 ? [303, 'paid'] : [410, 'expired']);
+      }
+    });
+  });
+
+  // MockPay keeps its sessions in its own database, so a session opened
+  // before a restart — or a sleep on the free plan — is still there after it
+  // (docs/design/deploy.md §6.5).
+  describe('surviving a restart', () => {
+    it('still shows and voids a session opened before the restart', async () => {
+      const sessionId = await openSession();
+
+      await app.close();
+      app = await startApp();
+
+      const page = await checkoutPage(sessionId).expect(200);
+      expect(page.text).toContain(`action="/mockpay/checkout/${sessionId}/pay"`);
+      const res = await expireSession(sessionId).expect(200);
+      expect((res.body as ExpireSessionResponse).status).toBe('expired');
     });
   });
 });
