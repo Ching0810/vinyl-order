@@ -25,5 +25,7 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false
   },
-  "include": ["src"]
+  // prisma.config.ts is typechecked and linted with the rest, but not built:
+  // the Prisma CLI loads it directly (tsconfig.build.json).
+  "include": ["src", "prisma.config.ts"]
 }

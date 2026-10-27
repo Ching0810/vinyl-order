@@ -19,7 +19,12 @@
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "studio": "prisma studio --port 5557",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "catalog:"
   },
   "peerDependencies": {
     "@nestjs/common": "catalog:",
@@ -37,12 +42,14 @@
     "@nestjs/core": "catalog:",
     "@nestjs/platform-express": "catalog:",
     "@types/node": "^24.19.2",
+    "dotenv": "^17.4.2",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.7",
     "globals": "^17.13.0",
     "nestjs-zod": "catalog:",
     "prettier": "^3.9.10",
+    "prisma": "catalog:",
     "reflect-metadata": "catalog:",
     "rxjs": "catalog:",
     "typescript": "^5.9.3",

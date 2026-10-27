@@ -313,7 +313,17 @@ Running `prisma migrate deploy` at boot means a failed migration crash-loops
 the service, and with more than one instance, several would try at once.
 
 Each database has its own migration history, and both are migrated on every
-deploy — `vinyl` with our schema, `mockpay` with MockPay's.
+deploy — `vinyl` with our schema, `mockpay` with MockPay's. Each package runs
+its own, from its own `prisma.config.ts`, and each reads a different variable,
+so neither can be pointed at the other's database by accident:
+
+```bash
+pnpm --filter api exec prisma migrate deploy                    # DATABASE_URL
+pnpm --filter @vinyl-order/mockpay exec prisma migrate deploy   # MOCKPAY_DATABASE_URL
+```
+
+The e2e suite does the same against `vinyl_test` and `mockpay_test`: its
+global setup checks both names end in `_test`, then resets both.
 
 - **First deploy:** migrations run from the laptop against Neon by hand.
 - **Later:** a GitHub Actions workflow on `main` runs `prisma migrate deploy`

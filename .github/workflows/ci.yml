@@ -47,9 +47,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    # Matches apps/api/.env.test exactly — that file is committed and holds
-    # only test values, so the suite needs no secrets. The database name must
-    # end in _test or global-setup refuses to reset it.
+    # Matches apps/api/.env.test and apps/mockpay/.env.test exactly — those
+    # files are committed and hold only test values, so the suite needs no
+    # secrets. The database names must end in _test or global-setup refuses to
+    # reset them.
     services:
       postgres:
         image: postgres:16
@@ -79,8 +80,13 @@ jobs:
       # from src. "api^..." is everything the api depends on in the workspace,
       # but not the api itself, so a new workspace package needs no edit here.
       - run: pnpm --filter "api^..." build
-      # test/global-setup.ts replays every migration into vinyl_test, so there
-      # is no migration step here.
+      # The service creates one database (POSTGRES_DB); MockPay's, kept apart
+      # from ours, is made here.
+      - run: createdb -h localhost -U vinyl mockpay_test
+        env:
+          PGPASSWORD: vinyl
+      # test/global-setup.ts replays every migration into vinyl_test and
+      # mockpay_test, so there is no migration step here.
       - run: pnpm --filter api test:e2e
 
   build:
