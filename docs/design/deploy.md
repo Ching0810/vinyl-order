@@ -169,6 +169,37 @@ are: trusting the header blindly lets any caller pick their own IP and step
 around the limit. The exact setting is confirmed against real request headers
 on the deployed API, not guessed.
 
+**How it is set.** `TRUST_PROXY` is a count of proxies, default `0` (none —
+right locally, where nothing is in front). The schema refuses `true`: trusting
+every hop takes the leftmost entry, which is the one the client writes. It also
+makes sure the value reaches Express as a number, because a string such as
+`"1"` is read as an address to trust, not a count.
+
+**How it is measured.** `GET /admin/debug/request-ip` (admin only — it names
+the host's proxies) answers with what the API saw: `remoteAddress` (the nearest
+proxy), `forwardedFor` (the header as it arrived), `ips` (the trusted part) and
+`ip` (what the rate limit counts by). Call it on the Render URL directly —
+`curl` keeps the login cookie for that host — with a made-up first entry in
+`X-Forwarded-For`, and raise `TRUST_PROXY` until `ip` is your own public
+address. Render publishes no hop count, and one user reports three, so it is
+measured, not copied.
+
+**Two paths of different length.** Once §6.1 is in place, a request can arrive
+two ways: through Vercel (most of the API) or straight at Render (MockPay's
+checkout page, and anyone calling the Render URL). Express can be given only
+one count:
+
+| `TRUST_PROXY` set for | Through Vercel                    | Straight at Render                           |
+| --------------------- | --------------------------------- | -------------------------------------------- |
+| Render's hops + 1     | correct                           | reads the client's own entry: limit bypassed |
+| Render's hops         | Vercel's address: customers share | correct                                      |
+
+**Decision for now: Render's hops.** The worse case of that choice is
+customers sharing a bucket; the worse case of the other is no limit at all.
+How a request through Vercel carries the client's address in a way a direct
+caller can't forge is decided with §6.1 (§11). An e2e test shows the failure:
+two hops trusted, one appended, and the address the client wrote is taken.
+
 ### 6.3 Sleeping: accepted, with a wake-up ping
 
 Render's free service sleeps after about 15 idle minutes, and the next request
@@ -286,6 +317,7 @@ the repository.
 | `DISCOGS_TOKEN`          | Render | the Discogs token                         |
 | `MOCKPAY_WEBHOOK_SECRET` | Render | new random value                          |
 | `PAYMENT_DEMO`           | Render | `true` (§6.4)                             |
+| `TRUST_PROXY`            | Render | Render's hop count, measured (§6.2)       |
 | `NEXT_PUBLIC_API_URL`    | Vercel | `/api` (§6.1)                             |
 | the rewrite's target     | Vercel | the Render URL — read by `next.config.ts` |
 
@@ -389,6 +421,12 @@ test database — is reviewed on its own, before any behaviour depends on it.
    they need the GitHub Actions workflow (§9)?
 5. Should the in-memory rate limit move to Redis now, or when a second
    instance exists?
+6. ⚖️ How does a request through Vercel tell the API its client's address
+   (§6.2)? Does Vercel's rewrite forward `X-Forwarded-For` to an external
+   origin at all? If so, the API still can't tell a Vercel request from a
+   direct one that claims to be — one way is a header only Vercel's side can
+   set, such as a secret the Next app adds, with the API taking the client
+   address from it only when the secret matches.
 
 ## 12. Interview talking points
 

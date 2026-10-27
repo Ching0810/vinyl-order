@@ -6,6 +6,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 
 import { AppModule } from './app.module';
+import { applyTrustProxy } from './common/trust-proxy';
 
 async function bootstrap() {
   // rawBody keeps each request's exact bytes on req.rawBody beside the parsed
@@ -13,6 +14,10 @@ async function bootstrap() {
   // re-serialising the parsed JSON would not reproduce them.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   const config = app.get(ConfigService);
+
+  // Behind a proxy, the client's address is in X-Forwarded-For; the rate limit
+  // needs it (docs/design/deploy.md §6.2).
+  applyTrustProxy(app, config.getOrThrow<number>('TRUST_PROXY'));
 
   // Parse the Cookie header into req.cookies (JwtStrategy reads the JWT cookie).
   app.use(cookieParser());
