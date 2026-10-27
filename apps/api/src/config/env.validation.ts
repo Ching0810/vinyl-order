@@ -43,6 +43,13 @@ const envSchema = z.object({
   // Which payment provider collects money. Only MockPay so far, which is
   // refused in production (PaymentsModule): it takes no real money.
   PAYMENT_PROVIDER: z.enum(['mockpay']).default('mockpay'),
+  // Allows MockPay in production anyway, for a public demo where nobody pays
+  // for real. Exactly "true" or "false": z.coerce.boolean() would read the
+  // string "false" as true, and a typo here should stop the boot, not quietly
+  // pick a side.
+  PAYMENT_DEMO: z
+    .stringbool({ truthy: ['true'], falsy: ['false'], case: 'sensitive' })
+    .default(false),
   // MockPay's address for server-to-server calls. Unset: this API itself,
   // since MockPay is mounted inside it — read per call, as tests listen on a
   // random port. Set it once MockPay runs anywhere else.
