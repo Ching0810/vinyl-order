@@ -4,8 +4,17 @@ packages:
 
 allowBuilds:
   '@nestjs/core': false
+  '@parcel/watcher': false
   '@prisma/engines': false
   bcrypt: true
   prisma: false
   sharp: false
   unrs-resolver: false
+
+# Security fixes for packages a parent pins to a vulnerable version. Each
+# applies only below the fixed version, so it falls away once the parent
+# catches up — check with `pnpm why <package>` and remove it then.
+overrides:
+  # @nestjs/platform-express 11.2.8 pins multer 2.4.0; 2.5.0 fixes a DoS
+  # (GHSA: pending async fileFilter after request teardown). Uploads ship.
+  'multer@<2.5.0': ^2.5.0
