@@ -34,7 +34,7 @@
     "@nestjs/platform-express": "catalog:",
     "@nestjs/schedule": "^12.0.2",
     "@nestjs/throttler": "^6.7.1",
-    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/adapter-pg": "catalog:",
     "@prisma/client": "catalog:",
     "@vinyl-order/mockpay": "workspace:*",
     "@vinyl-order/shared": "workspace:*",

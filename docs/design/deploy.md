@@ -122,10 +122,9 @@ reach Render's domain.
 **Why the API isn't on Vercel too.** Vercel runs server code as serverless
 functions: started per request, frozen or discarded afterwards. The API needs
 a process that stays up — the expiry sweep is a timer inside it, MockPay's
-sessions live in its memory, its webhook retries are `setTimeout`s, and Nest
-builds its whole dependency graph at boot. In a function, the sweep never
-fires, a session made by one invocation is missing in the next, and every cold
-call pays for the boot. **Stateful work with background jobs needs a
+webhook retries are `setTimeout`s, and Nest builds its whole dependency graph
+at boot. In a function, the sweep never fires, a retry is frozen with the
+invocation that scheduled it, and every cold call pays for the boot. **Stateful work with background jobs needs a
 long-running process; stateless request/response work suits serverless.**
 
 **Why not the alternatives.** Railway and Fly.io no longer have a free plan
@@ -244,6 +243,16 @@ only through its API.
 **What a database of its own costs:** a second Prisma schema, generated
 client and migration history; migrations run against both databases on every
 deploy (§9); and the e2e tests reset a second test database.
+
+**What moving to a database changed: the order of a Pay and a void.** In
+memory, MockPay's checks and its write ran in one synchronous step, so a Pay
+press and a void could not interleave. Against a database there is an `await`
+between a read and a write, and a void landing in it would leave the customer
+told "paid" while we were told "not paid" — and cancelled the order. So each
+move off `open` is a single conditional UPDATE (`… WHERE outcome = 'open'`):
+the database's row lock lets exactly one through, and the other reads what
+won. An e2e test fires both at once, twenty times over, and requires the two
+answers to agree; with a read-then-write in its place, it fails.
 
 **Still lost on restart: webhook retries.** They are `setTimeout`s. A restart
 within the second between **Pay** and its webhook drops that webhook. Sleeping

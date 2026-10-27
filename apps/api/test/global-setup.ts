@@ -35,8 +35,10 @@ export default function globalSetup(): void {
   reset(mockpay, mockpayUrl);
 
   // Jest forks its workers after this runs, so the specs inherit the test
-  // connection string.
+  // connection strings — and a value in apps/api/.env can't send them to a
+  // dev database.
   process.env.DATABASE_URL = apiUrl;
+  process.env.MOCKPAY_DATABASE_URL = mockpayUrl;
 }
 
 /** The database's URL from its package's .env.test, if it names a test database. */

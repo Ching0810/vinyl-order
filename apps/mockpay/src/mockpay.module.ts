@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { MockPayController } from './mockpay.controller';
+import { MockPayPrisma } from './mockpay.prisma';
 import { MockPaySessions } from './mockpay.sessions';
 import { MockPayWebhooks } from './mockpay.webhooks';
 
@@ -15,6 +16,6 @@ import { MockPayWebhooks } from './mockpay.webhooks';
  */
 @Module({
   controllers: [MockPayController],
-  providers: [MockPaySessions, MockPayWebhooks],
+  providers: [MockPayPrisma, MockPaySessions, MockPayWebhooks],
 })
 export class MockPayModule {}

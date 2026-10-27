@@ -221,8 +221,8 @@ read as actions on an order.
    session, and answers `{ sessionId, checkoutUrl }`. These are MockPay's own
    names, deliberately not ours (`providerSessionId`, `redirectUrl`), so the
    adapter has to translate as it would for a real provider. Session ids are
-   prefixed `mps_`, and sessions live in memory: MockPay must not share our
-   database, and losing them on restart is fine for a stand-in.
+   prefixed `mps_`, and sessions live in MockPay's own database, never ours
+   (deploy.md §6.5), so a restart forgets none of them.
 2. `GET /mockpay/checkout/:sessionId` shows the amount and two buttons,
    **Pay** and **Decline**. Everything the merchant sent is HTML-escaped before
    it reaches the page.
@@ -533,8 +533,9 @@ already `failed` — has nothing to ask about and is cancelled directly.
 voiding leaves a gap: the customer can press **Pay** between the two, and we
 cancel an order that was just paid. `expireSession` closes the session and
 reports how it stood in one step, so the answer can no longer change once we
-have it. (MockPay runs both in one synchronous function, so a Pay press and a
-void cannot interleave; a real provider's "expire session" call gives the same
+have it. (In MockPay, Pay and void each move the session off `open` with one
+conditional UPDATE, so when both arrive at once exactly one gets through and
+the other reports it; a real provider's "expire session" call gives the same
 guarantee.)
 
 **The provider is called outside any transaction**, as when starting a payment

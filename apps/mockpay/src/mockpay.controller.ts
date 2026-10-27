@@ -29,7 +29,8 @@ interface ReturnRedirect {
  * MockPay's HTTP surface, standing in for a payment provider's API.
  *
  * Unauthenticated, as a provider's hosted pages are; what keeps it out of
- * reach in production is that it is not mounted there at all (AppModule).
+ * reach in production is that it is not mounted there at all, unless
+ * PAYMENT_DEMO=true asks for a demo that takes no real money (AppModule).
  */
 @Controller('mockpay')
 @UsePipes(ZodValidationPipe)
@@ -42,9 +43,9 @@ export class MockPayController {
 
   /** POST /mockpay/sessions — a merchant opens a session to collect money. */
   @Post('sessions')
-  create(@Body() dto: CreateSessionDto): CreateSessionResponse {
+  async create(@Body() dto: CreateSessionDto): Promise<CreateSessionResponse> {
     // JSON carries the deadline as a string; MockPay compares it as a Date.
-    const session = this.sessions.create({ ...dto, expiresAt: new Date(dto.expiresAt) });
+    const session = await this.sessions.create({ ...dto, expiresAt: new Date(dto.expiresAt) });
 
     return {
       sessionId: session.id,
@@ -64,8 +65,8 @@ export class MockPayController {
    */
   @Post('sessions/:sessionId/expire')
   @HttpCode(HttpStatus.OK)
-  expire(@Param('sessionId') sessionId: string): ExpireSessionResponse {
-    const session = this.sessions.expire(sessionId);
+  async expire(@Param('sessionId') sessionId: string): Promise<ExpireSessionResponse> {
+    const session = await this.sessions.expire(sessionId);
     if (session.outcome === 'open') throw new Error(`Session ${session.id} is still open`);
 
     return {
@@ -79,21 +80,21 @@ export class MockPayController {
   /** GET /mockpay/checkout/:sessionId — the page the customer pays on. */
   @Get('checkout/:sessionId')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  checkout(@Param('sessionId') sessionId: string): string {
-    return renderCheckoutPage(this.sessions.find(sessionId));
+  async checkout(@Param('sessionId') sessionId: string): Promise<string> {
+    return renderCheckoutPage(await this.sessions.find(sessionId));
   }
 
   /** POST /mockpay/checkout/:sessionId/pay — the customer pays. */
   @Post('checkout/:sessionId/pay')
   @Redirect()
-  pay(@Param('sessionId') sessionId: string): ReturnRedirect {
+  pay(@Param('sessionId') sessionId: string): Promise<ReturnRedirect> {
     return this.end(sessionId, 'paid');
   }
 
   /** POST /mockpay/checkout/:sessionId/decline — the customer declines. */
   @Post('checkout/:sessionId/decline')
   @Redirect()
-  decline(@Param('sessionId') sessionId: string): ReturnRedirect {
+  decline(@Param('sessionId') sessionId: string): Promise<ReturnRedirect> {
     return this.end(sessionId, 'declined');
   }
 
@@ -103,8 +104,8 @@ export class MockPayController {
    * 302: the button was a POST, and 303 tells the browser to follow with a GET
    * rather than repeat it.
    */
-  private end(sessionId: string, outcome: 'paid' | 'declined'): ReturnRedirect {
-    const session = this.sessions.settle(sessionId, outcome);
+  private async end(sessionId: string, outcome: 'paid' | 'declined'): Promise<ReturnRedirect> {
+    const session = await this.sessions.settle(sessionId, outcome);
     this.webhooks.schedule(session);
     return { url: session.returnUrl, statusCode: 303 };
   }

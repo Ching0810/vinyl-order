@@ -63,6 +63,10 @@ const envSchema = z.object({
   // provider's dashboard. Unset: this API's own /payments/webhook, at the port
   // it is listening on, read per delivery.
   MOCKPAY_WEBHOOK_URL: z.url().optional(),
+  // MockPay's own database, never ours (docs/design/deploy.md §6.5). Optional
+  // here because only a mounted MockPay needs it — MockPay itself refuses to
+  // start without it.
+  MOCKPAY_DATABASE_URL: z.url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
