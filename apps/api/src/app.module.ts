@@ -3,13 +3,13 @@ import { ConditionalModule, ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { MockPayModule } from '@vinyl-order/mockpay';
 
 import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
 import { CategoriesModule } from './categories/categories.module';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
-import { MockPayModule } from './mockpay/mockpay.module';
 import { OrdersModule } from './orders/orders.module';
 import { mockPayAllowed } from './payments/mockpay-allowed';
 import { PaymentsModule } from './payments/payments.module';

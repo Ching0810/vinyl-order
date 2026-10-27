@@ -74,9 +74,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The api imports @vinyl-order/shared at runtime from its dist, so the
-      # tests need it built — types alone resolve from src.
-      - run: pnpm --filter @vinyl-order/shared build
+      # The api imports @vinyl-order/shared and @vinyl-order/mockpay at runtime
+      # from their dist, so the tests need them built — types alone resolve
+      # from src. "api^..." is everything the api depends on in the workspace,
+      # but not the api itself, so a new workspace package needs no edit here.
+      - run: pnpm --filter "api^..." build
       # test/global-setup.ts replays every migration into vinyl_test, so there
       # is no migration step here.
       - run: pnpm --filter api test:e2e
