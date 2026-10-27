@@ -3,12 +3,11 @@ import { createHmac } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import type { CreateSessionResponse, ExpireSessionResponse } from '@vinyl-order/mockpay';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
-import type { CreateSessionResponse } from '../src/mockpay/dto/create-session.dto';
-import type { ExpireSessionResponse } from '../src/mockpay/dto/expire-session.dto';
 
 /**
  * MockPay, driven over HTTP the way our API and a customer's browser reach it.

@@ -82,8 +82,9 @@ Facts from the current code, which shape the design:
 - A custom domain. The platforms' own subdomains are enough.
 - More than one API instance. The in-memory rate limit and MockPay's webhook
   timers both assume one; Redis is the fix when that changes (Month 2).
-- MockPay as a separate service. Its data is separated now (§6.5); moving its
-  code out waits until free-plan limits stop making it costly (§11).
+- MockPay as a separate service. Its code is a package of its own and its data
+  is separated now (§6.5); running it as its own process waits until
+  free-plan limits stop making it costly (§11).
 - Admin image uploads in production — until §6.6's storage exists.
 - Uptime guarantees. A cold start of up to a minute is accepted (§6.3).
 
@@ -233,7 +234,8 @@ keeps payments.md §5.1 true as written: MockPay "never imports our services or
 touches our database".
 
 **It is also the first half of extracting MockPay as a service.** The code
-boundary already exists — `MockPayProvider` calls MockPay over HTTP even
+boundary already exists — MockPay is a package of its own (`apps/mockpay`) that
+the API only mounts, and `MockPayProvider` calls it over HTTP even
 in-process, so `MOCKPAY_URL` can point anywhere. With the data separated too,
 moving MockPay out later is relocation, not untangling (§11). This is the
 **database-per-service** rule: a service owns its data, and others reach it
@@ -282,10 +284,12 @@ the repository.
 
 A multi-stage Dockerfile at `apps/api/Dockerfile`, built from the repository
 root so it can see the workspace (`pnpm-workspace.yaml`, the lockfile,
-`packages/shared`):
+`packages/shared`, `apps/mockpay`):
 
 1. **Build stage:** install the whole workspace from the lockfile, generate
-   both Prisma clients (ours and MockPay's), build `shared` and the API.
+   both Prisma clients (ours and MockPay's), and build the API with the
+   workspace packages it loads at runtime from their `dist` — `shared` and
+   `mockpay` — using `pnpm --filter "api..." build`, the dependencies first.
 2. **`pnpm deploy`:** copy out just the API with its production dependencies
    — not the web app, not dev tools.
 3. **Runtime stage:** `dist`, the production `node_modules`, and both Prisma

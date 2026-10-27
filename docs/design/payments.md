@@ -176,17 +176,25 @@ only records the ids of events we have handled. It carries no order id: the
 payment is found by its session, and the order through the payment — never by
 what the provider says the order is.
 
-**Where MockPay lives** (decided): a Nest module (`apps/api/src/mockpay`)
-mounted under `/mockpay`, and left out of `AppModule` in production. A separate
-app would be more realistic but doubles the deploy and dev setup for no extra
-learning — the HTTP-only rule already keeps the boundary real.
+**Where MockPay lives** (decided): a workspace package of its own
+(`apps/mockpay`, `@vinyl-order/mockpay`) exporting a Nest module, which the API
+mounts under `/mockpay` — outside production, or in production with
+`PAYMENT_DEMO=true` (deploy.md §6.4). A separate app would be more realistic
+but doubles the deploy and dev setup for no extra learning.
+
+The package is what makes the HTTP-only rule hold without anyone having to
+remember it. It has no dependency on the API, so an import of our services
+from MockPay doesn't compile; and its `exports` map offers only the module and
+its response types, so the API can't reach into its sessions either. It began
+as a folder inside the API (`apps/api/src/mockpay`), where both were only
+conventions.
 
 **The client is the adapter.** `MockPayProvider` (`apps/api/src/payments`) is
 the one place that knows MockPay's format. It turns our request into MockPay's
 and MockPay's answer into ours, and treats that answer as outside input:
 
 - **Validated, not cast.** MockPay's response is parsed with a Zod schema
-  declared on our side, not imported from `mockpay/`. A malformed answer fails
+  declared on our side, not imported from MockPay. A malformed answer fails
   here instead of leaving an undefined session id in the database.
 - **Bounded.** Each call times out after 5 seconds, so a provider that hangs
   does not hang the customer's request.
@@ -196,8 +204,9 @@ and MockPay's answer into ours, and treats that answer as outside input:
 
 Configuration: `PAYMENT_PROVIDER` (only `mockpay` so far) chooses the
 implementation in `PaymentsModule`, which **refuses to boot with `mockpay` in
-production** — MockPay is not mounted there and takes no real money, so the
-mistake shows at deploy rather than when a customer presses Pay.
+production** unless `PAYMENT_DEMO=true` — MockPay takes no real money, so a
+deploy that forgot to choose a real provider fails at boot rather than when a
+customer presses Pay.
 `MOCKPAY_URL` is optional: unset, the client calls this API itself, at the port
 it is listening on, read per call because e2e suites listen on a random port.
 
@@ -230,7 +239,7 @@ read as actions on an order.
 **Delivering webhooks** works as a real provider's does, because that is what
 our side has to survive:
 
-- **Signed** with the §5.3 scheme. The signing is written inside `mockpay/`,
+- **Signed** with the §5.3 scheme. The signing is written inside MockPay,
   not shared with the verifying code in `payments/`: the two sides of a
   provider integration share a scheme, never code.
 - **At least once.** Anything but a `2xx` — an error status, a timeout after
@@ -813,7 +822,7 @@ lifecycle, and the sweeper and the late-payment race both build on it.
 ## 12. Open questions
 
 1. ~~MockPay as a module inside the API, or its own app from the start?~~
-   Decided: a module, mounted outside production only (§5.1).
+   Decided: a module mounted in the API, kept in a package of its own (§5.1).
 2. ⚖️ Accept the paid-after-cancelled window with an admin list (§8.4), or do
    authorise/capture now?
 3. Should the sweeper also run lazily — expire an order when it is read after
