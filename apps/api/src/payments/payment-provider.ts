@@ -40,8 +40,7 @@ export interface PaymentWebhookEvent {
  * amount when nothing was taken, so none can be read by mistake.
  */
 export type ExpiredSession =
-  | { paid: false }
-  | { paid: true; amountCents: number; currency: string };
+  { paid: false } | { paid: true; amountCents: number; currency: string };
 
 /** Request headers as Node hands them over: lower-cased names. */
 export type WebhookHeaders = Record<string, string | string[] | undefined>;
