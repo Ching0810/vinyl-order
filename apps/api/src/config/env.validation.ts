@@ -25,6 +25,17 @@ const envSchema = z.object({
   // cross-origin browser access allowed.
   WEB_ORIGIN: z.string().optional(),
 
+  // How many proxies in front of the API to trust for the client's address
+  // (X-Forwarded-For), which the rate limit counts by. A count, never "true":
+  // trusting every hop would read the leftmost entry, which the client writes
+  // itself. 0 (the default) trusts none — right when nothing is in front.
+  // Measured on the deployed API, not guessed (docs/design/deploy.md §6.2).
+  TRUST_PROXY: z.coerce
+    .number({ error: 'TRUST_PROXY must be a number of proxies, never true/false' })
+    .int()
+    .min(0)
+    .default(0),
+
   // Discogs catalog API (server-side only — the token is a secret, never shipped
   // to the browser). A descriptive User-Agent is required by Discogs.
   DISCOGS_TOKEN: z.string().min(1, 'DISCOGS_TOKEN is required'),
