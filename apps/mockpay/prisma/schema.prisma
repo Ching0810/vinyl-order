@@ -1,0 +1,44 @@
+// MockPay's own database (docs/design/deploy.md §6.5). It stands in for a
+// third party's storage, so nothing here refers to the API's tables, and the
+// API never connects to it — it learns about a session only over HTTP.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// How a session ended, or `open` while the customer has not chosen yet.
+/// `expired` is the merchant voiding it before the customer chose.
+enum MockPayOutcome {
+  open
+  paid
+  declined
+  expired
+}
+
+/// One request to collect money, as MockPay — not our API — records it.
+model MockPaySession {
+  /// Prefixed like a real provider's ids (`mps_…`), so its origin shows in any
+  /// log. Made by MockPay when it opens the session, not by the database.
+  id             String         @id
+  /// The merchant's reference, kept as plain text. No foreign key: the orders
+  /// live in another database, and a provider never knows a merchant's tables.
+  orderId        String
+  amountCents    Int
+  currency       String
+  /// After this, the session refuses to take payment.
+  expiresAt      DateTime
+  /// Where the customer's browser goes once they pay or decline.
+  returnUrl      String
+  /// How long after the customer chooses the webhook is sent.
+  webhookDelayMs Int
+  outcome        MockPayOutcome @default(open)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

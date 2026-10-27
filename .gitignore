@@ -44,8 +44,9 @@ yarn-error.log*
 !.env.example
 !.env.*.example
 # Exception: the e2e suite's config. No secrets — it points at the throwaway
-# vinyl_test database, so a fresh clone can run the tests.
+# vinyl_test and mockpay_test databases, so a fresh clone can run the tests.
 !apps/api/.env.test
+!apps/mockpay/.env.test
 
 # vercel
 .vercel
