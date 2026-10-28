@@ -37,6 +37,12 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // On SIGTERM — a platform stopping the container — close the app: each
+  // module's onModuleDestroy runs (database connections, MockPay's webhook
+  // timers) and the process exits. Without a handler, Node running as the
+  // container's PID 1 ignores the signal, and the platform has to kill it.
+  app.enableShutdownHooks();
+
   await app.listen(config.get<string>('PORT') ?? 3001);
 }
 void bootstrap();

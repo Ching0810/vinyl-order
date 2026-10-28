@@ -1,0 +1,21 @@
+# What `docker build` may not send to the builder. The context is the whole
+# repository (the API's image needs the workspace), so everything here would
+# otherwise be uploaded and could be copied into an image.
+
+# Secrets. Every .env file, the committed test ones too: an image takes its
+# configuration from the platform's environment, never from a file.
+**/.env
+**/.env.*
+
+# Rebuilt inside the image, for Linux, from the lockfile and the sources.
+**/node_modules
+**/dist
+**/.next
+**/src/generated
+**/*.tsbuildinfo
+
+# Not needed to build, and only make the context larger.
+.git
+**/uploads
+**/coverage
+**/.DS_Store

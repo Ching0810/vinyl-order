@@ -17,5 +17,42 @@ services:
       timeout: 5s
       retries: 5
 
+  # The API as its image runs in production (docs/design/deploy.md §8), for
+  # trying the image locally. Behind a profile, so `docker compose up` still
+  # starts Postgres alone:
+  #
+  #   docker compose --profile prod up --build api
+  #
+  # On 3002, beside a dev API on 3001. It uses the dev databases, which
+  # `prisma migrate dev` keeps current — the image runs no migrations.
+  api:
+    profiles: [prod]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: vinyl-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '3002:3001'
+    # Configuration from the environment, as on the platform; the image holds
+    # none. The secrets are throwaway values for this machine only.
+    environment:
+      NODE_ENV: production
+      # The Compose network's name for the database, not localhost: inside
+      # the container, localhost is the container itself.
+      DATABASE_URL: postgresql://vinyl:vinyl@postgres:5432/vinyl?schema=public
+      MOCKPAY_DATABASE_URL: postgresql://vinyl:vinyl@postgres:5432/mockpay?schema=public
+      JWT_SECRET: local-prod-profile-only-not-a-secret
+      JWT_EXPIRES_IN: 1d
+      # Only the admin's Discogs import calls Discogs; set a real token in the
+      # shell to try it.
+      DISCOGS_TOKEN: ${DISCOGS_TOKEN:-unset}
+      PAYMENT_DEMO: 'true'
+      MOCKPAY_WEBHOOK_SECRET: local-prod-profile-only-0123456789abcdef
+      # Image URLs stored on uploads point at this API's published port.
+      PUBLIC_API_URL: http://localhost:3002
+
 volumes:
   vinyl-pgdata:
