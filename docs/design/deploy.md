@@ -342,31 +342,86 @@ A multi-stage Dockerfile at `apps/api/Dockerfile`, built from the repository
 root so it can see the workspace (`pnpm-workspace.yaml`, the lockfile,
 `packages/shared`, `apps/mockpay`):
 
-1. **Build stage:** install the whole workspace from the lockfile, generate
-   both Prisma clients (ours and MockPay's), and build the API with the
-   workspace packages it loads at runtime from their `dist` — `shared` and
-   `mockpay` — using `pnpm --filter "api..." build`, the dependencies first.
-2. **`pnpm deploy`:** copy out just the API with its production dependencies
-   — not the web app, not dev tools.
-3. **Runtime stage:** `dist`, the production `node_modules`, and both Prisma
-   schemas with their migrations. Runs as a non-root user, started with `node dist/main.js`
-   directly so the process receives the platform's stop signal (a package
-   manager in between may not pass it on).
+1. **Build stage:** install the API and the workspace packages it depends on
+   from the lockfile — not the web — generate both Prisma clients (ours and
+   MockPay's), and build `shared`, `mockpay` and the API, the dependencies
+   first (`pnpm --filter "api..." build`).
+2. **`pnpm deploy`:** copy out just the API with its production dependencies,
+   the workspace packages as their `dist` — not the web app, not dev tools.
+3. **Runtime stage:** a fresh base image with `dist`, the production
+   `node_modules` and `package.json`, nothing else: no sources, no Prisma CLI,
+   no migrations (those run from outside, §9), no `.env`.
 
-Things this monorepo makes worth checking: `bcrypt` is a native module and must
-be compiled inside the Linux image, never copied from a Mac; Prisma's client
-is generated at install time, so the schema has to be in the image before
-`pnpm install`.
+**As built.** What each choice is for:
 
-**Verified locally first.** A Compose profile runs the image against the local
-Postgres with production settings, so problems show up on the laptop rather
-than in Render's build logs.
+- **One Node version everywhere.** `.nvmrc` holds it (24.22.1); nvm reads it
+  locally, every CI job reads it, the image's base tag matches it, and the
+  root `engines` field refuses another major. Debian slim rather than Alpine:
+  today's one native module, `bcrypt`, has binaries for both, but musl's
+  differences surface as bugs seen only on Alpine, for a few tens of MB saved.
+- **Manifests before sources.** The lockfile, the workspace file,
+  `.pnpmfile.cjs` and each package's `package.json` are copied first, and the
+  install runs with `--ignore-scripts`; the sources follow, then the Prisma
+  clients are generated (they need the schemas) and everything is built. A
+  change to code alone reuses the installed layer.
+- **`pnpm deploy --prod --ignore-scripts`.** The workspace packages are
+  symlinks in a monorepo's `node_modules`; `pnpm deploy` copies them in as
+  real files, so `/out` stands on its own. No scripts: the generated clients
+  are already in each `dist`, and generating them again would need the CLI, a
+  dev dependency that `--prod` has left out.
+- **The Prisma CLI kept out of production.** `@prisma/client` declares the CLI
+  and TypeScript as _optional_ peers, and pnpm links an optional peer
+  whenever the project has it — ours does, as dev dependencies — so they came
+  into the image anyway, with Prisma Studio, React and an embedded Postgres
+  behind them. `.pnpmfile.cjs` removes the two peers as pnpm reads the
+  package; the generated clients import only `@prisma/client/runtime`. The
+  image went from 810MB to 514MB, its `node_modules` from 352MB to 123MB.
+  After a Prisma upgrade, `pnpm --filter api why prisma --prod` should find
+  nothing.
+- **Not root, and read-only to the app.** The process runs as `node`; the
+  files it runs are owned by root, so a flaw in the app can read its code but
+  not rewrite it. Only `uploads/` is the app's to write (§6.6).
+- **It stops when asked.** `CMD ["node", "dist/main.js"]` makes Node the
+  container's first process — no package manager or shell in between to
+  swallow the signal — and `app.enableShutdownHooks()` gives it a SIGTERM
+  handler: each module's `onModuleDestroy` closes its connections and the
+  process exits. Without the handler, Node as process 1 ignores SIGTERM and
+  the platform kills it after a timeout: measured, `docker stop` went from
+  10s and exit 137 (killed) to under a second and exit 0.
+- **No configuration inside.** `.dockerignore` keeps every `.env` file out of
+  the build — the committed test ones too — along with `node_modules`, build
+  output and `.git`. The image is the same wherever it runs; the platform's
+  environment configures it (§7).
+- **No `HEALTHCHECK`.** Render checks `/health` itself and ignores the
+  Dockerfile's.
+
+**Built on every pull request.** CI's `docker` job builds the image, without
+pushing it, so a change that breaks it — a new workspace package the
+Dockerfile doesn't copy, a `.pnpmfile.cjs` edit without the lockfile —
+fails on the PR rather than at deploy. Layers are cached between runs, the
+build stage's included, so an unchanged lockfile skips the install.
+
+**Verified locally first.** Compose's `prod` profile runs the image with
+production settings against the local Postgres and the dev databases, on port
+3002 beside a dev API on 3001:
+
+```bash
+docker compose --profile prod up --build api   # build and start it
+API_ORIGIN=http://localhost:3002 pnpm dev:web  # the web, pointed at it
+docker compose rm -sf api                      # stop and remove it alone
+```
+
+`docker compose --profile prod down` removes Postgres's container too — the
+data survives in its volume, but a dev API loses its database until
+`docker compose up`.
 
 ## 9. Deploying and migrating
 
 **Schema changes are a step of their own, not part of starting the API.**
 Running `prisma migrate deploy` at boot means a failed migration crash-loops
-the service, and with more than one instance, several would try at once.
+the service, and with more than one instance, several would try at once. The
+image couldn't anyway: it holds neither the Prisma CLI nor the migrations
+(§8).
 
 Each database has its own migration history, and both are migrated on every
 deploy — `vinyl` with our schema, `mockpay` with MockPay's. Each package runs
@@ -405,7 +460,8 @@ Each code step is its own PR.
      session survives a restart.
 3. `trust proxy`, so the rate limit sees the customer (§6.2).
 4. The web calls the API through `/api` (§6.1).
-5. Dockerfile, `.dockerignore`, and the local Compose profile (§8).
+5. Dockerfile, `.dockerignore`, the local Compose profile, and a CI build of
+   the image (§8).
 6. Neon: create both databases, run both migrations, import the catalog from
    Discogs, create the admin account.
 7. Render: deploy the image, set §7's variables, health check on `/health`.
@@ -454,6 +510,12 @@ test database — is reviewed on its own, before any behaviour depends on it.
 - **"Front end and API on different domains — how does the cookie work?"** →
   avoid the cross-site cookie altogether: proxy the API under the front end's
   own origin, so it stays first-party (§6.1).
+- **"How do you keep an image small and safe?"** → two stages, so build tools
+  never reach the runtime; production dependencies only, and check what
+  still comes in — here optional peers brought the Prisma CLI back, 300MB of
+  it; no configuration in the image; a non-root user that can't rewrite its
+  own code; and a process that handles SIGTERM, so a deploy doesn't kill it
+  mid-request (§8).
 - **"When do migrations run?"** → before the code that needs them, as their
   own step, and backward compatible for one release (§9).
 - **"Would splitting it into a microservice fix lost state?"** → no: state is
