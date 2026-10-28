@@ -1,6 +1,19 @@
 import type { NextConfig } from 'next';
 
+// Where /api/* is forwarded: the API's own address, never sent to the browser.
+// Read when the config loads — at build time on Vercel — so it must be set
+// for the build, not only at runtime.
+const apiOrigin = process.env.API_ORIGIN ?? 'http://localhost:3001';
+
 const nextConfig: NextConfig = {
+  // The browser calls the API through this app, as /api/*, so to the browser
+  // there is one site: the API's auth cookie is first-party, and sameSite=lax
+  // keeps working once the two are deployed apart (docs/design/deploy.md
+  // §6.1). The prefix is ours alone and is dropped on the way: /api/products
+  // reaches the API as /products. No route of this app lives under /api.
+  rewrites() {
+    return [{ source: '/api/:path*', destination: `${apiOrigin}/:path*` }];
+  },
   images: {
     // Dev only: skip the image optimizer so the browser loads images directly.
     // Next 16's optimizer refuses to fetch private/loopback IPs (SSRF defense),
