@@ -152,6 +152,21 @@ answer back, `Set-Cookie` included. To the browser it is one site, so the
 cookie is first-party, `sameSite: 'lax'` keeps working, and the auth code does
 not change. `NEXT_PUBLIC_API_URL` becomes the `/api` path.
 
+**As built.** `next.config.ts` rewrites `/api/:path*` to `${API_ORIGIN}/:path*`:
+the prefix belongs to the web alone and is dropped on the way, so
+`/api/products` reaches the API as `/products` and no API route changes.
+`API_ORIGIN` has no `NEXT_PUBLIC_` prefix — only Next's server needs the
+Render URL — and the config reads it **at build time**, so on Vercel it must be
+set for the build. The web's client appends paths to `/api` rather than
+resolving them with `new URL`, which drops a base's path and refuses a relative
+one. Every API call already ran in the browser, so a relative base is enough;
+nothing on the server would need the API's full address.
+
+**Local development takes the same path**: `/api` is the default, and the dev
+server forwards it to `localhost:3001`. The cookie then belongs to
+`localhost:3000`, as it will belong to the Vercel URL, so the login is tested
+the way it will run.
+
 **Cost:** every API call takes one more hop, and Vercel's proxy has its own
 timeout — which matters while the API is waking up (§6.3). ⚖️ If the timeout
 turns out shorter than a cold start, the first request after a sleep fails
@@ -318,8 +333,8 @@ the repository.
 | `MOCKPAY_WEBHOOK_SECRET` | Render | new random value                          |
 | `PAYMENT_DEMO`           | Render | `true` (§6.4)                             |
 | `TRUST_PROXY`            | Render | Render's hop count, measured (§6.2)       |
-| `NEXT_PUBLIC_API_URL`    | Vercel | `/api` (§6.1)                             |
-| the rewrite's target     | Vercel | the Render URL — read by `next.config.ts` |
+| `NEXT_PUBLIC_API_URL`    | Vercel | unset: `/api` is the default (§6.1)       |
+| `API_ORIGIN`             | Vercel | the Render URL, set for the build (§6.1)  |
 
 ## 8. The API image
 
