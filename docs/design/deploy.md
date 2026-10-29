@@ -1,6 +1,6 @@
 # Deploying to Free Hosting
 
-- **Status:** In progress — steps 0–8 done (§10); decisions marked ⚖️ are open
+- **Status:** In progress — steps 0–8 and 10 done, 9 under way (§10); decisions marked ⚖️ are open
 - **Date:** 2026-10-22
 - **Scope:** putting the web app, the API and the database on the public
   internet at no cost, and the code changes that have to come first
@@ -587,7 +587,7 @@ global setup checks both names end in `_test`, then resets both.
 
 - **First deploy:** migrations ran from the laptop against Neon by hand
   (below).
-- **Later:** a GitHub Actions workflow on `main` runs `prisma migrate deploy`
+- **Since step 10:** a GitHub Actions workflow on `main` runs `prisma migrate deploy`
   against both databases and, only if both succeed, triggers Render's deploy
   hook (with Render's auto-deploy off). The database is always at least as
   new as the code. Render can't do it itself on the free plan: its pre-deploy
@@ -598,6 +598,44 @@ global setup checks both names end in `_test`, then resets both.
 Migrations must stay **backward compatible for one release** — add a column
 before the code that writes it, stop using one before dropping it — because
 for a moment the new schema runs under the old code.
+
+**The deploy workflow, as built.** A `deploy` job at the end of CI
+(`.github/workflows/ci.yml`), so the commit it ships is the one every check
+just passed on:
+
+1. **Only from `main`, only after every check.** It `needs` lint, typecheck,
+   the tests, the build and the image; one red check and nothing deploys.
+2. **Only when the API changed.** A `changes` job diffs the push against the
+   API image's inputs — `apps/api`, `apps/mockpay`, `packages/shared`, the
+   lockfile and workspace files, `.nvmrc`, `.dockerignore`. A merge that
+   touches only the web, the docs or CI doesn't restart the API. Run by hand
+   (`workflow_dispatch`), it deploys whatever changed.
+3. **Both databases migrated, over the direct URLs** (§7), `vinyl` then
+   `mockpay`; a failure stops the job, and Render keeps running the old code.
+4. **Render's deploy hook, for this commit** (`&ref=<sha>`): `main` may have
+   moved on while the migrations ran, and the newer commit hasn't been
+   migrated for.
+
+What keeps it safe:
+
+- **A deploy is never cancelled.** CI cancelled a run when a newer push to
+  the same branch arrived; on `main` that could stop a migration midway. Now
+  only pull requests' runs are cancelled, and deploys queue in a group of
+  their own, one at a time.
+- **Secrets in a `production` environment**, which only `main` may use: the
+  two direct URLs and the deploy hook (whose key lets anyone who has it
+  start a deploy). They exist nowhere else — not on Render, not on a laptop.
+- **Public logs, masked.** The repository is public and so are its Actions
+  logs. GitHub hides a secret's whole value, but Prisma prints the database
+  host, part of one; the job masks both hosts before migrating, and the log
+  reads `at "***"`.
+
+**Checked on the first run**, started by hand on `5f46332`: every check
+passed, both migrations found nothing pending, and Render's deploy
+was triggered by the hook, built `5f46332` and connected to both databases.
+Render accepted `ref`; that it deploys the named commit rather than the
+latest one awaits a run where the two differ. The merge that added the
+workflow touched only CI, and its `deploy` was skipped.
 
 **The first deploy, as done.** The production URLs are kept outside the
 repository and read into a terminal's memory, never into a file or the
@@ -637,8 +675,8 @@ Singapore beside Neon, built by Render from `apps/api/Dockerfile` with the
 repository root as its context — the same build as CI's and Compose's (§8).
 The health check is `/health`; until it answers, a new deploy takes no
 traffic. **Auto-deploy is off**: with migrations still run by hand, a merge
-would otherwise ship code before the schema it needs; deploys are started
-from the dashboard until step 10's workflow calls Render's deploy hook. Render
+would otherwise ship code before the schema it needs; step 10's workflow
+calls Render's deploy hook once the migrations are done. Render
 connects to GitHub through its app, given this repository alone. Once live,
 `/health` answered and `/products` counted all 167 products, read from Neon
 over the pooled URL.
@@ -755,6 +793,10 @@ test database — is reviewed on its own, before any behaviour depends on it.
   mid-request (§8).
 - **"When do migrations run?"** → before the code that needs them, as their
   own step, and backward compatible for one release (§9).
+- **"How does your pipeline deploy safely?"** → only a commit every check
+  passed on; migrate first, then deploy that exact commit; never cancel a
+  deploy midway, and run one at a time; keep the credentials that can change
+  the schema in CI alone, and mask what the public logs would show (§9).
 - **"Would splitting it into a microservice fix lost state?"** → no: state is
   lost because of where it's stored, not where the code runs. Persist it
   first; give the service its own database so nothing else can reach its
