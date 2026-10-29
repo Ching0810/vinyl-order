@@ -1,6 +1,6 @@
 # Deploying to Free Hosting
 
-- **Status:** In progress — steps 0–7 done (§10); decisions marked ⚖️ are open
+- **Status:** In progress — steps 0–8 done (§10); decisions marked ⚖️ are open
 - **Date:** 2026-10-22
 - **Scope:** putting the web app, the API and the database on the public
   internet at no cost, and the code changes that have to come first
@@ -186,9 +186,24 @@ server forwards it to `localhost:3001`. The cookie then belongs to
 the way it will run.
 
 **Cost:** every API call takes one more hop, and Vercel's proxy has its own
-timeout — which matters while the API is waking up (§6.3). ⚖️ If the timeout
-turns out shorter than a cold start, the first request after a sleep fails
-and the page's retry gets the answer.
+timeout — which matters while the API is waking up (§6.3). Measured, it
+waits long enough: with Render and Neon both asleep,
+`/api/products?first=1` through Vercel answered `200` after 23 seconds, the
+next call in a third of a second. The first visitor waits but sees no error,
+so the web needs no retry of its own.
+
+**As deployed.** The browser calls `https://vinyl-order.vercel.app/api/…`
+only; the response to `/api/products/slides` carried Vercel's `Server`
+header, Render's `Rndr-Id` and Cloudflare's `Cf-Ray` — one request through
+all three. After logging in, `access_token` belongs to `vinyl-order.vercel.app`,
+`HttpOnly`, `Secure`, `SameSite=Lax`, and survives a reload. The rewrite runs
+at Vercel's edge, not in a function, so API calls don't pass through the
+function region (§9).
+
+**`WEB_ORIGIN` stays unset.** No browser request crosses origins: pages call
+their own `/api`, and MockPay's checkout page posts to the Render origin it
+was served from. The site works with no CORS origin allowed, so none is — a
+page on any other site can't read the API's answers with a visitor's cookie.
 
 ### 6.2 The rate limit: trust the proxies' header
 
@@ -249,6 +264,25 @@ and stayed so with three made-up entries instead of one, since only what
 Render's three hops append is trusted. The addresses differed between
 requests (another Cloudflare edge, another balancer); the count didn't, which
 is why the setting is a count and not a list of addresses.
+
+**Measured through Vercel: the customer's address can't be trusted from it.**
+Through `https://vinyl-order.vercel.app/api`, Vercel's outgoing address sits
+where the client was, so with `TRUST_PROXY=3` the rate limit counts by
+Vercel's address — the shared bucket the table above predicted. Vercel does
+pass the client on, but not in a way we can use:
+
+```
+from a browser:          <my address>, <Vercel>, <Cloudflare>, <Render LB>
+with X-Forwarded-For: x: x,            <Vercel>, <Cloudflare>, <Render LB>
+```
+
+With no `X-Forwarded-For`, Vercel writes the client's address; with one, it
+forwards the client's header as it came and adds nothing. The entry before
+Vercel's is whatever the client chooses, so `TRUST_PROXY=4` would let anyone
+pick a new address per request and never meet the limit — through Vercel as
+well as directly. It stays at 3: customers behind the same Vercel address
+share a bucket, and nobody escapes it. How the API can learn the real
+address is §11's question 6.
 
 ### 6.3 Sleeping: accepted, with a wake-up ping by day
 
@@ -401,23 +435,24 @@ unaffected.
 Secrets live in each platform's environment settings, never in the image or
 the repository.
 
-| Variable                 | Where  | Value                                     |
-| ------------------------ | ------ | ----------------------------------------- |
-| `NODE_ENV`               | Render | `production`                              |
-| `PORT`                   | Render | set by Render; the API already reads it   |
-| `DATABASE_URL`           | Render | Neon's `vinyl` database, pooled           |
-| `MOCKPAY_DATABASE_URL`   | Render | Neon's `mockpay` database, pooled         |
-| `JWT_SECRET`             | Render | new random value, not the local one       |
-| `JWT_EXPIRES_IN`         | Render | `1d`                                      |
-| `WEB_ORIGIN`             | Render | the Vercel URL, set with step 8           |
-| `PUBLIC_WEB_URL`         | Render | the Vercel URL (MockPay's return address) |
-| `PUBLIC_API_URL`         | Render | `https://vinyl-order-api.onrender.com`    |
-| `DISCOGS_TOKEN`          | Render | the Discogs token                         |
-| `MOCKPAY_WEBHOOK_SECRET` | Render | new random value                          |
-| `PAYMENT_DEMO`           | Render | `true` (§6.4)                             |
-| `TRUST_PROXY`            | Render | `3`, measured (§6.2)                      |
-| `NEXT_PUBLIC_API_URL`    | Vercel | unset: `/api` is the default (§6.1)       |
-| `API_ORIGIN`             | Vercel | the Render URL, set for the build (§6.1)  |
+| Variable                       | Where  | Value                                   |
+| ------------------------------ | ------ | --------------------------------------- |
+| `NODE_ENV`                     | Render | `production`                            |
+| `PORT`                         | Render | set by Render; the API already reads it |
+| `DATABASE_URL`                 | Render | Neon's `vinyl` database, pooled         |
+| `MOCKPAY_DATABASE_URL`         | Render | Neon's `mockpay` database, pooled       |
+| `JWT_SECRET`                   | Render | new random value, not the local one     |
+| `JWT_EXPIRES_IN`               | Render | `1d`                                    |
+| `WEB_ORIGIN`                   | Render | unset: no cross-origin caller (§6.1)    |
+| `PUBLIC_WEB_URL`               | Render | `https://vinyl-order.vercel.app`        |
+| `PUBLIC_API_URL`               | Render | `https://vinyl-order-api.onrender.com`  |
+| `DISCOGS_TOKEN`                | Render | the Discogs token                       |
+| `MOCKPAY_WEBHOOK_SECRET`       | Render | new random value                        |
+| `PAYMENT_DEMO`                 | Render | `true` (§6.4)                           |
+| `TRUST_PROXY`                  | Render | `3`, measured (§6.2)                    |
+| `NEXT_PUBLIC_API_URL`          | Vercel | unset: `/api` is the default (§6.1)     |
+| `API_ORIGIN`                   | Vercel | the Render URL, for Production only     |
+| `ENABLE_EXPERIMENTAL_COREPACK` | Vercel | `1`: pnpm from `packageManager` (§9)    |
 
 **Two URLs per database: pooled for the API, direct for migrations.** Neon
 gives each database a pooled host (`…-pooler…`, PgBouncer in transaction
@@ -608,6 +643,34 @@ connects to GitHub through its app, given this repository alone. Once live,
 `/health` answered and `/products` counted all 167 products, read from Neon
 over the pooled URL.
 
+**The web on Vercel, as set up.** A Hobby project, `vinyl-order`, at
+`https://vinyl-order.vercel.app`, built from `main` with Node 24. Three of
+Vercel's defaults would have gone wrong in this monorepo:
+
+- **The build command.** The root directory is `apps/web`, and Vercel's
+  default build there is `next build` alone — but `@vinyl-order/shared`
+  resolves to its `dist`, which nothing has built yet. The command is
+  `cd ../.. && pnpm --filter "web..." build`: the web and every workspace
+  package it depends on, dependencies first.
+- **pnpm's version.** Vercel picks pnpm by the lockfile's format, which pnpm
+  9, 10 and 12 share; an older pnpm can resolve differently and doesn't know
+  settings such as `allowBuilds`. `ENABLE_EXPERIMENTAL_COREPACK=1` makes it
+  use the version in `packageManager`; the build log confirms 12.6.0.
+- **Previews.** Vercel deploys every branch and pull request by default, and
+  a preview with the production `API_ORIGIN` would run against the
+  production API and database. `API_ORIGIN` is set for Production only, and
+  the ignored-build step skips any build that isn't production. CI already
+  builds the web on every pull request.
+
+**The function region is Singapore (`sin1`)**, beside Render and Neon. The
+default was Washington (`iad1`): a product page's server-rendered payload
+came back with `X-Vercel-Id: hkg1::iad1::…` — Hong Kong's edge, then a
+function on the US east coast — and after the change `hkg1::sin1::…`. Pages
+prerendered at build, the home page among them, are served from the edge and
+touch no function. The install still takes the whole workspace, the API's
+dependencies included; `pnpm install --filter "web..."` would shorten the
+build, not change the site.
+
 ## 10. Implementation order
 
 Each code step is its own PR.
@@ -643,10 +706,9 @@ test database — is reviewed on its own, before any behaviour depends on it.
 
 ## 11. Open questions
 
-1. ⚖️ Is Vercel's proxy timeout longer than Render's cold start (§6.1)? If not,
-   is a failed first request acceptable, or does the web retry it? The API
-   alone took 23 seconds (§6.3); what counts is a first page after both
-   services slept, measured with step 8.
+1. ~~Is Vercel's proxy timeout longer than Render's cold start (§6.1)?~~ Long
+   enough: a first request with both Render and Neon asleep took 23 seconds
+   through Vercel and answered `200`.
 2. ~~Does Neon's free plan allow a second database in the same project
    (§6.5)?~~ Yes: `vinyl` and `mockpay` share one project, and so its storage
    and compute hours.
@@ -660,11 +722,12 @@ test database — is reviewed on its own, before any behaviour depends on it.
 5. Should the in-memory rate limit move to Redis now, or when a second
    instance exists?
 6. ⚖️ How does a request through Vercel tell the API its client's address
-   (§6.2)? Does Vercel's rewrite forward `X-Forwarded-For` to an external
-   origin at all? If so, the API still can't tell a Vercel request from a
-   direct one that claims to be — one way is a header only Vercel's side can
-   set, such as a secret the Next app adds, with the API taking the client
-   address from it only when the secret matches.
+   (§6.2)? Not by `X-Forwarded-For`: measured, Vercel forwards whatever the
+   client sent in it. The way left is a header only our side of Vercel can
+   set: the Next app writes the address Vercel itself saw, with a secret
+   shared with the API, and the API takes the address from it only when the
+   secret matches — otherwise it keeps `TRUST_PROXY`'s answer. Its own PR,
+   with an e2e test that a forged header or a wrong secret changes nothing.
 7. ⚖️ Separate roles for migrating and for running? Today one owner role per
    database does both, so the API could drop its own tables. A runtime role
    created with SQL — `SELECT`, `INSERT`, `UPDATE`, `DELETE` on its own
