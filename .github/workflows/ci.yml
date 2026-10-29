@@ -1,17 +1,21 @@
 # Checks every pull request, and main after a merge, with the same commands we
-# run locally. Four jobs rather than one so a red check names the failure in
-# the PR list, and so lint doesn't wait for a database to boot.
+# run locally. Separate jobs rather than one so a red check names the failure in
+# the PR list, and so lint doesn't wait for a database to boot. On main, a
+# passing run then deploys the API (docs/design/deploy.md §9).
 name: CI
 
 on:
   pull_request:
   push:
     branches: [main]
+  # Deploys main again by hand, whatever changed.
+  workflow_dispatch:
 
-# A new push to a PR cancels the run still working on the previous commit.
+# A new push to a PR cancels the run still working on the previous commit. Not
+# on main: that run may be migrating the production databases.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Every job runs the Node version in .nvmrc — the one nvm picks locally and the
 # API's Dockerfile builds on — rather than whatever "24" means on the day.
@@ -120,3 +124,79 @@ jobs:
           # an unchanged lockfile skips the install.
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Whether this push changed anything the API's image is built from. A merge
+  # that touches only the web or the docs doesn't restart the API.
+  changes:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.diff.outputs.api }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            echo api=true >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BEFORE" HEAD -- apps/api apps/mockpay packages/shared \
+              package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs .nvmrc .dockerignore; then
+            echo api=false >> "$GITHUB_OUTPUT"
+          else
+            echo api=true >> "$GITHUB_OUTPUT"
+          fi
+
+  # Migrates both databases, then has Render deploy this very commit — only
+  # once every check above has passed on it, so the schema is always at least
+  # as new as the code (docs/design/deploy.md §9). Render's auto-deploy is off;
+  # this is the only way the API ships.
+  deploy:
+    needs: [lint, typecheck, test, build, docker, changes]
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    # Its secrets are readable only from main.
+    environment: production
+    # One deploy at a time, and never cancelled: a later one waits.
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # The API and MockPay with the Prisma CLI. No scripts: migrating needs
+      # the migrations, not generated clients.
+      - run: pnpm install --frozen-lockfile --filter "api..." --ignore-scripts
+      # The repository is public, and so are its logs; Prisma prints the host
+      # it migrates. The password is in the secret, which GitHub hides already.
+      - name: Hide the database hosts from the log
+        env:
+          VINYL: ${{ secrets.NEON_VINYL_DIRECT }}
+          MOCKPAY: ${{ secrets.NEON_MOCKPAY_DIRECT }}
+        run: |
+          for url in "$VINYL" "$MOCKPAY"; do
+            host=${url#*@}
+            echo "::add-mask::${host%%/*}"
+          done
+      # Direct URLs, not pooled: prisma migrate holds a session-level advisory
+      # lock, which PgBouncer's transaction mode can't keep (deploy.md §7).
+      - name: Migrate vinyl
+        run: pnpm --filter api exec prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.NEON_VINYL_DIRECT }}
+      - name: Migrate mockpay
+        run: pnpm --filter @vinyl-order/mockpay exec prisma migrate deploy
+        env:
+          MOCKPAY_DATABASE_URL: ${{ secrets.NEON_MOCKPAY_DIRECT }}
+      # ref pins the commit just migrated for: main may have moved on since.
+      - name: Deploy the API on Render
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: curl --fail --silent --show-error -X POST -o /dev/null "$HOOK&ref=$GITHUB_SHA"
