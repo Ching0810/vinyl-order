@@ -1,6 +1,6 @@
 # Deploying to Free Hosting
 
-- **Status:** In progress — steps 0–6 done (§10); decisions marked ⚖️ are open
+- **Status:** In progress — steps 0–7 done (§10); decisions marked ⚖️ are open
 - **Date:** 2026-10-22
 - **Scope:** putting the web app, the API and the database on the public
   internet at no cost, and the code changes that have to come first
@@ -233,10 +233,30 @@ How a request through Vercel carries the client's address in a way a direct
 caller can't forge is decided with §6.1 (§11). An e2e test shows the failure:
 two hops trusted, one appended, and the address the client wrote is taken.
 
+**Measured on Render: three hops, `TRUST_PROXY=3`.** Called on the Render URL
+with a made-up `X-Forwarded-For: 203.0.113.7`, the API saw:
+
+```
+forwardedFor:  203.0.113.7, <my address>, 172.70.142.34, 10.27.241.5
+remoteAddress: ::1
+```
+
+Read right to left: a proxy on the instance itself (`::1`), Render's load
+balancer (`10.27.241.5`, a private address), and Cloudflare in front of it
+(`172.70.142.34`); the entry before those is the client, the one before that
+whatever the client wrote. With `TRUST_PROXY=3`, `ip` was my own address —
+and stayed so with three made-up entries instead of one, since only what
+Render's three hops append is trusted. The addresses differed between
+requests (another Cloudflare edge, another balancer); the count didn't, which
+is why the setting is a count and not a list of addresses.
+
 ### 6.3 Sleeping: accepted, with a wake-up ping by day
 
 Render's free service sleeps after about 15 idle minutes, and the next request
-waits for a cold start — up to about a minute. While asleep:
+waits for a cold start — Render warns of 50 seconds or more; once measured,
+`/health` answered after 23 seconds, the process 17 seconds old by then. That
+is the API alone: `/health` doesn't wake the database, and a visitor's first
+page does (§11). While asleep:
 
 - **The expiry sweep does not run.** Correctness doesn't depend on it: paying
   checks `expiresAt` itself (payments.md §4.2, "the deadline is the
@@ -388,13 +408,14 @@ the repository.
 | `DATABASE_URL`           | Render | Neon's `vinyl` database, pooled           |
 | `MOCKPAY_DATABASE_URL`   | Render | Neon's `mockpay` database, pooled         |
 | `JWT_SECRET`             | Render | new random value, not the local one       |
-| `WEB_ORIGIN`             | Render | the Vercel URL                            |
+| `JWT_EXPIRES_IN`         | Render | `1d`                                      |
+| `WEB_ORIGIN`             | Render | the Vercel URL, set with step 8           |
 | `PUBLIC_WEB_URL`         | Render | the Vercel URL (MockPay's return address) |
-| `PUBLIC_API_URL`         | Render | the Render URL (MockPay's checkout page)  |
+| `PUBLIC_API_URL`         | Render | `https://vinyl-order-api.onrender.com`    |
 | `DISCOGS_TOKEN`          | Render | the Discogs token                         |
 | `MOCKPAY_WEBHOOK_SECRET` | Render | new random value                          |
 | `PAYMENT_DEMO`           | Render | `true` (§6.4)                             |
-| `TRUST_PROXY`            | Render | Render's hop count, measured (§6.2)       |
+| `TRUST_PROXY`            | Render | `3`, measured (§6.2)                      |
 | `NEXT_PUBLIC_API_URL`    | Vercel | unset: `/api` is the default (§6.1)       |
 | `API_ORIGIN`             | Vercel | the Render URL, set for the build (§6.1)  |
 
@@ -409,10 +430,25 @@ deploys can't migrate at once, and in transaction mode the next statement may
 land on another server connection that doesn't hold it. The direct URLs
 never go on Render; they're used only from where migrations run (§9).
 
-Both carry `sslmode=require&channel_binding=require`, as Neon gives them.
-Channel binding ties the password check to the TLS connection, so a proxy in
-the middle can't relay it; the Prisma CLI, the API's `pg` driver and `psql` 16
-all connected with it.
+Neon gives them with `sslmode=require&channel_binding=require`. Channel
+binding ties the password check to the TLS connection, so a proxy in the
+middle can't relay it; the Prisma CLI, the API's `pg` driver and `psql` 16 all
+connected with it.
+
+**On Render, `sslmode=verify-full` instead of `require`.** The `pg` driver
+warned at the first query: today it reads `require` as `verify-full` —
+encrypt, and check that the certificate is Neon's — but its next major
+version will read it as libpq does, encrypt without checking, which a
+man-in-the-middle passes. Written as `verify-full`, the check no longer
+depends on the driver's version. Neon's certificate is from a public CA, so
+Node's own CA list verifies it; the warning went and the catalog still loaded.
+The direct URLs keep `require`: the Prisma CLI and `psql` aren't `pg`, and
+`verify-full` hasn't been tried with them.
+
+**An empty variable is not an unset one.** The first boot on Render failed on
+`PUBLIC_API_URL` added with no value: the schema's default applies only when a
+variable is absent, and an empty string is a value — one `min(1)` refuses. The
+fail-fast check did its job: the API never served with it.
 
 ## 8. The API image
 
@@ -518,8 +554,11 @@ global setup checks both names end in `_test`, then resets both.
   (below).
 - **Later:** a GitHub Actions workflow on `main` runs `prisma migrate deploy`
   against both databases and, only if both succeed, triggers Render's deploy
-  hook (with Render's auto-deploy off). The database is always at least as new as the
-  code. ⚖️ Render's own pre-deploy command may need a paid plan; to confirm.
+  hook (with Render's auto-deploy off). The database is always at least as
+  new as the code. Render can't do it itself on the free plan: its pre-deploy
+  command, one-off jobs and shell are all paid. Running it from GitHub has a
+  benefit of its own: the direct URLs, which can change the schema, live in
+  GitHub's secrets and never reach the running API.
 
 Migrations must stay **backward compatible for one release** — add a column
 before the code that writes it, stop using one before dropping it — because
@@ -558,6 +597,17 @@ ON_ERROR_STOP=1`, so a failure leaves nothing half-copied. Two products had
 - **Checked through the API**, running locally on the pooled URLs: all 167
   products, the five categories, the carousel and the hot list answered.
 
+**The API on Render, as set up.** A free web service, `vinyl-order-api`, in
+Singapore beside Neon, built by Render from `apps/api/Dockerfile` with the
+repository root as its context — the same build as CI's and Compose's (§8).
+The health check is `/health`; until it answers, a new deploy takes no
+traffic. **Auto-deploy is off**: with migrations still run by hand, a merge
+would otherwise ship code before the schema it needs; deploys are started
+from the dashboard until step 10's workflow calls Render's deploy hook. Render
+connects to GitHub through its app, given this repository alone. Once live,
+`/health` answered and `/products` counted all 167 products, read from Neon
+over the pooled URL.
+
 ## 10. Implementation order
 
 Each code step is its own PR.
@@ -594,7 +644,9 @@ test database — is reviewed on its own, before any behaviour depends on it.
 ## 11. Open questions
 
 1. ⚖️ Is Vercel's proxy timeout longer than Render's cold start (§6.1)? If not,
-   is a failed first request acceptable, or does the web retry it?
+   is a failed first request acceptable, or does the web retry it? The API
+   alone took 23 seconds (§6.3); what counts is a first page after both
+   services slept, measured with step 8.
 2. ~~Does Neon's free plan allow a second database in the same project
    (§6.5)?~~ Yes: `vinyl` and `mockpay` share one project, and so its storage
    and compute hours.
@@ -602,8 +654,9 @@ test database — is reviewed on its own, before any behaviour depends on it.
    both separable after step 2, so the move is cheap; on free plans it isn't
    worth it — two cold starts in a row can outlast `createSession`'s 5-second
    timeout, and one free plan's hours cover only one always-on service.
-4. ⚖️ Can migrations run as a Render pre-deploy step on the free plan, or do
-   they need the GitHub Actions workflow (§9)?
+4. ~~Can migrations run as a Render pre-deploy step on the free plan?~~ No:
+   the pre-deploy command is a paid feature, so they run from GitHub Actions
+   (§9).
 5. Should the in-memory rate limit move to Redis now, or when a second
    instance exists?
 6. ⚖️ How does a request through Vercel tell the API its client's address
