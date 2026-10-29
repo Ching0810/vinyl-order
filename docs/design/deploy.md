@@ -1,6 +1,6 @@
 # Deploying to Free Hosting
 
-- **Status:** Proposed — nothing built yet (§10); decisions marked ⚖️ are open
+- **Status:** In progress — steps 0–6 done (§10); decisions marked ⚖️ are open
 - **Date:** 2026-10-22
 - **Scope:** putting the web app, the API and the database on the public
   internet at no cost, and the code changes that have to come first
@@ -137,6 +137,24 @@ TLS and backups by hand — more operations work than this project is for.
 _Free plans change. Each limit quoted here is re-checked when the account is
 created (§10)._
 
+**Neon, as set up.** One project, `vinyl-order`, holding both databases on its
+`production` branch:
+
+- **Region: Singapore** (`aws-ap-southeast-1`), the closest to Taiwan. It
+  can't be changed after the project is created, and Render's service goes in
+  the same region (§10 step 7), so each query stays inside one region.
+- **PostgreSQL 16**, the major version local Docker and CI run, so a
+  migration that passes the tests behaves the same here.
+- **What the free plan gives:** 0.5GB of storage and 100 CU-hours of compute a
+  month; the compute autoscales from 0.25 to 2 CU and **suspends after 5 idle
+  minutes**, which can't be turned off. The compute is billed while it is
+  awake, not per query — what keeps it awake is what costs (§6.3).
+- **The only backup is a 6-hour history window**: Neon can restore the branch
+  to any moment in the last six hours, nothing older. A mistake noticed the
+  next morning can't be undone. For a demo whose catalog can be copied again
+  (§9), that is accepted; scheduled `pg_dump`s are the fix if the data starts
+  to matter.
+
 ## 6. What breaks, and the decisions
 
 ### 6.1 The auth cookie: proxy `/api` through Vercel
@@ -215,7 +233,7 @@ How a request through Vercel carries the client's address in a way a direct
 caller can't forge is decided with §6.1 (§11). An e2e test shows the failure:
 two hops trusted, one appended, and the address the client wrote is taken.
 
-### 6.3 Sleeping: accepted, with a wake-up ping
+### 6.3 Sleeping: accepted, with a wake-up ping by day
 
 Render's free service sleeps after about 15 idle minutes, and the next request
 waits for a cold start — up to about a minute. While asleep:
@@ -227,10 +245,44 @@ waits for a cold start — up to about a minute. While asleep:
 - **The first visitor waits.** For a portfolio link, that is the visitor who
   matters most.
 
-A free external scheduler (such as cron-job.org) calling `/health` every
-10 minutes keeps the service awake. The free plan's 750 hours a month cover
-one service running all month, so this costs nothing — and the sweep runs on
-time again.
+A free external scheduler (such as cron-job.org) calling `/health` keeps the
+service awake. ⚖️ How often is set with step 9 (§10), against how Render
+really behaves: the gap must stay under its 15 idle minutes, or the service
+falls asleep between pings and each one becomes a cold start; 14 minutes is
+the seldomest that leaves a margin. Pinging more often buys nothing — Render
+counts the hours its instance is up, not requests, and `/health` doesn't
+reach the database. Render's free plan alone would allow it all day: its 750
+hours a month cover one service running all month.
+
+**The database is what can't stay awake all day.** `/health` doesn't touch the
+database, but the expiry sweep queries it every minute, so while the API is
+awake Neon never sees the 5 idle minutes it needs to suspend. Awake around the
+clock, even at its smallest size, it would use 0.25 CU × ~730 hours ≈ 182
+CU-hours a month — Neon's free 100 runs out around the middle of the month, and
+the database is suspended until the next.
+
+**Decision: the ping runs by day, Taiwan time, 09:00 to 21:00** (UTC+8, which
+has no daylight saving). Twelve hours a day for 31 days is 93 CU-hours at
+0.25 CU, under the limit with a little room for the minutes after the last
+ping — Render stays up another 15, Neon another 5 — and the odd night visitor.
+The window is set by the budget: at 0.25 CU, 100 CU-hours is about 12.9 hours a
+day, so a longer one doesn't fit. Two things keep it there:
+
+- **The compute's maximum is set to 0.25 CU**, not left to autoscale: at 2 CU
+  the same hours would cost eight times as much. One small store's queries
+  don't need more.
+- **Usage is checked against the estimate** on Neon's dashboard after the
+  first days live (§10 step 9). Visits at night wake both services too, and
+  each keeps Neon up for about 20 minutes.
+
+At night the site behaves as without a ping: the first visitor waits for the
+cold start, and stock held by an expired order waits for the morning's first
+sweep — which correctness allows (above).
+
+Weighed and not chosen: **no ping at all** (the visitor who opens a portfolio
+link by day waits a minute), and **a less frequent sweep** (Neon suspends only
+if the gap is over 5 minutes, which delays every release of stock to save
+compute; the window gives the same saving without changing the code).
 
 ### 6.4 MockPay in production: an explicit demo switch
 
@@ -286,6 +338,16 @@ moving MockPay out later is relocation, not untangling (§11). This is the
 **database-per-service** rule: a service owns its data, and others reach it
 only through its API.
 
+**Separate databases, but not yet separate credentials.** On Neon each
+database has its own owner role, `vinyl_owner` and `mockpay_owner`. Checked
+with SQL, they don't keep each other out: roles created from Neon's console
+are members of `neon_superuser`, which holds `pg_read_all_data` and
+`pg_write_all_data` — each can read and write the other's database. And while
+MockPay is mounted inside the API, one process holds both URLs anyway. What
+separates them today is the connection the code is given, not a permission.
+Roles of our own, created with SQL and granted only their database, would make
+it a permission; that waits for MockPay running on its own (§11).
+
 **What a database of its own costs:** a second Prisma schema, generated
 client and migration history; migrations run against both databases on every
 deploy (§9); and the e2e tests reset a second test database.
@@ -323,8 +385,8 @@ the repository.
 | ------------------------ | ------ | ----------------------------------------- |
 | `NODE_ENV`               | Render | `production`                              |
 | `PORT`                   | Render | set by Render; the API already reads it   |
-| `DATABASE_URL`           | Render | Neon's `vinyl` database, with TLS         |
-| `MOCKPAY_DATABASE_URL`   | Render | Neon's `mockpay` database, with TLS       |
+| `DATABASE_URL`           | Render | Neon's `vinyl` database, pooled           |
+| `MOCKPAY_DATABASE_URL`   | Render | Neon's `mockpay` database, pooled         |
 | `JWT_SECRET`             | Render | new random value, not the local one       |
 | `WEB_ORIGIN`             | Render | the Vercel URL                            |
 | `PUBLIC_WEB_URL`         | Render | the Vercel URL (MockPay's return address) |
@@ -335,6 +397,22 @@ the repository.
 | `TRUST_PROXY`            | Render | Render's hop count, measured (§6.2)       |
 | `NEXT_PUBLIC_API_URL`    | Vercel | unset: `/api` is the default (§6.1)       |
 | `API_ORIGIN`             | Vercel | the Render URL, set for the build (§6.1)  |
+
+**Two URLs per database: pooled for the API, direct for migrations.** Neon
+gives each database a pooled host (`…-pooler…`, PgBouncer in transaction
+mode) and a direct one. The running API uses the pooled one: PgBouncer hands
+each transaction whichever server connection is free, so many client
+connections share a few, and a restart or a burst of requests doesn't run into
+Postgres's connection limit. Migrations and one-off loads use the direct one:
+`prisma migrate` holds a session-level advisory lock for the whole run, so two
+deploys can't migrate at once, and in transaction mode the next statement may
+land on another server connection that doesn't hold it. The direct URLs
+never go on Render; they're used only from where migrations run (§9).
+
+Both carry `sslmode=require&channel_binding=require`, as Neon gives them.
+Channel binding ties the password check to the TLS connection, so a proxy in
+the middle can't relay it; the Prisma CLI, the API's `pg` driver and `psql` 16
+all connected with it.
 
 ## 8. The API image
 
@@ -436,7 +514,8 @@ pnpm --filter @vinyl-order/mockpay exec prisma migrate deploy   # MOCKPAY_DATABA
 The e2e suite does the same against `vinyl_test` and `mockpay_test`: its
 global setup checks both names end in `_test`, then resets both.
 
-- **First deploy:** migrations run from the laptop against Neon by hand.
+- **First deploy:** migrations ran from the laptop against Neon by hand
+  (below).
 - **Later:** a GitHub Actions workflow on `main` runs `prisma migrate deploy`
   against both databases and, only if both succeed, triggers Render's deploy
   hook (with Render's auto-deploy off). The database is always at least as new as the
@@ -445,6 +524,39 @@ global setup checks both names end in `_test`, then resets both.
 Migrations must stay **backward compatible for one release** — add a column
 before the code that writes it, stop using one before dropping it — because
 for a moment the new schema runs under the old code.
+
+**The first deploy, as done.** The production URLs are kept outside the
+repository and read into a terminal's memory, never into a file or the
+shell's history:
+
+```bash
+read -s "NEON_VINYL_DIRECT?vinyl direct URL: "   # zsh; typed text isn't shown
+DATABASE_URL="$NEON_VINYL_DIRECT" pnpm --filter api exec prisma migrate status
+DATABASE_URL="$NEON_VINYL_DIRECT" pnpm --filter api exec prisma migrate deploy
+```
+
+and the same for MockPay with `MOCKPAY_DATABASE_URL`. The variables are
+deliberately not called `DATABASE_URL`: only the one command they're given to
+points at production, and closing the terminal forgets them. A variable given
+on the command line wins over `.env` — checked for both the Prisma CLI and the
+API's config with an address that can't connect — so the local `.env` can't
+quietly take over. `status` first shows what `deploy` is about to apply (it
+exits with an error while migrations are pending, which is expected).
+
+- **The catalog was copied, not imported again.** The local database's
+  catalog — 5 categories, 167 products, 175 links between them — went over as
+  a data-only dump of those three tables (`pg_dump --data-only --no-owner
+--no-privileges -t …`), loaded with `psql --single-transaction -v
+ON_ERROR_STOP=1`, so a failure leaves nothing half-copied. Two products had
+  images uploaded locally, at `localhost` URLs; the load set those to empty
+  rather than ship broken images (they return with §6.6). Orders, users and
+  payments stayed behind.
+- **The admin account** was registered through the local web pointed at
+  Neon, then given its role in Neon's SQL editor (`UPDATE "User" SET role =
+'admin' WHERE email = …`). There is no other way to make the first admin, by
+  design: registration only creates customers.
+- **Checked through the API**, running locally on the pooled URLs: all 167
+  products, the five categories, the carousel and the hot list answered.
 
 ## 10. Implementation order
 
@@ -462,12 +574,14 @@ Each code step is its own PR.
 4. The web calls the API through `/api` (§6.1).
 5. Dockerfile, `.dockerignore`, the local Compose profile, and a CI build of
    the image (§8).
-6. Neon: create both databases, run both migrations, import the catalog from
-   Discogs, create the admin account.
-7. Render: deploy the image, set §7's variables, health check on `/health`.
+6. Neon: create both databases, run both migrations, copy the local catalog,
+   create the admin account (§9).
+7. Render: deploy the image in Neon's region, set §7's variables, health
+   check on `/health`.
 8. Vercel: deploy `apps/web`, point the rewrite at Render.
 9. Smoke test the whole customer flow on the live site, including a cancel
-   after a restart; add the wake-up ping.
+   after a restart; add the daytime wake-up ping, settle its interval, and
+   check Neon's usage against §6.3's estimate.
 10. The deploy workflow (§9).
 11. Object storage for uploads (§6.6).
 12. This document, updated with what deploying actually took.
@@ -481,9 +595,9 @@ test database — is reviewed on its own, before any behaviour depends on it.
 
 1. ⚖️ Is Vercel's proxy timeout longer than Render's cold start (§6.1)? If not,
    is a failed first request acceptable, or does the web retry it?
-2. ⚖️ Does Neon's free plan allow a second database in the same project
-   (§6.5)? If not, `mockpay` goes in a second free project — the code doesn't
-   change, only `MOCKPAY_DATABASE_URL`.
+2. ~~Does Neon's free plan allow a second database in the same project
+   (§6.5)?~~ Yes: `vinyl` and `mockpay` share one project, and so its storage
+   and compute hours.
 3. When is MockPay worth extracting as its own service? Its code and data are
    both separable after step 2, so the move is cheap; on free plans it isn't
    worth it — two cold starts in a row can outlast `createSession`'s 5-second
@@ -498,6 +612,13 @@ test database — is reviewed on its own, before any behaviour depends on it.
    direct one that claims to be — one way is a header only Vercel's side can
    set, such as a secret the Next app adds, with the API taking the client
    address from it only when the secret matches.
+7. ⚖️ Separate roles for migrating and for running? Today one owner role per
+   database does both, so the API could drop its own tables. A runtime role
+   created with SQL — `SELECT`, `INSERT`, `UPDATE`, `DELETE` on its own
+   database only, kept for new tables by `ALTER DEFAULT PRIVILEGES` — would
+   leave schema changes to the migration step, and would make §6.5's two
+   databases a permission rather than a convention. Worth it once MockPay
+   runs as its own process with only its own URL.
 
 ## 12. Interview talking points
 
