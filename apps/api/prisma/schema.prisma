@@ -81,6 +81,12 @@ model CartItem {
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
+  /// The shop's offer this line buys. Null until checkout moves onto offers
+  /// (tracker.md step 5), which drops productId and makes this required.
+  /// Cascade: a line for an offer that's gone can't be bought.
+  offerId String?
+  offer   Offer?  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
   quantity Int @default(1)
 
   createdAt DateTime @default(now())
@@ -90,6 +96,9 @@ model CartItem {
   /// create a second line, so the pair is unique.
   @@unique([cartId, productId])
   @@index([cartId])
+  /// Postgres doesn't index foreign keys itself; deleting an offer looks up
+  /// its cart lines by this.
+  @@index([offerId])
 }
 
 /// A placed order: a record of what was bought, never recalculated.
@@ -162,6 +171,14 @@ model OrderItem {
   /// below is what the order renders from, so the line outlives the product.
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  /// The offer bought, while it exists — SetNull for the same reason as
+  /// productId. `supplier` is copied, so a past order still says which shop
+  /// it was "bought" from after the offer is gone. Both null on orders placed
+  /// before checkout moved onto offers (tracker.md step 5).
+  offerId  String?
+  offer    Offer?    @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  supplier Supplier?
 
   quantity       Int
   /// Copied from Product at checkout and never read from it again.
@@ -243,6 +260,17 @@ model Product {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  /// Who made the record, under all their names. Null until products are
+  /// created from a shop's catalog (tracker.md step 8), which also drops the
+  /// `artist` string. Restrict: an artist with records can't vanish.
+  artistId    String?
+  artistRef   Artist?   @relation(fields: [artistId], references: [id], onDelete: Restrict)
+  /// Often unknown: shops give a date for pre-orders and rarely otherwise.
+  /// Replaces `year` in step 8.
+  releaseDate DateTime? @db.Date
+  /// What tells pressings of one album apart, e.g. "日版", "限量彩膠".
+  edition     String?
+
   /// Storefront navigation tabs this record appears under, chosen by the
   /// store rather than read off the record.
   categories Category[]
@@ -250,6 +278,9 @@ model Product {
   cartItems  CartItem[]
   /// Lines of past orders. Deleting a product nulls their link, not the line.
   orderItems OrderItem[]
+
+  /// Each shop's listing of this record.
+  offers Offer[]
 }
 
 /// A storefront navigation tab.
@@ -274,4 +305,192 @@ model Category {
   products Product[]
 
   @@index([sortOrder])
+}
+
+// ---- Supplier tracker (docs/design/tracker.md §5) ----
+
+/// A shop the tracker reads. A fifth is a new value and an adapter, not a
+/// schema change.
+enum Supplier {
+  candlelight
+  tht
+  cosmic
+  rotten_blues
+}
+
+/// Whether a shop will sell a record now, later, or not at all.
+enum Availability {
+  in_stock
+  pre_order
+  sold_out
+}
+
+/// Where an order I placed at a shop stands (tracker.md §9.1). Moved by hand
+/// for now; any forward move is allowed.
+enum SupplierOrderStatus {
+  ordered
+  preparing
+  shipped
+  delivered
+  cancelled
+}
+
+/// One artist or band, under whatever names the shops write it as.
+///
+/// A list of aliases rather than a column per language: 坂本龍一 has a Chinese
+/// and an English name, JENNIE has four, Radiohead has one (tracker.md §5.7).
+model Artist {
+  id   String @id @default(uuid())
+  /// The name the site shows, e.g. "坂本龍一". Also one of the aliases.
+  name String
+
+  aliases  ArtistAlias[]
+  products Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// One way an artist's name is written, e.g. "Ryuichi Sakamoto".
+model ArtistAlias {
+  id       String @id @default(uuid())
+  artistId String
+  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  /// As a shop wrote it.
+  name       String
+  /// Search form of `name`: NFKC, lower case, no punctuation or spaces. What
+  /// lookups compare, so "Ryuichi Sakamoto" and "RYUICHI　SAKAMOTO" are one.
+  normalized String
+
+  createdAt DateTime @default(now())
+
+  /// Unique per artist, not globally: two different artists can share a name,
+  /// and that is shown to me rather than merged.
+  @@unique([artistId, normalized])
+  /// Trigram index for fuzzy lookups ("sakamoto ryuichi" finding
+  /// "ryuichisakamoto"). Needs the pg_trgm extension, which the migration
+  /// that adds it creates first.
+  @@index([normalized(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+/// One shop's listing of a record: everything that differs between shops.
+///
+/// The same columns for every supplier; what a shop doesn't publish is null,
+/// never a guess (tracker.md §5.2). Comparing offers happens when read, so
+/// nothing about "the cheapest" is stored.
+model Offer {
+  id        String  @id @default(uuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  supplier    Supplier
+  /// The shop's own id for the listing.
+  externalId  String
+  url         String
+  /// The shop's own name for the record, to check a match against and to
+  /// match the next shop's title with.
+  sourceTitle String
+
+  priceCents   Int
+  currency     String       @default("TWD")
+  availability Availability
+  /// The supplier's count; only a refresh writes it. Null: the shop doesn't
+  /// say. CHECK (>= 0) in the migration SQL.
+  stockQty     Int?
+  /// The demo checkout's holds, kept apart from stockQty so a refresh can't
+  /// overwrite them (tracker.md §8). CHECK (>= 0) in the migration SQL.
+  reservedQty  Int          @default(0)
+  /// Expected release or shipping date, when the shop gives one.
+  expectedAt   DateTime?    @db.Date
+
+  /// When the values above were last read successfully.
+  lastCheckedAt DateTime
+  /// The last refresh that failed. The values above are kept from the last
+  /// good read, so the page can say how stale they are.
+  lastErrorAt   DateTime?
+  lastError     String?
+
+  snapshots          OfferSnapshot[]
+  cartItems          CartItem[]
+  orderItems         OrderItem[]
+  supplierOrderItems SupplierOrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// A shop's listing is tracked once, under one record.
+  @@unique([supplier, externalId])
+  @@index([productId])
+}
+
+/// An offer's values at a refresh that changed one of them.
+///
+/// Written only on change, so each row is an event — "dropped to 1300",
+/// "back in stock" — and the table stays small.
+model OfferSnapshot {
+  id      String @id @default(uuid())
+  offerId String
+  offer   Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  priceCents   Int
+  availability Availability
+  stockQty     Int?
+  expectedAt   DateTime?    @db.Date
+
+  takenAt DateTime @default(now())
+
+  /// "This offer's history, newest first", and the latest change.
+  @@index([offerId, takenAt(sort: Desc)])
+}
+
+/// An order I placed at one of the shops: a note of something bought
+/// elsewhere, with no payment lifecycle. Kept apart from Order, which is the
+/// demo store's own (tracker.md §5.5).
+model SupplierOrder {
+  id          String              @id @default(uuid())
+  supplier    Supplier
+  /// The shop's order number.
+  orderNumber String
+  orderedAt   DateTime            @db.Date
+  status      SupplierOrderStatus @default(ordered)
+
+  /// What the shop charged, shipping included. Null until I enter it.
+  totalCents     Int?
+  currency       String  @default("TWD")
+  trackingNumber String?
+  note           String?
+
+  items SupplierOrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The same order entered twice is a mistake, not a second order.
+  @@unique([supplier, orderNumber])
+  /// The page groups by status.
+  @@index([status])
+}
+
+/// One record in a supplier order.
+///
+/// The offer link is optional from the start, not only after a delete: a line
+/// can be typed for a record I don't track, and linked later (tracker.md
+/// §9.2). So the line carries its own title, as OrderItem does.
+model SupplierOrderItem {
+  id              String        @id @default(uuid())
+  supplierOrderId String
+  supplierOrder   SupplierOrder @relation(fields: [supplierOrderId], references: [id], onDelete: Cascade)
+
+  offerId String?
+  offer   Offer?  @relation(fields: [offerId], references: [id], onDelete: SetNull)
+
+  title          String
+  quantity       Int       @default(1)
+  unitPriceCents Int
+  /// Copied from the offer when added, then editable.
+  expectedAt     DateTime? @db.Date
+
+  @@index([supplierOrderId])
+  @@index([offerId])
 }
