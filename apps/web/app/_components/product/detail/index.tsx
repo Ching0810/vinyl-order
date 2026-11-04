@@ -55,10 +55,6 @@ export default function Detail({ product }: { product: Product }) {
         </Box>
 
         <Stack gap="5" flex="1" minW="0">
-          {product.genres.length > 0 ? (
-            <Text textStyle="eyebrow">{product.genres.join(' · ')}</Text>
-          ) : null}
-
           <Stack gap="2">
             <Heading as="h1" textStyle="display" fontSize={{ base: '3xl', md: '5xl' }}>
               {product.title}

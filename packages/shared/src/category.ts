@@ -3,9 +3,8 @@
 // API can't drift.
 //
 // A category is a curated storefront navigation tab, not a property of a
-// record. It is deliberately separate from Product.genres, which is descriptive
-// metadata imported from Discogs — a Mandarin pop record is "Pop" to Discogs
-// with nothing marking it 華語.
+// record: which records sit under 華語 is a choice the store makes, not
+// something read off the record itself.
 //
 // Zod v4: string formats are top-level validators (`z.uuid()`).
 import { z } from 'zod';

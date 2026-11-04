@@ -20,11 +20,11 @@ import CategoryRow from './_components/category-row';
  * can be added or reordered as data, without a deploy.
  *
  * Reordering writes the whole list back as 0..n-1 and only PATCHes rows whose
- * position actually changed. Unlike the carousel, the API has no insertion-index
- * behaviour for categories, so the client owns the renumbering here. Optimistic
- * state goes into the query cache rather than a local mirror, for the same
- * reason as the hero screen: a mutation settles before the query it invalidated
- * refetches, and a mirror synced in that gap flashes stale rows back.
+ * position actually changed. The API has no insertion-index behaviour for
+ * categories, so the client owns the renumbering here. Optimistic state goes
+ * into the query cache rather than a local mirror: a mutation settles before
+ * the query it invalidated refetches, and a mirror synced in that gap flashes
+ * stale rows back.
  */
 export default function CategoryManager() {
   const queryClient = useQueryClient();

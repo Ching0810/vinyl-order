@@ -228,50 +228,37 @@ model PaymentEvent {
   receivedAt DateTime @default(now())
 }
 
-/// A vinyl product the store sells. Metadata is usually imported from Discogs
-/// (discogsReleaseId), but price/stock/image are owned by us. Money is stored as
-/// integer cents to avoid floating-point rounding.
+/// A vinyl product the store sells. Money is stored as integer cents to avoid
+/// floating-point rounding.
 model Product {
-  id               String   @id @default(uuid())
-  discogsReleaseId Int?     @unique
-  title            String
-  artist           String
-  year             Int?
-  genres           String[]
-  format           String[]
-  imageUrl         String?
-  priceCents       Int
-  currency         String   @default("TWD")
-  stock            Int      @default(0)
-  /// Featured on the storefront "hot" section.
-  isHot            Boolean  @default(false)
-  /// Position in the storefront hero carousel, ascending. Null means the
-  /// record is not in the carousel at all — membership and position are the
-  /// same fact, so one nullable column carries both and the two can never
-  /// disagree. Ties fall back to createdAt.
-  slideOrder       Int?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id         String   @id @default(uuid())
+  title      String
+  artist     String
+  year       Int?
+  format     String[]
+  imageUrl   String?
+  priceCents Int
+  currency   String   @default("TWD")
+  stock      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  /// Storefront navigation tabs this record appears under. Separate from
-  /// `genres`, which is descriptive metadata imported from Discogs: a Mandarin
-  /// pop record is "Pop" to Discogs with nothing marking it 華語.
+  /// Storefront navigation tabs this record appears under, chosen by the
+  /// store rather than read off the record.
   categories Category[]
 
   cartItems  CartItem[]
   /// Lines of past orders. Deleting a product nulls their link, not the line.
   orderItems OrderItem[]
-
-  /// Covers the carousel read: non-null positions, in order.
-  @@index([slideOrder])
 }
 
 /// A storefront navigation tab.
 ///
-/// Curated rather than derived. Deriving tabs from `Product.genres` would mean
-/// the tab bar changes shape on every import, has no order, and no stable
-/// identity — renaming a genre string would silently unassign every record and
-/// break any shared link. A row gives each tab a slug that outlives its label.
+/// Curated rather than derived. Deriving tabs from a string on each record
+/// would mean the tab bar changes shape whenever records change, has no order,
+/// and no stable identity — renaming the string would silently unassign every
+/// record and break any shared link. A row gives each tab a slug that outlives
+/// its label.
 model Category {
   id        String @id @default(uuid())
   /// URL identity, e.g. "mandarin". Stable across renames of `name`.

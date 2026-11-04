@@ -8,10 +8,8 @@ import { useCategories } from '@/services/queries/categories/useCategories';
 /**
  * Which storefront tabs this record appears under.
  *
- * Deliberately separate from the Genres text field above it. Genres are
- * descriptive metadata imported from Discogs; categories are curated
- * navigation, and Discogs has no opinion on whether a record belongs under
- * 華語. A record can sit in several — a Japanese jazz release belongs in both
+ * Categories are curated navigation: whether a record belongs under 華語 is
+ * the shop's call, not something the record says. A record can sit in several — a Japanese jazz release belongs in both
  * 東洋 and 爵士 — which is why this is a checkbox group rather than a select.
  */
 export default function CategoryFields({ control }: { control: Control<ProductFormValues> }) {

@@ -26,7 +26,6 @@ describe('MockPay in production (e2e)', () => {
       DATABASE_URL: 'postgresql://localhost/vinyl',
       JWT_SECRET: 'x'.repeat(16),
       JWT_EXPIRES_IN: '1d',
-      DISCOGS_TOKEN: 'token',
       MOCKPAY_WEBHOOK_SECRET: 'x'.repeat(32),
     };
 

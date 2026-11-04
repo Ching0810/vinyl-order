@@ -21,10 +21,8 @@ const nextConfig: NextConfig = {
     // come from a public GCS URL, so optimization stays on.
     unoptimized: process.env.NODE_ENV === 'development',
     // Allowlist hosts next/image may load (enforced when optimization is on):
-    // - i.discogs.com: Discogs cover art (imported products)
     // - localhost:3001/uploads: images uploaded to the dev StorageService
     remotePatterns: [
-      { protocol: 'https', hostname: 'i.discogs.com', pathname: '/**' },
       { protocol: 'http', hostname: 'localhost', port: '3001', pathname: '/uploads/**' },
     ],
   },

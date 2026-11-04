@@ -2,9 +2,8 @@
 // (DB persistence + request validation). One source of truth so storefront and
 // API can't drift.
 //
-// A product is a vinyl record the store sells. Metadata is usually imported from
-// Discogs (see ./discogs DiscogsLookupResult), but price/stock/image are owned
-// by us. Money is integer cents to avoid floating-point rounding.
+// A product is a vinyl record the store sells. Money is integer cents to avoid
+// floating-point rounding.
 //
 // Zod v4: string formats are top-level validators (`z.url()`, `z.uuid()`).
 import { z } from 'zod';
@@ -14,12 +13,9 @@ import { categorySchema } from './category';
 /** A product as returned by the API and shown in the catalog. */
 export const productSchema = z.object({
   id: z.uuid(),
-  /** The Discogs release this was imported from, if any. */
-  discogsReleaseId: z.number().int().nullable(),
   title: z.string(),
   artist: z.string(),
   year: z.number().int().nullable(),
-  genres: z.array(z.string()),
   format: z.array(z.string()),
   imageUrl: z.url().nullable(),
   /** Price in minor units (e.g. cents). Divide by 100 to display. */
@@ -27,15 +23,6 @@ export const productSchema = z.object({
   /** ISO 4217 currency code, e.g. "TWD". */
   currency: z.string(),
   stock: z.number().int(),
-  /** Featured in the storefront "hot" section. */
-  isHot: z.boolean(),
-  /** Featured in the storefront hero carousel. */
-  /**
-   * Position in the hero carousel, ascending. Null means the record is not in
-   * the carousel — membership and position are one fact, so one nullable field
-   * carries both and they cannot disagree.
-   */
-  slideOrder: z.number().int().nullable(),
   /**
    * Navigation tabs this record sits under. Present on the single-product read
    * and omitted from list reads, which would otherwise pay for a join on every
@@ -46,22 +33,18 @@ export const productSchema = z.object({
 export type Product = z.infer<typeof productSchema>;
 
 /**
- * Admin "create product" body. Defaults fill the fields a Discogs import or a
- * sparse form may omit. `priceCents` is required — the store must price it.
+ * Admin "create product" body. Defaults fill the fields a sparse form may
+ * omit. `priceCents` is required — the store must price it.
  */
 export const createProductSchema = z.object({
-  discogsReleaseId: z.number().int().nullable().optional(),
   title: z.string().min(1),
   artist: z.string().min(1),
   year: z.number().int().nullable().optional(),
-  genres: z.array(z.string()).default([]),
   format: z.array(z.string()).default([]),
   imageUrl: z.url().nullable().optional(),
   priceCents: z.number().int().nonnegative(),
   currency: z.string().min(1).default('TWD'),
   stock: z.number().int().nonnegative().default(0),
-  isHot: z.boolean().default(false),
-  slideOrder: z.number().int().nullable().default(null),
   /**
    * Category ids to file this record under. Optional, and when sent it
    * replaces the whole set — so a client that doesn't manage categories must
@@ -76,18 +59,14 @@ export type CreateProductInput = z.infer<typeof createProductSchema>;
  * only changes what's sent; an absent field is left untouched).
  */
 export const updateProductSchema = z.object({
-  discogsReleaseId: z.number().int().nullable().optional(),
   title: z.string().min(1).optional(),
   artist: z.string().min(1).optional(),
   year: z.number().int().nullable().optional(),
-  genres: z.array(z.string()).optional(),
   format: z.array(z.string()).optional(),
   imageUrl: z.url().nullable().optional(),
   priceCents: z.number().int().nonnegative().optional(),
   currency: z.string().min(1).optional(),
   stock: z.number().int().nonnegative().optional(),
-  isHot: z.boolean().optional(),
-  slideOrder: z.number().int().nullable().optional(),
   /** Category ids to file this record under; replaces the full set when sent. */
   categoryIds: z.array(z.uuid()).optional(),
 });

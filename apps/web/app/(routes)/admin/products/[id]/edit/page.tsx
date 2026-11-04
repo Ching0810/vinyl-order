@@ -8,25 +8,20 @@ import { useParams, useRouter } from 'next/navigation';
 import ProductForm from '@/components/admin/product-form';
 import type { ProductFormValues } from '@/components/admin/product-form-fields';
 import SectionHeading from '@/components/ui/section-heading';
-import { HttpError } from '@/lib/core/http';
 import { useProduct } from '@/services/queries/products/useProduct';
 import { useUpdateProduct } from '@/services/queries/products/useUpdateProduct';
 
 /** Map a saved Product into the UI-friendly form shape (cents→major, arrays→csv). */
 const toFormValues = (product: Product): ProductFormValues => {
   return {
-    discogsReleaseId: product.discogsReleaseId,
     title: product.title,
     artist: product.artist,
     year: product.year,
-    genresText: product.genres.join(', '),
     formatText: product.format.join(', '),
     imageUrl: product.imageUrl,
     price: product.priceCents / 100,
     currency: product.currency,
     stock: product.stock,
-    isHot: product.isHot,
-    slideOrder: product.slideOrder,
     // The detail read embeds categories; list reads don't, which is why the
     // edit form loads from GET /products/:id rather than a cached list row.
     categoryIds: (product.categories ?? []).map((category) => category.id),
@@ -54,13 +49,9 @@ const EditProductForm = ({ id }: { id: string }) => {
     );
   }
 
-  const errorMessage = (() => {
-    if (updateMutation.error instanceof HttpError && updateMutation.error.status === 409) {
-      return 'A product for this Discogs release already exists.';
-    }
-    if (updateMutation.error) return 'Could not save changes. Check the fields and try again.';
-    return null;
-  })();
+  const errorMessage = updateMutation.error
+    ? 'Could not save changes. Check the fields and try again.'
+    : null;
 
   return (
     <Container maxW="3xl" px={{ base: '4', md: '8' }} py={{ base: '8', md: '12' }}>

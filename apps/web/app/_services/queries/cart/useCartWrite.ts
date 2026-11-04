@@ -11,8 +11,8 @@ import { cartQueryKey } from '@/services/queries/cart/useCart';
  * Each one responds with the whole cart, so the result is written straight
  * into the cache rather than invalidating and refetching. That saves a round
  * trip and, more usefully, removes the window where a settled mutation and a
- * not-yet-refetched query disagree — the gap that made rows flash back on the
- * carousel screen.
+ * not-yet-refetched query disagree, which shows as rows flashing back to their
+ * old state.
  *
  * @param mutationFn - the cart call to run
  */

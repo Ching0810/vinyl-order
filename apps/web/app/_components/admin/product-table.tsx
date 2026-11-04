@@ -1,17 +1,14 @@
 'use client';
 
-import { Badge, Box, Button, HStack, Image, Table, Text } from '@chakra-ui/react';
+import { Box, Button, HStack, Image, Table } from '@chakra-ui/react';
 import type { Product } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 
 import { formatPrice } from '@/lib/utils/currency';
 
-/** An empty cell reads as a gap; a dash says "nothing set here". */
-const Unset = () => <Text color="fg.subtle">—</Text>;
-
 /**
- * One catalogue row: what an editor scans (cover, release, price, stock, where
- * it is featured) and the two things they can do to it.
+ * One catalogue row: what an editor scans (cover, release, price, stock) and
+ * the two things they can do to it.
  *
  * @param product - the product to show
  * @param deleting - its delete request is in flight
@@ -36,16 +33,6 @@ const Row = ({
     <Table.Cell truncate>{product.artist}</Table.Cell>
     <Table.Cell>{formatPrice(product.priceCents, product.currency)}</Table.Cell>
     <Table.Cell>{product.stock}</Table.Cell>
-    <Table.Cell>{product.isHot ? <Badge colorPalette="brand">Hot</Badge> : <Unset />}</Table.Cell>
-    <Table.Cell>
-      {product.slideOrder !== null ? (
-        // Position matters more than the flag here — it's what an editor needs
-        // to see to reorder the carousel.
-        <Badge colorPalette="brand">#{product.slideOrder}</Badge>
-      ) : (
-        <Unset />
-      )}
-    </Table.Cell>
     <Table.Cell>
       <HStack gap="2" justify="start">
         <Button asChild size="xs" variant="outline">
@@ -68,7 +55,7 @@ const Row = ({
 /**
  * The admin catalogue table.
  *
- * Eight fixed-width columns can't compress onto a phone, so the table keeps its
+ * Six fixed-width columns can't compress onto a phone, so the table keeps its
  * natural width and scrolls sideways inside its box rather than squeezing the
  * cells illegibly.
  *
@@ -101,8 +88,6 @@ export default function ProductTable({
             <Table.ColumnHeader w="30">Artist</Table.ColumnHeader>
             <Table.ColumnHeader w="35">Price</Table.ColumnHeader>
             <Table.ColumnHeader w="30">Stock</Table.ColumnHeader>
-            <Table.ColumnHeader w="30">Hot</Table.ColumnHeader>
-            <Table.ColumnHeader w="34">Carousel</Table.ColumnHeader>
             <Table.ColumnHeader w="44">Actions</Table.ColumnHeader>
           </Table.Row>
         </Table.Header>
