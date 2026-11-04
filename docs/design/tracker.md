@@ -137,12 +137,12 @@ SupplierOrder      an order I placed at a shop
 | Column                   | Type                                                | Note                                                 |
 | ------------------------ | --------------------------------------------------- | ---------------------------------------------------- |
 | `productId`              | FK, cascade                                         |                                                      |
-| `supplier`               | enum `CANDLELIGHT \| THT \| COSMIC \| ROTTEN_BLUES` |                                                      |
+| `supplier`               | enum `candlelight \| tht \| cosmic \| rotten_blues` |                                                      |
 | `externalId`             | text                                                | the shop's id; `@@unique([supplier, externalId])`    |
 | `url`                    | text                                                |                                                      |
 | `sourceTitle`            | text                                                | the shop's own name for it, to check a match against |
 | `priceCents`, `currency` | int, text                                           |                                                      |
-| `availability`           | enum `IN_STOCK \| PRE_ORDER \| SOLD_OUT`            |                                                      |
+| `availability`           | enum `in_stock \| pre_order \| sold_out`            |                                                      |
 | `stockQty`               | int, null                                           | the supplier's count; null = the shop doesn't say    |
 | `reservedQty`            | int, default 0                                      | the demo checkout's holds (§8)                       |
 | `expectedAt`             | date, null                                          | expected release or shipping date                    |
@@ -194,6 +194,7 @@ lifecycle. A supplier order is a note of something bought elsewhere:
 | `orderedAt`      |                                                   |
 | `status`         | enum, §9.1                                        |
 | `totalCents`     | null — as the shop charged it, including shipping |
+| `currency`       | default `TWD`, as on `Offer` and `Order`          |
 | `trackingNumber` | null                                              |
 | `note`           | null                                              |
 
@@ -292,8 +293,8 @@ swap in a fake.
 
 Each adapter maps its shop's facts onto the shared columns:
 
-- **Availability.** `PreOrder` or a pre-order tag or text → `PRE_ORDER`;
-  available → `IN_STOCK`; otherwise `SOLD_OUT`.
+- **Availability.** `PreOrder` or a pre-order tag or text → `pre_order`;
+  available → `in_stock`; otherwise `sold_out`.
 - **Expected date.** A structured field when there is one (WACA's
   `availabilityStarts`); otherwise a date pattern in the name or description
   (`2027/1/29`, `2026/12`, "12月底"). A month alone becomes the month's last
@@ -412,10 +413,10 @@ available to sell  = max(stockQty − reservedQty, 0)
 
 - **Checkout** keeps checkout-orders.md §7's guard, on the offer row:
   `UPDATE "Offer" SET "reservedQty" = "reservedQty" + n WHERE id = ? AND
-availability = 'IN_STOCK' AND "stockQty" - "reservedQty" >= n` — lines
+availability = 'in_stock' AND "stockQty" - "reservedQty" >= n` — lines
   sorted by `offerId`. The concurrency argument is unchanged.
 - **When `stockQty` is null** (Rotten Blues, THT's pre-orders) there is no
-  count to hold against: the guard is `availability = 'IN_STOCK'` alone and
+  count to hold against: the guard is `availability = 'in_stock'` alone and
   `reservedQty` isn't touched. Pre-orders aren't sold by the demo.
 - **When a refresh drops `stockQty` below `reservedQty`,** available reads 0;
   the holds stand until their orders are cancelled or expire. They are
@@ -432,8 +433,8 @@ the concurrency exercise the checkout was built around.
 
 ### 9.1 Statuses
 
-`ORDERED` (placed, nothing heard) → `PREPARING` (confirmed; for a pre-order,
-waiting for the release) → `SHIPPED` → `DELIVERED`, or `CANCELLED`. Any
+`ordered` (placed, nothing heard) → `preparing` (confirmed; for a pre-order,
+waiting for the release) → `shipped` → `delivered`, or `cancelled`. Any
 forward move is allowed by hand; nothing moves on its own until §9.3.
 
 ### 9.2 The page
@@ -456,7 +457,7 @@ come first (§14 step 4), before any adapter exists.
 The shops have no customer API, and their order pages need my login. What
 every one of them does send is email: an order confirmation and a shipping
 notice. Reading those — Gmail API, read-only, only these senders — can create
-orders and move them to `SHIPPED` without my typing. That needs OAuth and a
+orders and move them to `shipped` without my typing. That needs OAuth and a
 parser per shop's email, so it comes after the page works by hand (step 13).
 All four send a confirmation, and as far as known a shipping notice; one
 sample of each per shop, forwarded, decides whether parsing them is
@@ -587,15 +588,24 @@ Each step is its own PR.
 2. Clear the catalog: products, categories' links, carts, and the demo
    orders and payments that point at them — locally, then on Neon once the
    exact statements are confirmed.
-3. Data model: §5's changes, `Artist` and `ArtistAlias` included, `pg_trgm`.
+3. Data model, additive only: §5's new tables (`CatalogEntry` aside),
+   `Artist` and `ArtistAlias` with `pg_trgm`, and the new nullable columns on
+   `Product`, `CartItem` and `OrderItem`. Nothing is dropped, so the store
+   keeps working and the step deploys on its own; each old column goes in
+   the step that stops using it (expand, then contract).
 4. Supplier orders by hand: the API, the entry form and `/supplier-orders`
    (§9.2), with typed lines. **The first usable page** — for the orders
    already waiting to ship.
 5. Checkout on offers (§8): cart and order lines, the reservation guard,
-   restock on cancel and expiry.
+   restock on cancel and expiry. `Product`'s `priceCents`, `currency` and
+   `stock` and `CartItem.productId` are dropped here.
 6. EasyStore and Shopify adapters, with fixtures.
-7. Catalog sync for THT and Rotten Blues; used and vinyl flags.
-8. API: search, create from catalog, candidates, attach, refresh.
+7. `CatalogEntry` and catalog sync for THT and Rotten Blues; used and vinyl
+   flags. The table waits for this step: its columns are settled by the
+   shops' catalogs as the sync reads them (§15).
+8. API: search, create from catalog, candidates, attach, refresh. Products
+   get their `Artist` here, so `Product.artist` (the string) and `year` are
+   dropped, and `artistId` becomes required.
 9. Web: search page, product comparison, the visitors' list, the dashboard
    (§12.2), and the product page's "record an order" and link-a-line.
    **The comparison usable.**
@@ -627,6 +637,14 @@ parsing.
    only the product page has? Measured in step 11.
 5. Does Neon's free 0.5 GB fit the index? Estimated at a few MB for ~20k
    entries; checked after the first full sync.
+6. Does `pg_trgm` work on Chinese and Japanese? It builds trigrams only from
+   characters the database's locale counts as letters, so CJK may be
+   skipped — and the local Docker and Neon locales may differ. Short names
+   (`珍妮`) give too few trigrams for a stable similarity either way. Step 8
+   matches on `normalized` exactly first and falls back to trigrams, with
+   CJK cases (`坂本龍一`, `米津玄師`) in the e2e suite, run in CI and checked
+   on Neon. If trigrams prove useless for CJK: bigrams, or a stored
+   romanisation.
 
 ## 16. Interview talking points
 
