@@ -5,28 +5,23 @@ import type { ChangeEvent } from 'react';
 import type { Control, FieldErrors, UseFormRegister } from 'react-hook-form';
 
 import CategoryFields from '@/components/admin/category-fields';
-import MerchandisingFields from '@/components/admin/merchandising-fields';
 import Panel from '@/components/admin/panel';
 
 /**
  * Product form state. Numbers/lists are edited as UI-friendly shapes (price in
- * major units, genres/format as comma-separated text) and mapped to
+ * major units, format as comma-separated text) and mapped to
  * CreateProductInput on submit — the API owns the real contract (priceCents,
  * string[]). Shared with the page that orchestrates the form.
  */
 export interface ProductFormValues {
-  discogsReleaseId: number | null;
   title: string;
   artist: string;
   year: number | null;
-  genresText: string;
   formatText: string;
   imageUrl: string | null;
   price: number;
   currency: string;
   stock: number;
-  isHot: boolean;
-  slideOrder: number | null;
   categoryIds: string[];
 }
 
@@ -49,10 +44,7 @@ export default function ProductFormFields({
 }: Props) {
   return (
     <Stack gap="5">
-      <Panel
-        title="Release"
-        description="What the record is. Usually filled in by a Discogs import."
-      >
+      <Panel title="Release" description="What the record is.">
         <Field.Root invalid={Boolean(errors.title)} required>
           <Field.Label>Title</Field.Label>
           <Input {...register('title', { required: 'Title is required' })} />
@@ -74,18 +66,13 @@ export default function ProductFormFields({
             />
           </Field.Root>
           <Field.Root>
-            <Field.Label>Genres (comma-separated)</Field.Label>
-            <Input {...register('genresText')} />
+            <Field.Label>Format (comma-separated)</Field.Label>
+            <Input {...register('formatText')} placeholder="Vinyl, LP, Album" />
           </Field.Root>
         </SimpleGrid>
-
-        <Field.Root>
-          <Field.Label>Format (comma-separated)</Field.Label>
-          <Input {...register('formatText')} placeholder="Vinyl, LP, Album" />
-        </Field.Root>
       </Panel>
 
-      <Panel title="Pricing & stock" description="Owned by the shop — never imported.">
+      <Panel title="Pricing & stock">
         <SimpleGrid columns={{ base: 1, sm: 3 }} gap="4">
           <Field.Root invalid={Boolean(errors.price)} required>
             <Field.Label>Price</Field.Label>
@@ -113,7 +100,6 @@ export default function ProductFormFields({
         </SimpleGrid>
       </Panel>
 
-      {/* Cover image: from a Discogs prefill or an upload. */}
       <Panel title="Cover image">
         <Field.Root>
           <Stack gap="3">
@@ -146,8 +132,7 @@ export default function ProductFormFields({
         </Field.Root>
       </Panel>
 
-      <Panel title="Merchandising" description="Where this record shows up on the storefront.">
-        <MerchandisingFields control={control} />
+      <Panel title="Categories">
         <CategoryFields control={control} />
       </Panel>
     </Stack>

@@ -4,25 +4,20 @@ import { Container, Text } from '@chakra-ui/react';
 
 import ProductForm, { blankProductForm } from '@/components/admin/product-form';
 import SectionHeading from '@/components/ui/section-heading';
-import { HttpError } from '@/lib/core/http';
 import { useCreateProduct } from '@/services/queries/products/useCreateProduct';
 export default function NewProductForm() {
   const createMutation = useCreateProduct();
 
-  const errorMessage = (() => {
-    if (createMutation.error instanceof HttpError && createMutation.error.status === 409) {
-      return 'A product for this Discogs release already exists.';
-    }
-    if (createMutation.error) return 'Could not save the product. Check the fields and try again.';
-    return null;
-  })();
+  const errorMessage = createMutation.error
+    ? 'Could not save the product. Check the fields and try again.'
+    : null;
 
   return (
     <Container maxW="3xl" px={{ base: '4', md: '8' }} py={{ base: '8', md: '12' }}>
       <SectionHeading
         eyebrow="Catalogue"
         title="Add product"
-        description="Import metadata from Discogs, then set your own price, stock and placement."
+        description="Describe the record, then set its price, stock and categories."
       />
 
       {/* Stays on the page after a successful add and clears the form for the next one. */}
@@ -34,7 +29,6 @@ export default function NewProductForm() {
 
       <ProductForm
         initialValues={blankProductForm}
-        enableDiscogsImport
         submitLabel="Create product"
         submitting={createMutation.isPending}
         errorMessage={errorMessage}

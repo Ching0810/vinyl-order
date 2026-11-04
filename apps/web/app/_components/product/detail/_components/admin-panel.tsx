@@ -6,9 +6,8 @@ import NextLink from 'next/link';
 /**
  * Operational detail and the edit entry point, rendered only for admins.
  *
- * Everything here is inventory or merchandising state — stock counts, feature
- * flags, the Discogs id — which a shopper has no use for and which the retail
- * view deliberately omits.
+ * Everything here is inventory state — the stock count — which a shopper has
+ * no use for and which the retail view deliberately omits.
  *
  * This is a convenience, not a security boundary: the API enforces the real
  * one, so a customer who forced this markup to render would still be refused
@@ -38,13 +37,6 @@ export default function AdminPanel({ product }: { product: Product }) {
 
       <HStack gap="2" wrap="wrap">
         <Badge colorPalette={product.stock > 0 ? 'green' : 'red'}>Stock {product.stock}</Badge>
-        {product.isHot ? <Badge colorPalette="brand">Hot</Badge> : null}
-        {product.slideOrder !== null ? (
-          <Badge colorPalette="brand">Carousel #{product.slideOrder}</Badge>
-        ) : null}
-        {product.discogsReleaseId ? (
-          <Badge colorPalette="gray">Discogs {product.discogsReleaseId}</Badge>
-        ) : null}
       </HStack>
     </Stack>
   );

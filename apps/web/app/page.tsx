@@ -8,47 +8,36 @@ import Grid from '@/components/product/grid';
 import GridSkeleton from '@/components/product/grid-skeleton';
 import Search from '@/components/product/search';
 import SectionHeading from '@/components/ui/section-heading';
-import { useHotProducts } from '@/services/queries/products/useHotProducts';
-import { useSlideProducts } from '@/services/queries/products/useSlideProducts';
+import { useProducts } from '@/services/queries/products/useProducts';
 
-/** Records in the hot strip: one or two grid rows, never a catalogue. */
-const HOT_COUNT = 6;
+/** Records in the latest strip: one or two grid rows, never a catalogue. */
+const LATEST_COUNT = 6;
+
 /**
- * Public storefront home. A Client Component: the carousel and the hot grid are
- * both fetched through React Query, so the data lands in the shared cache and a
- * mutation elsewhere can invalidate it.
+ * Public storefront home: the hero, then the newest records.
  *
- * The trade-off versus fetching in a Server Component is that this content is
- * no longer in the initial HTML — it renders as skeletons and fills in after
- * hydration. Both queries are issued on mount and resolve in parallel.
- *
- * Layout follows a stacked, modular structure — hero, then titled sections —
- * so new sections can be appended without reworking the page.
+ * A stopgap until the dashboard (docs/design/tracker.md §12.2) replaces it.
+ * The latest strip is the first page of the catalogue, which is already
+ * newest first, so it needs no endpoint of its own.
  */
 export default function HomePage() {
-  const { data: slideProducts, isPending: slidesPending } = useSlideProducts();
-  const {
-    data: hotProducts,
-    isPending: hotPending,
-    isError: hotFailed,
-  } = useHotProducts(HOT_COUNT);
+  const { data, isPending, isError } = useProducts({ first: LATEST_COUNT });
+  const latest = data?.edges.map((edge) => edge.node) ?? [];
 
-  const renderHot = () => {
-    if (hotPending) return <GridSkeleton count={HOT_COUNT} />;
-    if (hotFailed) return <Text color="fg.error">Couldn&apos;t load products. Please retry.</Text>;
-    if (!hotProducts || hotProducts.length === 0) {
-      return <Text color="fg.muted">No hot products yet.</Text>;
-    }
-    return <Grid products={hotProducts} />;
+  const renderLatest = () => {
+    if (isPending) return <GridSkeleton count={LATEST_COUNT} />;
+    if (isError) return <Text color="fg.error">Couldn&apos;t load products. Please retry.</Text>;
+    if (latest.length === 0) return <Text color="fg.muted">No records yet.</Text>;
+    return <Grid products={latest} />;
   };
 
   return (
     <PageShell>
-      <Hero slides={slideProducts ?? []} loading={slidesPending} search={<Search />} />
+      <Hero search={<Search />} />
 
       <Container maxW="7xl" px={{ base: '4', md: '8' }} py={{ base: '12', md: '20' }}>
-        <SectionHeading eyebrow="Moving this week" title="Hot Right Now" />
-        {renderHot()}
+        <SectionHeading eyebrow="Just in" title="Latest Arrivals" />
+        {renderLatest()}
       </Container>
     </PageShell>
   );

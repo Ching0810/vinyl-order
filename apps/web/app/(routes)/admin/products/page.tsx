@@ -50,7 +50,7 @@ export default function AdminProductList() {
       <SectionHeading
         eyebrow="Catalogue"
         title="Products"
-        description="Everything in the shop. Edit pricing, stock and where each record is featured."
+        description="Everything in the shop. Edit pricing, stock and categories."
         action={
           <Button asChild size="sm" colorPalette="brand" borderRadius="full">
             <NextLink href="/admin/products/new">Add product</NextLink>

@@ -1,4 +1,4 @@
-import { Badge, Box, Stack, Text } from '@chakra-ui/react';
+import { Box, Stack, Text } from '@chakra-ui/react';
 import type { Product } from '@vinyl-order/shared';
 import Image from 'next/image';
 import NextLink from 'next/link';
@@ -55,21 +55,6 @@ export default function Card({ product, eager = false }: { product: Product; eag
                 fetchPriority={eager ? 'high' : undefined}
               />
             </Box>
-          ) : null}
-
-          {product.isHot ? (
-            <Badge
-              position="absolute"
-              top="3"
-              insetStart="3"
-              colorPalette="brand"
-              variant="solid"
-              fontSize="2xs"
-              letterSpacing="label"
-              textTransform="uppercase"
-            >
-              Hot
-            </Badge>
           ) : null}
         </Box>
 
