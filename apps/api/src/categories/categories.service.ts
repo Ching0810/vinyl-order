@@ -7,8 +7,8 @@ import { PrismaService } from '../prisma/prisma.service';
 /**
  * Data access for storefront navigation tabs.
  *
- * Categories are curated rather than derived from Product.genres, so this is
- * a small ordinary CRUD surface: the storefront reads the ordered list to
+ * Categories are curated rather than derived from the records, so this is a
+ * small ordinary CRUD surface: the storefront reads the ordered list to
  * build its tab bar, and admins maintain it.
  */
 @Injectable()

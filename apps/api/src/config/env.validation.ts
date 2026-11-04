@@ -36,11 +36,6 @@ const envSchema = z.object({
     .min(0)
     .default(0),
 
-  // Discogs catalog API (server-side only — the token is a secret, never shipped
-  // to the browser). A descriptive User-Agent is required by Discogs.
-  DISCOGS_TOKEN: z.string().min(1, 'DISCOGS_TOKEN is required'),
-  DISCOGS_USER_AGENT: z.string().min(1).default('VinylOrder/0.1'),
-
   // Image storage. Dev writes to a local folder served at /uploads; prod will
   // use 'gcs'. PUBLIC_API_URL builds the absolute URL stored on Product.imageUrl.
   STORAGE_DRIVER: z.enum(['local', 'gcs']).default('local'),

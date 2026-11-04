@@ -46,9 +46,6 @@ services:
       MOCKPAY_DATABASE_URL: postgresql://vinyl:vinyl@postgres:5432/mockpay?schema=public
       JWT_SECRET: local-prod-profile-only-not-a-secret
       JWT_EXPIRES_IN: 1d
-      # Only the admin's Discogs import calls Discogs; set a real token in the
-      # shell to try it.
-      DISCOGS_TOKEN: ${DISCOGS_TOKEN:-unset}
       PAYMENT_DEMO: 'true'
       MOCKPAY_WEBHOOK_SECRET: local-prod-profile-only-0123456789abcdef
       # Image URLs stored on uploads point at this API's published port.
