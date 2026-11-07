@@ -16,6 +16,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { StorageModule } from './storage/storage.module';
+import { SupplierOrdersModule } from './supplier-orders/supplier-orders.module';
 import { UsersModule } from './users/users.module';
 
 const NODE_ENV = process.env.NODE_ENV ?? 'development';
@@ -61,6 +62,7 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
       mockPayAllowed(env.NODE_ENV ?? 'development', env.PAYMENT_DEMO === 'true'),
     ),
     CategoriesModule,
+    SupplierOrdersModule,
     StorageModule,
     HealthModule,
   ],
