@@ -15,6 +15,21 @@ export const SUPPLIER_LABEL: Record<Supplier, string> = {
 };
 
 /**
+ * Label and colour per status, for its badge and its group's heading. A
+ * Record, so a new status fails the build until it has both.
+ */
+export const SUPPLIER_ORDER_STATUS: Record<
+  SupplierOrderStatus,
+  { label: string; palette: string }
+> = {
+  ordered: { label: 'Ordered', palette: 'gray' },
+  preparing: { label: 'Preparing', palette: 'orange' },
+  shipped: { label: 'Shipped', palette: 'blue' },
+  delivered: { label: 'Delivered', palette: 'green' },
+  cancelled: { label: 'Cancelled', palette: 'red' },
+};
+
+/**
  * Where each status's group sits on the page, top first. Open orders before
  * finished ones, and among the open, the nearest to arriving first: what's on
  * its way, then what the shop confirmed, then what's only placed.
