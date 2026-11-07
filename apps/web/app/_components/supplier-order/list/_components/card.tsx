@@ -6,6 +6,8 @@ import { formatPrice } from '@/lib/utils/currency';
 import { formatDay, formatMonth } from '@/lib/utils/date';
 import { SUPPLIER_LABEL } from '@/lib/utils/supplier-order';
 
+import SupplierOrderActions from './actions';
+
 /** One record in the order: title, price × quantity, and when it's due if known. */
 const Line = ({ item, currency }: { item: SupplierOrderItem; currency: string }) => (
   <HStack gap="3" align="start">
@@ -30,11 +32,19 @@ const Line = ({ item, currency }: { item: SupplierOrderItem; currency: string })
  * click.
  *
  * The order number is plain text for now; linking it needs each shop's order
- * page URL, which is behind their login and not yet known.
+ * page URL, which is behind their login and not yet known. Its actions —
+ * status, tracking and note, delete — sit behind the "more" button.
  *
  * @param order - the order with its lines
+ * @param onFailure - show why one of its actions didn't happen
  */
-export default function SupplierOrderCard({ order }: { order: SupplierOrder }) {
+export default function SupplierOrderCard({
+  order,
+  onFailure,
+}: {
+  order: SupplierOrder;
+  onFailure: (message: string) => void;
+}) {
   return (
     <Stack
       gap="4"
@@ -52,13 +62,16 @@ export default function SupplierOrderCard({ order }: { order: SupplierOrder }) {
           </Text>
         </Stack>
 
-        <Stack gap="1.5" align="end" flexShrink="0">
-          {/* Entered by hand and optional: a blank total is unknown, not zero. */}
-          {order.totalCents !== null ? (
-            <Text fontWeight="bold">{formatPrice(order.totalCents, order.currency)}</Text>
-          ) : null}
-          <SupplierOrderStatusBadge status={order.status} />
-        </Stack>
+        <HStack gap="1" align="start" flexShrink="0">
+          <Stack gap="1.5" align="end">
+            {/* Entered by hand and optional: a blank total is unknown, not zero. */}
+            {order.totalCents !== null ? (
+              <Text fontWeight="bold">{formatPrice(order.totalCents, order.currency)}</Text>
+            ) : null}
+            <SupplierOrderStatusBadge status={order.status} />
+          </Stack>
+          <SupplierOrderActions order={order} onFailure={onFailure} />
+        </HStack>
       </Flex>
 
       <Stack gap="3" pt="4" borderTopWidth="1px" borderColor="border.muted">

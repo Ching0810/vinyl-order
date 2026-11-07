@@ -2,9 +2,11 @@
 
 import { Button, Skeleton, Stack, Text, chakra } from '@chakra-ui/react';
 import NextLink from 'next/link';
+import { useCallback, useState } from 'react';
 
 import RecordSupplierOrderButton from '@/components/supplier-order/record-button';
 import EmptyState from '@/components/ui/empty-state';
+import StatusDialog, { type StatusNotice } from '@/components/ui/status-dialog';
 import { SUPPLIER_ORDER_STATUS, groupByStatus } from '@/lib/utils/supplier-order';
 import { useMe } from '@/services/queries/auth/useMe';
 import { useSupplierOrders } from '@/services/queries/supplier-orders/useSupplierOrders';
@@ -24,11 +26,21 @@ const ListSkeleton = () => (
  * §9.2): what's on its way at the top, the next arrival first within each
  * group, finished orders at the bottom. The order lives in groupByStatus.
  *
- * Orders are recorded on /supplier-orders/new; changing a status comes next.
+ * Orders are recorded on /supplier-orders/new and changed from each card's
+ * actions. Why an action failed is shown here, above the cards: a failed
+ * change refreshes the list, which can move the card to another group and
+ * remount it, so a dialog inside the card could vanish before it was read.
  */
 export default function SupplierOrderList() {
   const { data: user, isPending: authPending } = useMe();
   const { data: orders, isPending, isError } = useSupplierOrders();
+  const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const [noticeOpen, setNoticeOpen] = useState(false);
+  const closeNotice = useCallback(() => setNoticeOpen(false), []);
+  const showFailure = useCallback((message: string) => {
+    setNotice({ status: 'error', message });
+    setNoticeOpen(true);
+  }, []);
 
   if (authPending) return <ListSkeleton />;
 
@@ -76,11 +88,12 @@ export default function SupplierOrderList() {
           </Text>
           <Stack gap="3">
             {group.map((order) => (
-              <SupplierOrderCard key={order.id} order={order} />
+              <SupplierOrderCard key={order.id} order={order} onFailure={showFailure} />
             ))}
           </Stack>
         </chakra.section>
       ))}
+      <StatusDialog open={noticeOpen} notice={notice} onClose={closeNotice} />
     </Stack>
   );
 }
