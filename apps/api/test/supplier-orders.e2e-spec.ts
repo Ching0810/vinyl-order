@@ -97,7 +97,7 @@ describe('Supplier orders (e2e)', () => {
           totalCents: 250_000,
           note: 'pre-order',
           items: [
-            { title: 'B Side', quantity: 2, unitPriceCents: 120_000, expectedAt: '2027-01-29' },
+            { title: 'B Side', quantity: 2, unitPriceCents: 120_000, expectedMonth: '2027-01' },
             { title: 'A Side', unitPriceCents: 9_900 },
           ],
         }),
@@ -114,27 +114,44 @@ describe('Supplier orders (e2e)', () => {
       });
       // Lines by title; quantity defaults to 1.
       expect(order.items).toMatchObject([
-        { title: 'A Side', quantity: 1, lineTotalCents: 9_900, expectedAt: null, offerId: null },
-        { title: 'B Side', quantity: 2, lineTotalCents: 240_000, expectedAt: '2027-01-29' },
+        { title: 'A Side', quantity: 1, lineTotalCents: 9_900, expectedMonth: null, offerId: null },
+        { title: 'B Side', quantity: 2, lineTotalCents: 240_000, expectedMonth: '2027-01' },
       ]);
       expect(order).not.toHaveProperty('userId');
     });
 
     // A day is stored as a day: midnight UTC in, the same date out, whatever
-    // the server's timezone.
-    it('keeps dates as the days that were entered', async () => {
+    // the server's timezone. A month is stored as the month, nothing added.
+    it('keeps the day and the month that were entered', async () => {
       const { token } = await createUser();
 
       const order = await recorded(
         token,
         newOrder({
           orderedAt: '2026-12-31',
-          items: [{ title: 'Year End', unitPriceCents: 1, expectedAt: '2027-01-01' }],
+          items: [{ title: 'Year End', unitPriceCents: 1, expectedMonth: '2027-01' }],
         }),
       );
 
       expect(order.orderedAt).toBe('2026-12-31');
-      expect(order.items[0].expectedAt).toBe('2027-01-01');
+      expect(order.items[0].expectedMonth).toBe('2027-01');
+    });
+
+    // The CHECK backs the schema: a month written around the API (a script,
+    // a later import) still can't be "2026-13" or a day.
+    it('refuses a malformed month in the database itself', async () => {
+      const order = await recorded((await createUser()).token);
+
+      await expect(
+        prisma.supplierOrderItem.create({
+          data: {
+            supplierOrderId: order.id,
+            title: 'Bad Month',
+            unitPriceCents: 1,
+            expectedMonth: '2026-13',
+          },
+        }),
+      ).rejects.toThrow('SupplierOrderItem_expectedMonth_format');
     });
 
     it('belongs to the session user, whatever the body says', async () => {
@@ -160,6 +177,18 @@ describe('Supplier orders (e2e)', () => {
       ['no lines', { items: [] }],
       ['a bad day', { orderedAt: '2026-13-01' }],
       ['a datetime for a day', { orderedAt: '2026-11-01T10:00:00Z' }],
+      [
+        'a day for a month',
+        { items: [{ title: 'X', unitPriceCents: 1, expectedMonth: '2026-11-30' }] },
+      ],
+      [
+        'a month that does not exist',
+        { items: [{ title: 'X', unitPriceCents: 1, expectedMonth: '2026-13' }] },
+      ],
+      [
+        'a month without its zero',
+        { items: [{ title: 'X', unitPriceCents: 1, expectedMonth: '2026-1' }] },
+      ],
       ['an unknown shop', { supplier: 'discogs' }],
       ['a blank order number', { orderNumber: '  ' }],
       ['a negative price', { items: [{ title: 'X', unitPriceCents: -1 }] }],

@@ -34,6 +34,9 @@ const AccountItems = ({ user }: { user: PublicUser | null | undefined }) => {
       <Menu.Item value="orders" asChild>
         <NextLink href="/orders">Orders</NextLink>
       </Menu.Item>
+      <Menu.Item value="supplier-orders" asChild>
+        <NextLink href="/supplier-orders">Supplier orders</NextLink>
+      </Menu.Item>
       {user.role === 'admin' ? (
         <Menu.Item value="admin" asChild>
           <NextLink href="/admin/products">Admin</NextLink>

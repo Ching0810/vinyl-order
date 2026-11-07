@@ -495,8 +495,11 @@ model SupplierOrderItem {
   title          String
   quantity       Int       @default(1)
   unitPriceCents Int
-  /// Copied from the offer when added, then editable.
-  expectedAt     DateTime? @db.Date
+  /// The month the shop expects to send it, "YYYY-MM", or null if it doesn't
+  /// say. A month, not a day: the shops only ever promise one ("預計2026/11出貨"),
+  /// and a stored day would be invented. As text it is the same on the wire and
+  /// in a month input, and sorts in time order. CHECK (format) in the migration.
+  expectedMonth  String?   @db.Char(7)
 
   @@index([supplierOrderId])
   @@index([offerId])
