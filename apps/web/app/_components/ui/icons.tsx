@@ -81,6 +81,13 @@ export const MenuIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+/** Three dots: "more actions". */
+export const MoreIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <path d="M5 12h.01M12 12h.01M19 12h.01" strokeWidth={3} />
+  </svg>
+);
+
 export const CloseIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...props}>
     <path d="M18 6 6 18M6 6l12 12" />

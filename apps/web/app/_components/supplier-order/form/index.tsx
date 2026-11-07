@@ -22,7 +22,7 @@ import { useForm } from 'react-hook-form';
 import Panel from '@/components/admin/panel';
 import EmptyState from '@/components/ui/empty-state';
 import { SUPPLIER_LABEL } from '@/lib/utils/supplier-order';
-import { supplierOrderErrorCode } from '@/services/api/supplier-orders/create';
+import { supplierOrderErrorCode } from '@/services/api/supplier-orders/errors';
 import { useMe } from '@/services/queries/auth/useMe';
 import { useCreateSupplierOrder } from '@/services/queries/supplier-orders/useCreateSupplierOrder';
 
