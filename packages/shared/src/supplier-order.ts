@@ -7,11 +7,21 @@
 // and is only ever shown to them, so no owner id crosses the wire: the API
 // knows whose it is from the session.
 //
-// Dates the shop gives as a day (ordered on, expected on) are `YYYY-MM-DD`
-// strings, matching the `@db.Date` columns: a time of day would be invented,
-// and a timezone would shift the day. Timestamps the server sets are ISO
-// datetimes, as elsewhere.
+// Dates carry only what is known. The day an order was placed is `YYYY-MM-DD`,
+// matching its `@db.Date` column: a time of day would be invented, and a
+// timezone would shift the day. When a record is expected is a month,
+// `YYYY-MM`, because a month is all the shops promise ("預計2026/11出貨").
+// Timestamps the server sets are ISO datetimes, as elsewhere.
 import { z } from 'zod';
+
+/**
+ * A calendar month, `YYYY-MM` (e.g. "2026-11") — what an `<input
+ * type="month">` gives and the database's CHECK accepts. As text it sorts in
+ * time order, so nothing needs to parse it to compare two.
+ */
+export const monthSchema = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Expected a month as YYYY-MM');
 
 /**
  * The shops the tracker knows. Must stay in sync with the `Supplier` enum in
@@ -87,8 +97,8 @@ export const supplierOrderItemSchema = z.object({
   unitPriceCents: z.number().int(),
   /** quantity × unitPriceCents, derived rather than stored. */
   lineTotalCents: z.number().int(),
-  /** When the shop expects to send it, if known. `YYYY-MM-DD`. */
-  expectedAt: z.iso.date().nullable(),
+  /** The month the shop expects to send it, or null if it doesn't say. */
+  expectedMonth: monthSchema.nullable(),
 });
 export type SupplierOrderItem = z.infer<typeof supplierOrderItemSchema>;
 
@@ -127,7 +137,7 @@ export const createSupplierOrderItemSchema = z.object({
   title: z.string().trim().min(1).max(300),
   quantity: z.number().int().min(1).max(99).default(1),
   unitPriceCents: z.number().int().nonnegative(),
-  expectedAt: z.iso.date().nullable().optional(),
+  expectedMonth: monthSchema.nullable().optional(),
 });
 export type CreateSupplierOrderItemInput = z.infer<typeof createSupplierOrderItemSchema>;
 

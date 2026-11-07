@@ -77,7 +77,7 @@ export class SupplierOrdersService {
               title: item.title,
               quantity: item.quantity,
               unitPriceCents: item.unitPriceCents,
-              expectedAt: item.expectedAt ? fromDay(item.expectedAt) : null,
+              expectedMonth: item.expectedMonth ?? null,
             })),
           },
         },
