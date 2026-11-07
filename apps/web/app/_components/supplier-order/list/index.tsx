@@ -3,6 +3,7 @@
 import { Button, Skeleton, Stack, Text, chakra } from '@chakra-ui/react';
 import NextLink from 'next/link';
 
+import RecordSupplierOrderButton from '@/components/supplier-order/record-button';
 import EmptyState from '@/components/ui/empty-state';
 import { SUPPLIER_ORDER_STATUS, groupByStatus } from '@/lib/utils/supplier-order';
 import { useMe } from '@/services/queries/auth/useMe';
@@ -23,7 +24,7 @@ const ListSkeleton = () => (
  * §9.2): what's on its way at the top, the next arrival first within each
  * group, finished orders at the bottom. The order lives in groupByStatus.
  *
- * Read-only for now; recording an order and changing its status come next.
+ * Orders are recorded on /supplier-orders/new; changing a status comes next.
  */
 export default function SupplierOrderList() {
   const { data: user, isPending: authPending } = useMe();
@@ -55,6 +56,7 @@ export default function SupplierOrderList() {
       <EmptyState
         title="No supplier orders yet"
         body="Orders you record from the shops will be listed here, grouped by where they stand."
+        cta={<RecordSupplierOrderButton />}
       />
     );
   }

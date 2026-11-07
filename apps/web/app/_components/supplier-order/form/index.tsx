@@ -7,6 +7,7 @@ import {
   Input,
   NativeSelect,
   SimpleGrid,
+  Skeleton,
   Stack,
   Text,
   Textarea,
@@ -19,8 +20,10 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import Panel from '@/components/admin/panel';
+import EmptyState from '@/components/ui/empty-state';
 import { SUPPLIER_LABEL } from '@/lib/utils/supplier-order';
 import { supplierOrderErrorCode } from '@/services/api/supplier-orders/create';
+import { useMe } from '@/services/queries/auth/useMe';
 import { useCreateSupplierOrder } from '@/services/queries/supplier-orders/useCreateSupplierOrder';
 
 import SupplierOrderLines from './_components/lines';
@@ -44,6 +47,29 @@ import {
  * order number would refuse it — shown here as a duplicate.
  */
 export default function SupplierOrderForm() {
+  const { data: user, isPending: authPending } = useMe();
+
+  if (authPending) return <Skeleton h="96" borderRadius="card" />;
+  // Opened by URL while signed out: saving would only 401, so ask first.
+  if (!user) {
+    return (
+      <EmptyState
+        title="Sign in to record an order"
+        body="Your supplier orders are kept with your account."
+        cta={
+          <Button asChild colorPalette="brand" borderRadius="full">
+            <NextLink href="/login">Sign in</NextLink>
+          </Button>
+        }
+      />
+    );
+  }
+
+  return <Form />;
+}
+
+/** The form proper, mounted once there is someone to save it for. */
+const Form = () => {
   const router = useRouter();
   const createMutation = useCreateSupplierOrder();
   // Computed once, so today's date doesn't move under the user mid-entry.
@@ -154,4 +180,4 @@ export default function SupplierOrderForm() {
       </Stack>
     </form>
   );
-}
+};

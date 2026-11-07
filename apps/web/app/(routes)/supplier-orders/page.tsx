@@ -4,6 +4,7 @@ import { Container } from '@chakra-ui/react';
 
 import PageShell from '@/components/layout/page-shell';
 import SupplierOrderList from '@/components/supplier-order/list';
+import RecordSupplierOrderButton from '@/components/supplier-order/record-button';
 import SectionHeading from '@/components/ui/section-heading';
 
 /**
@@ -18,6 +19,7 @@ export default function SupplierOrdersPage() {
           eyebrow="Your account"
           title="Supplier orders"
           description="What you've ordered at each shop, and when it's due."
+          action={<RecordSupplierOrderButton />}
         />
         <SupplierOrderList />
       </Container>
