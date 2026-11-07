@@ -37,6 +37,16 @@ const dayFormat = new Intl.DateTimeFormat('zh-TW', { timeZone: 'UTC', dateStyle:
  */
 export const formatDay = (day: string): string => dayFormat.format(new Date(`${day}T00:00:00Z`));
 
+/** en-CA formats a date as `YYYY-MM-DD`, the shape a day crosses the wire in. */
+const isoDayInTaipei = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' });
+
+/**
+ * Today in shop time, as `YYYY-MM-DD` — what a date input and the API take.
+ * In Taipei rather than the browser's zone, as formatDateTime is: the shops
+ * date their orders in Taiwan.
+ */
+export const todayInTaipei = (): string => isoDayInTaipei.format(new Date());
+
 /**
  * Format a remaining duration as `m:ss`, e.g. 754_000 → "12:34". Rounded up,
  * so the last second reads "0:01" rather than "0:00" while time is still left.
