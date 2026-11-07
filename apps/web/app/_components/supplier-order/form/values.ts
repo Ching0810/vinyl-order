@@ -1,4 +1,4 @@
-import { type CreateSupplierOrderInput, supplierSchema } from '@vinyl-order/shared';
+import { type CreateSupplierOrderInput, monthSchema, supplierSchema } from '@vinyl-order/shared';
 import { z } from 'zod';
 
 import { todayInTaipei } from '@/lib/utils/date';
@@ -41,8 +41,11 @@ export const supplierOrderFormSchema = z.object({
           .regex(/^\d+$/, '1–99')
           .refine((value) => Number(value) >= 1 && Number(value) <= 99, '1–99'),
         price: dollars,
-        // A date input gives '' when cleared.
-        expectedAt: z.union([z.iso.date(), z.literal('')]),
+        // A month input gives '' when cleared; Safari, which has no month
+        // picker, shows a text box, so the message says what to type.
+        expectedMonth: z.union([monthSchema, z.literal('')], {
+          error: 'A month, as YYYY-MM',
+        }),
       }),
     )
     .min(1, 'Add at least one record')
@@ -55,7 +58,7 @@ export const blankLine: SupplierOrderFormValues['items'][number] = {
   title: '',
   quantity: '1',
   price: '',
-  expectedAt: '',
+  expectedMonth: '',
 };
 
 /** A blank form, ordered today, with one line to fill in. */
@@ -92,7 +95,7 @@ export const toCreateInput = (values: SupplierOrderFormValues): CreateSupplierOr
         title: item.title.trim(),
         quantity: Number(item.quantity),
         unitPriceCents: toCents(item.price.trim()),
-        expectedAt: item.expectedAt || null,
+        expectedMonth: item.expectedMonth || null,
       };
     }),
   };

@@ -3,7 +3,7 @@ import type { SupplierOrder, SupplierOrderItem } from '@vinyl-order/shared';
 
 import SupplierOrderStatusBadge from '@/components/supplier-order/status-badge';
 import { formatPrice } from '@/lib/utils/currency';
-import { formatDay } from '@/lib/utils/date';
+import { formatDay, formatMonth } from '@/lib/utils/date';
 import { SUPPLIER_LABEL } from '@/lib/utils/supplier-order';
 
 /** One record in the order: title, price × quantity, and when it's due if known. */
@@ -15,7 +15,7 @@ const Line = ({ item, currency }: { item: SupplierOrderItem; currency: string })
       </Text>
       <Text fontSize="xs" color="fg.muted">
         {formatPrice(item.unitPriceCents, currency)} × {item.quantity}
-        {item.expectedAt ? ` · expected ${formatDay(item.expectedAt)}` : ''}
+        {item.expectedMonth ? ` · expected ${formatMonth(item.expectedMonth)}` : ''}
       </Text>
     </Stack>
     <Text fontSize="sm" fontWeight="semibold" flexShrink="0">

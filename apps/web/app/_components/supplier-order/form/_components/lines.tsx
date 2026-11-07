@@ -69,8 +69,8 @@ const Line = ({
       <LineField label="Price each (NT$)" error={errors.price?.message} required>
         <Input inputMode="numeric" {...register(`items.${index}.price`)} />
       </LineField>
-      <LineField label="Expected" error={errors.expectedAt?.message}>
-        <Input type="date" {...register(`items.${index}.expectedAt`)} />
+      <LineField label="Expected (month)" error={errors.expectedMonth?.message}>
+        <Input type="month" placeholder="YYYY-MM" {...register(`items.${index}.expectedMonth`)} />
       </LineField>
     </SimpleGrid>
   </Stack>

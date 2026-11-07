@@ -44,17 +44,17 @@ const GROUP_RANK: Record<SupplierOrderStatus, number> = {
   cancelled: 4,
 };
 
-/** Statuses whose orders are still to arrive, so an expected date matters. */
+/** Statuses whose orders are still to arrive, so an expected month matters. */
 const isOpen = (status: SupplierOrderStatus): boolean => GROUP_RANK[status] < GROUP_RANK.delivered;
 
 /**
- * The earliest expected date among an order's lines, or null if none has one.
- * `YYYY-MM-DD` sorts as text, so no Date is needed.
+ * The earliest expected month among an order's lines, or null if none has
+ * one. `YYYY-MM` sorts as text, so no Date is needed.
  */
-export const nextExpectedAt = (order: SupplierOrder): string | null =>
+export const nextExpectedMonth = (order: SupplierOrder): string | null =>
   order.items
-    .map((item) => item.expectedAt)
-    .filter((day): day is string => day !== null)
+    .map((item) => item.expectedMonth)
+    .filter((month): month is string => month !== null)
     .sort()[0] ?? null;
 
 /** Newest order first; id keeps orders placed the same day in a stable order. */
@@ -62,15 +62,16 @@ const byOrderedAtDesc = (a: SupplierOrder, b: SupplierOrder): number =>
   b.orderedAt.localeCompare(a.orderedAt) || a.id.localeCompare(b.id);
 
 /**
- * Soonest expected first, so the next arrival is on top; orders with no date
- * yet go last, since nothing says they are coming soon.
+ * Soonest expected first, so the next arrival is on top; orders with no month
+ * yet go last, since nothing says they are coming soon. Within one month,
+ * newest order first.
  */
 const byNextExpected = (a: SupplierOrder, b: SupplierOrder): number => {
-  const [dayA, dayB] = [nextExpectedAt(a), nextExpectedAt(b)];
-  if (dayA !== dayB) {
-    if (dayA === null) return 1;
-    if (dayB === null) return -1;
-    return dayA.localeCompare(dayB);
+  const [monthA, monthB] = [nextExpectedMonth(a), nextExpectedMonth(b)];
+  if (monthA !== monthB) {
+    if (monthA === null) return 1;
+    if (monthB === null) return -1;
+    return monthA.localeCompare(monthB);
   }
   return byOrderedAtDesc(a, b);
 };
@@ -79,8 +80,8 @@ export type SupplierOrderGroup = { status: SupplierOrderStatus; orders: Supplier
 
 /**
  * The page's sections (tracker.md §9.2): one per status that has orders, in
- * GROUP_RANK order. Open groups sort by next expected date; finished ones by
- * when they were ordered, since their expected dates are past.
+ * GROUP_RANK order. Open groups sort by next expected month; finished ones by
+ * when they were ordered, since their expected months are past.
  *
  * Pure and separate from the component, so the rule reads in one place.
  *
