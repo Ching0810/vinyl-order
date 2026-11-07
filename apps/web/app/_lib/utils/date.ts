@@ -21,6 +21,22 @@ const dateTimeFormat = new Intl.DateTimeFormat('zh-TW', {
  */
 export const formatDateTime = (iso: string): string => dateTimeFormat.format(new Date(iso));
 
+/** Days carry no time or zone, so they are formatted in UTC, where they were parsed. */
+const dayFormat = new Intl.DateTimeFormat('zh-TW', { timeZone: 'UTC', dateStyle: 'medium' });
+
+/**
+ * Format a calendar day from the API (e.g. a supplier order's `orderedAt`,
+ * `YYYY-MM-DD`) for display.
+ *
+ * Not through formatDateTime: that reads a moment and shows it in Taipei time,
+ * but a day is not a moment. Parsed as midnight UTC and shown in UTC, it is the
+ * same day wherever this runs — parsed as local time, a browser west of UTC
+ * would show the day before.
+ *
+ * @param day - `YYYY-MM-DD`
+ */
+export const formatDay = (day: string): string => dayFormat.format(new Date(`${day}T00:00:00Z`));
+
 /**
  * Format a remaining duration as `m:ss`, e.g. 754_000 → "12:34". Rounded up,
  * so the last second reads "0:01" rather than "0:00" while time is still left.
