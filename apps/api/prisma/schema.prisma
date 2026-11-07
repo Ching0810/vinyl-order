@@ -51,8 +51,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  cart   Cart?
-  orders Order[]
+  cart           Cart?
+  orders         Order[]
+  supplierOrders SupplierOrder[]
 }
 
 /// A customer's shopping cart. One per user, created lazily on first add.
@@ -444,18 +445,22 @@ model OfferSnapshot {
   @@index([offerId, takenAt(sort: Desc)])
 }
 
-/// An order I placed at one of the shops: a note of something bought
-/// elsewhere, with no payment lifecycle. Kept apart from Order, which is the
-/// demo store's own (tracker.md §5.5).
+/// An order a user placed at one of the shops: their own note of something
+/// bought elsewhere, with no payment lifecycle, seen only by them. Kept apart
+/// from Order, which is the demo store's own (tracker.md §5.5).
 model SupplierOrder {
   id          String              @id @default(uuid())
+  /// Whose note this is. Every read and write is scoped by it. Cascade: a
+  /// personal note goes with its account, unlike Order, which payments keep.
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   supplier    Supplier
   /// The shop's order number.
   orderNumber String
   orderedAt   DateTime            @db.Date
   status      SupplierOrderStatus @default(ordered)
 
-  /// What the shop charged, shipping included. Null until I enter it.
+  /// What the shop charged, shipping included. Null until entered.
   totalCents     Int?
   currency       String  @default("TWD")
   trackingNumber String?
@@ -466,10 +471,12 @@ model SupplierOrder {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// The same order entered twice is a mistake, not a second order.
-  @@unique([supplier, orderNumber])
-  /// The page groups by status.
-  @@index([status])
+  /// The same order entered twice by one person is a mistake, not a second
+  /// order. Per user: two people's numbers at one shop never collide in
+  /// meaning, and a global key would tell one user another's number exists.
+  @@unique([userId, supplier, orderNumber])
+  /// "My orders, grouped by status." userId leads because every query has it.
+  @@index([userId, status])
 }
 
 /// One record in a supplier order.

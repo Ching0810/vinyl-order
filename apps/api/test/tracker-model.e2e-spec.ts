@@ -39,6 +39,11 @@ describe('Tracker data model (e2e)', () => {
     throw new Error('Expected the write to fail');
   };
 
+  const createUser = () =>
+    prisma.user.create({
+      data: { email: `user-${randomUUID()}@test.local`, passwordHash: 'unused' },
+    });
+
   const createProduct = () =>
     prisma.product.create({
       data: { title: `Album ${randomUUID()}`, artist: 'Test Artist', priceCents: 1_000 },
@@ -130,8 +135,10 @@ describe('Tracker data model (e2e)', () => {
       ).resolves.toBeDefined();
     });
 
-    it('refuses the same supplier order entered twice', async () => {
+    it('refuses the same supplier order entered twice by one user', async () => {
+      const user = await createUser();
       const data = {
+        userId: user.id,
         supplier: 'candlelight' as const,
         orderNumber: randomUUID(),
         orderedAt: new Date('2026-10-30'),
@@ -140,7 +147,47 @@ describe('Tracker data model (e2e)', () => {
 
       const error = await errorFrom(prisma.supplierOrder.create({ data }));
 
-      expect(violatesUniqueIndex(error, 'SupplierOrder_supplier_orderNumber_key')).toBe(true);
+      expect(violatesUniqueIndex(error, 'SupplierOrder_userId_supplier_orderNumber_key')).toBe(
+        true,
+      );
+    });
+
+    // The key is per user: a global one would refuse the second person and so
+    // tell them someone else holds that number.
+    it('lets two users record the same order number at one shop', async () => {
+      const [first, second] = await Promise.all([createUser(), createUser()]);
+      const order = {
+        supplier: 'candlelight' as const,
+        orderNumber: randomUUID(),
+        orderedAt: new Date('2026-10-30'),
+      };
+      await prisma.supplierOrder.create({ data: { userId: first.id, ...order } });
+
+      await expect(
+        prisma.supplierOrder.create({ data: { userId: second.id, ...order } }),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe('deleting a user', () => {
+    it('takes their supplier orders and lines with them', async () => {
+      const user = await createUser();
+      const supplierOrder = await prisma.supplierOrder.create({
+        data: {
+          userId: user.id,
+          supplier: 'rotten_blues',
+          orderNumber: randomUUID(),
+          orderedAt: new Date('2026-10-30'),
+          items: { create: { title: 'Typed Album', unitPriceCents: 900 } },
+        },
+      });
+
+      await prisma.user.delete({ where: { id: user.id } });
+
+      expect(await prisma.supplierOrder.count({ where: { id: supplierOrder.id } })).toBe(0);
+      expect(
+        await prisma.supplierOrderItem.count({ where: { supplierOrderId: supplierOrder.id } }),
+      ).toBe(0);
     });
   });
 
@@ -151,8 +198,10 @@ describe('Tracker data model (e2e)', () => {
         data: { offerId: offer.id, priceCents: 1_200, availability: 'in_stock', stockQty: 3 },
       });
 
+      const user = await createUser();
       const supplierOrder = await prisma.supplierOrder.create({
         data: {
+          userId: user.id,
           supplier: 'tht',
           orderNumber: randomUUID(),
           orderedAt: new Date('2026-10-30'),
@@ -161,9 +210,6 @@ describe('Tracker data model (e2e)', () => {
         include: { items: true },
       });
 
-      const user = await prisma.user.create({
-        data: { email: `user-${randomUUID()}@test.local`, passwordHash: 'unused' },
-      });
       const cart = await prisma.cart.create({ data: { userId: user.id } });
       await prisma.cartItem.create({
         data: { cartId: cart.id, productId: offer.productId, offerId: offer.id },
