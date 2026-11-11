@@ -3,7 +3,8 @@ import { JwtService } from '@nestjs/jwt';
 import type { LoginInput, PublicUser, RegisterInput } from '@vinyl-order/shared';
 import * as bcrypt from 'bcrypt';
 
-import { Prisma, type User } from '../generated/prisma/client';
+import type { User } from '../generated/prisma/client';
+import { violatesUniqueIndex } from '../prisma/unique-violation';
 import { UsersService } from '../users/users.service';
 import type { JwtPayload } from './jwt.strategy';
 
@@ -45,9 +46,8 @@ export class AuthService {
       });
       return this.issueToken(user);
     } catch (error) {
-      // P2002 = unique constraint violation; here it means the email is taken.
-      // We translate the persistence-level error into an HTTP-level one.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      // The email is taken: the persistence-level error becomes an HTTP one.
+      if (violatesUniqueIndex(error, 'User_email_key')) {
         throw new ConflictException('Email already registered');
       }
       throw error;
