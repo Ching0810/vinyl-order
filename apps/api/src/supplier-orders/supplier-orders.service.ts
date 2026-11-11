@@ -54,6 +54,16 @@ export class SupplierOrdersService {
     return orders.map(toSupplierOrderContract);
   }
 
+  /** One of the user's orders with its lines, as the edit form loads it. */
+  async get(userId: string, id: string): Promise<SupplierOrderContract> {
+    const order = await this.prisma.supplierOrder.findFirst({
+      where: { id, userId },
+      include: withItems,
+    });
+    if (!order) throw new NotFoundException('Supplier order not found');
+    return toSupplierOrderContract(order);
+  }
+
   /**
    * Record an order and its lines in one write, so an order never exists
    * without the lines it was entered with.
@@ -139,7 +149,7 @@ export class SupplierOrdersService {
       throw error;
     }
 
-    return this.findOne(userId, id);
+    return this.get(userId, id);
   }
 
   /** Delete an order and its lines. */
@@ -263,15 +273,6 @@ export class SupplierOrdersService {
         await transaction.supplierOrderItem.create({ data: { supplierOrderId, ...fields } });
       }
     }
-  }
-
-  private async findOne(userId: string, id: string): Promise<SupplierOrderContract> {
-    const order = await this.prisma.supplierOrder.findFirst({
-      where: { id, userId },
-      include: withItems,
-    });
-    if (!order) throw new NotFoundException('Supplier order not found');
-    return toSupplierOrderContract(order);
   }
 
   private badTransition(from: SupplierOrderStatus, to: SupplierOrderStatus) {
