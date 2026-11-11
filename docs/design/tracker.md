@@ -209,7 +209,9 @@ aren't lines (燭光: 1550 + 60 − 19).
 
 `SupplierOrderItem`: `offerId` (SetNull, with `title` copied in, as
 `OrderItem` does; null for every line until §14 step 9), `quantity`,
-`unitPriceCents`, `expectedMonth`. The expected date is a **month**,
+`unitPriceCents`, `expectedMonth`, and `imageUrl` (null; the cover a shop's
+confirmation email shows, §9.4, until the line is linked to an offer with
+its own). The expected date is a **month**,
 `CHAR(7)` `YYYY-MM` with a CHECK on its format: a month is all the shops
 promise ("預計2026/11出貨", "12月補貨預訂"), and a stored day would be
 invented.
@@ -447,7 +449,8 @@ the concurrency exercise the checkout was built around.
 
 `ordered` (placed, nothing heard) → `preparing` (confirmed; for a pre-order,
 waiting for the release) → `shipped` → `delivered`, or `cancelled`. Nothing
-moves on its own until §9.4. By hand, `canChangeSupplierOrderStatus`
+moves on its own: email import (§9.4) only creates orders. By hand,
+`canChangeSupplierOrderStatus`
 (shared, so the page offers only the moves the API accepts) allows:
 
 - any forward move, skipping steps — a shop that never confirms goes
@@ -537,16 +540,122 @@ How it holds together:
   which replaces the fields only when asked, so what was typed can be
   copied first.
 
-### 9.4 Later: from email
+### 9.4 From the shops' confirmation emails
 
 The shops have no customer API, and their order pages need my login. What
-every one of them does send is email: an order confirmation and a shipping
-notice. Reading those — Gmail API, read-only, only these senders — can create
-orders and move them to `shipped` without my typing. That needs OAuth and a
-parser per shop's email, so it comes after the page works by hand (step 13).
-All four send a confirmation, and as far as known a shipping notice; one
-sample of each per shop, forwarded, decides whether parsing them is
-practical before that step starts.
+they do send is email. Recording an order should be placing it at the shop
+and nothing else: the confirmation email arrives, and the order appears here
+— no typing, for the orders that come in once or twice a month.
+
+**What the emails give** (samples from 2026-10/11, all DKIM-signed):
+
+|                          | THT, Cosmic (EasyStore)                                                | Rotten Blues (Shopify)                                 | Candlelight (WACA)         |
+| ------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------- |
+| Sender                   | `notifications+thtrecords@` / `+universalvinylmusic@mail.easystore.co` | `store+100236001461@t.shopifyemail.com`                | no confirmation of its own |
+| Subject                  | `您的訂單已確認。`                                                     | `訂單 #2895 已確認`                                    | —                          |
+| Order number             | body: `下訂單#8685`                                                    | subject and body                                       | —                          |
+| Lines                    | `title × qty`, then the **line total** `TWD 880`                       | `title × qty` (title may wrap), line total `$1,180.00` | —                          |
+| Total                    | `總額: TWD 940` (shipping, tax and points in)                          | `總計 $1,240.00 TWD`                                   | —                          |
+| Expected                 | in the title: `(12月補貨預訂)`, `(10/23發行預訂）`                     | none                                                   | —                          |
+| Cover                    | THT: `cdn.store-assets.com`; Cosmic: behind a tracking redirect        | `cdn.shopify.com`                                      | —                          |
+| Link to the product page | none                                                                   | none                                                   | —                          |
+
+Candlelight's mail all comes from its payment provider, PayNow: a card
+receipt, an e-invoice notice (invoice number, day and total — no order
+number, no lines; the lines are behind a link to the invoice page) and a
+pickup notice. Without an order number there is nothing to deduplicate on,
+and without lines nothing to record, so **Candlelight stays typed by hand**.
+Shipping notices exist (THT's `更新訂單出貨通知` carries the order number),
+but moving orders to `shipped` from them isn't needed for now.
+
+**⚖️ Decision: a Google Apps Script in my own account sends the emails.**
+
+- _Gmail API with OAuth:_ `gmail.readonly` is a restricted scope. Letting
+  other users connect needs Google's paid security assessment; left in
+  testing mode instead, its refresh tokens expire after 7 days, so it would
+  stop every week.
+- _Forwarding to an inbound-mail service_ (Cloudflare Email Routing,
+  Mailgun): needs a domain and its MX records — not on the free plans.
+- _Apps Script:_ free, no review, no domain. It runs as me, inside my own
+  account, so access to my mail never leaves it; another user installs their
+  own copy.
+
+How it runs:
+
+1. Once a day, a time-driven trigger searches
+   `from:(the three senders) subject:已確認 -label:vinyl-imported`.
+2. Each email whose `Authentication-Results` says `dkim=pass` for its
+   sender's domain is POSTed — sender, subject, `Date`, and the HTML body
+   with every link removed — to `POST /supplier-orders/import`, with the
+   user's import token in the `Authorization` header.
+3. On `201` (created) or `200` (already recorded) it is labelled
+   `vinyl-imported`; on `422` (not understood) `vinyl-import-failed`, for
+   typing by hand; on anything else it is left alone and tried the next day
+   — which is also what happens when Render is asleep.
+
+- **The parsers live in the API, not in the script.** The script only finds
+  and forwards, so a shop changing its template is a fix with fixtures and
+  CI, not a script every user must copy again.
+- **The natural key is the idempotency key.** An email sent twice, or a day
+  whose labels failed to stick, lands on `@@unique([userId, supplier,
+orderNumber])`: the second import answers `200 already_recorded` instead
+  of creating a copy. No message-id table is needed.
+- **Imported orders start `ordered`**, as typed ones do (§9.1), whatever the
+  email says about the shop confirming.
+- **A refused email is not guessed at.** No order number, no lines, no
+  total, a line total that doesn't divide by its quantity, or a sender
+  nobody parses → `422`, and the email waits for a person.
+
+Parsing rules, pinned by fixture tests:
+
+- **HTML is parsed, whatever the MIME part says.** Cosmic's `text/plain`
+  part is HTML too.
+- **Stop at the total.** Cosmic follows it with "為您推薦產品", a list of
+  other records with prices that must not become lines.
+- **Amounts are line totals**: `unitPriceCents = lineTotal / quantity`.
+  Thousands separators and `.00` are dropped (`$1,180.00` → 118 000 cents).
+- **Expected month from the title**: `12月` and `10/23` give the month; the
+  year is the order's if that month is not before the order's month, else
+  the next year's (ordered November, "1月" → January next year). The text
+  stays in the title as the shop wrote it.
+- **The order's day** is the email's `Date`, as a day in Taipei. The emails
+  carry no order date of their own, and a confirmation can come a day after
+  the order; the day stays editable (§9.3).
+- **A cover** is kept only from a host the web already allows
+  (`cdn.store-assets.com`, `cdn.shopify.com`); Cosmic's redirect is dropped.
+
+**The import token.** The script can't hold a login session (it expires),
+so each user has one long-lived token that does one thing: import into
+their own orders. Created on the supplier orders page, shown once, and
+replaceable or revocable there. Only its SHA-256 is stored: it is 32 random
+bytes, so unlike a password it needs no slow hash or salt to resist
+guessing, and a leaked table holds nothing that works. `lastUsedAt` shows
+whether the script is running.
+
+**Security and privacy.** Nothing here can pay for anything: no email
+carries a card number, nothing stores one, and the import token can only add
+order records. What is at stake is personal data — the emails carry my name,
+my pickup store's address and, from Shopify, an order-page link with an
+access key (`shcct_…`) that shows the order to anyone holding it — and the
+integrity of my list. Each risk, and what answers it:
+
+| Risk                                                                                                                    | Answer                                                                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The `shcct_` link, and tracking links, leave Gmail                                                                      | The script removes every `href` before sending; the parsers need no link                                                                                                           |
+| A leaked token is used to read my orders                                                                                | The endpoint only writes: a duplicate answers `{ result: 'already_recorded' }` with no order in it, so guessing numbers reveals nothing                                            |
+| A forged "confirmation" is imported                                                                                     | Gmail files most spoofs as spam, which search skips; the script also requires `dkim=pass` for the sender's domain. One that got through could only add a fake order to my own list |
+| The script's reach: reading and labelling mail needs a scope over the whole mailbox (Gmail has none narrower by sender) | The manifest lists only the scopes it uses; no libraries; ~60 lines in the repo, to be read before pasting. Access stays in my account; the site never holds a Gmail grant         |
+| The token leaks                                                                                                         | 256 random bits, stored as SHA-256, shown once, revocable, `lastUsedAt` shown; sent only in a header, never in a URL, which every layer logs                                       |
+| A huge or hostile body (DoS, ReDoS)                                                                                     | 256 KB request limit (the largest sample is 39 KB); a real HTML parser, not regexes over the whole body; a tighter throttle on the route than the global one                       |
+| Email text leaks through errors or logs                                                                                 | Bodies are never stored or logged; a `422` names the reason ("no total found") and quotes nothing                                                                                  |
+| A title or image carries script                                                                                         | Titles are stored as text and rendered escaped; covers only from the two allowed CDNs, loaded by the browser, never fetched by the server (no SSRF)                                |
+| A cross-site page makes my browser replace the token                                                                    | The session cookie is `httpOnly` and `sameSite: lax`, so a cross-site POST carries no session                                                                                      |
+| The samples leak through the repo, **which is public**                                                                  | Fixtures replace names, addresses, keys and tracking links with fake values, and the diff is reviewed for them before commit; the original `.eml` files never enter the repo       |
+
+What remains: the HTML passes through Vercel and Render (over HTTPS, without
+links) and is held only for the request; and the script, like any Gmail
+automation, can read the whole mailbox — the price of the site never having
+that access itself.
 
 ## 10. Freshness on free plans
 
@@ -566,21 +675,23 @@ practical before that step starts.
 All admin-only, except the reads a visitor's pages make and the supplier
 orders, which any signed-in user has for their own (§12.1).
 
-| Method and path                                | Purpose                                            |
-| ---------------------------------------------- | -------------------------------------------------- |
-| `GET /admin/catalog/search?supplier=&q=&used=` | search one supplier's index                        |
-| `POST /admin/products/from-catalog`            | create a product and its first offer from an entry |
-| `GET /admin/products/:id/candidates`           | candidates at the other suppliers                  |
-| `POST /admin/products/:id/offers`              | attach a confirmed candidate (or a pasted URL)     |
-| `DELETE /admin/offers/:id`                     | detach a wrong match                               |
-| `POST /admin/products/:id/refresh`             | re-fetch the product's offers                      |
-| `PATCH /admin/artists/:id`                     | rename; add or remove aliases                      |
-| `GET /products/:id`                            | now includes its offers                            |
-| `GET /admin/dashboard`                         | the home page's three sections (§12.2)             |
-| `GET /products/hot`, `GET /products/slides`    | removed, with the carousel                         |
-| `POST /cart/items`                             | takes `offerId`                                    |
-| `GET/POST /supplier-orders`                    | my orders; record one (409 if already recorded)    |
-| `GET/PATCH/DELETE /supplier-orders/:id`        | read, change (§9.1, §9.3), delete; 404 if not mine |
+| Method and path                                 | Purpose                                              |
+| ----------------------------------------------- | ---------------------------------------------------- |
+| `GET /admin/catalog/search?supplier=&q=&used=`  | search one supplier's index                          |
+| `POST /admin/products/from-catalog`             | create a product and its first offer from an entry   |
+| `GET /admin/products/:id/candidates`            | candidates at the other suppliers                    |
+| `POST /admin/products/:id/offers`               | attach a confirmed candidate (or a pasted URL)       |
+| `DELETE /admin/offers/:id`                      | detach a wrong match                                 |
+| `POST /admin/products/:id/refresh`              | re-fetch the product's offers                        |
+| `PATCH /admin/artists/:id`                      | rename; add or remove aliases                        |
+| `GET /products/:id`                             | now includes its offers                              |
+| `GET /admin/dashboard`                          | the home page's three sections (§12.2)               |
+| `GET /products/hot`, `GET /products/slides`     | removed, with the carousel                           |
+| `POST /cart/items`                              | takes `offerId`                                      |
+| `GET/POST /supplier-orders`                     | my orders; record one (409 if already recorded)      |
+| `GET/PATCH/DELETE /supplier-orders/:id`         | read, change (§9.1, §9.3), delete; 404 if not mine   |
+| `POST /supplier-orders/import`                  | one confirmation email, with the import token (§9.4) |
+| `GET/POST/DELETE /supplier-orders/import-token` | whether I have one; create or replace it; revoke     |
 
 Shapes go in `packages/shared` as now.
 
@@ -689,8 +800,8 @@ Each step is its own PR.
    (§9.2), with typed lines. **The first usable page** — for the orders
    already waiting to ship. _(Done: per-user API #68; list and entry form
    with expected months #69; status, tracking, note and delete #70; editing
-   with the version check (§9.3) #71 and the web PR after it. Next: an
-   optional `paidAt` (§9.1).)_
+   with the version check (§9.3) #71–#72. Next: step 13's email import,
+   pulled ahead (§9.4), then an optional `paidAt` (§9.1).)_
 5. Checkout on offers (§8): cart and order lines, the reservation guard,
    restock on cancel and expiry. `Product`'s `priceCents`, `currency` and
    `stock` and `CartItem.productId` are dropped here.
@@ -709,7 +820,10 @@ Each step is its own PR.
     `lastmod` increments.
 12. Scheduled refresh and catalog sync in GitHub Actions; alerts from
     snapshots (price drop, back in stock, one or two left).
-13. Supplier orders from email.
+13. Supplier orders from email — **pulled ahead to follow step 4**, once
+    typing orders in had shown what it costs: confirmations from THT, Cosmic
+    and Rotten Blues (§9.4). Shipping notices and Candlelight are not part
+    of it.
 
 Removal first so the model change starts from a schema with nothing of
 Discogs left in it. **Supplier orders come straight after the model**,
@@ -752,6 +866,11 @@ parsing.
 - **Integrating with sources you don't control** — validate, keep the last
   good value, label staleness, never fill a gap with a guess (§6.3).
 - **SSRF** — the moment a server fetches a user's URL (§6.4).
+- **Ingesting from a channel you don't control** — a dumb forwarder, parsers
+  on the server under test, the natural key as the idempotency key, and a
+  `422` that waits for a person instead of a guess (§9.4).
+- **API tokens** — long-lived, single-purpose, shown once, stored as a
+  SHA-256 because they are random, unlike passwords (§9.4).
 - **Optimistic locking** — a version in the `WHERE`, a 409 when it moved,
   and locking the parent row first so a whole-list replace of its children
   can't interleave (§9.3).
