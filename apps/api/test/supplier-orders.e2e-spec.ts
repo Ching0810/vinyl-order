@@ -64,6 +64,9 @@ describe('Supplier orders (e2e)', () => {
 
   const list = (token: string) => server().get('/supplier-orders').set(auth(token));
 
+  const get = (token: string, id: string) =>
+    server().get(`/supplier-orders/${id}`).set(auth(token));
+
   const update = (token: string, id: string, body: object) =>
     server().patch(`/supplier-orders/${id}`).set(auth(token)).send(body);
 
@@ -81,6 +84,7 @@ describe('Supplier orders (e2e)', () => {
   describe('signing in', () => {
     it('refuses every route without a session', async () => {
       await server().get('/supplier-orders').expect(401);
+      await server().get(`/supplier-orders/${randomUUID()}`).expect(401);
       await server().post('/supplier-orders').send(newOrder()).expect(401);
       await server().patch(`/supplier-orders/${randomUUID()}`).send({ note: 'x' }).expect(401);
       await server().delete(`/supplier-orders/${randomUUID()}`).expect(401);
@@ -248,13 +252,38 @@ describe('Supplier orders (e2e)', () => {
       const other = await createUser();
       const order = await recorded(owner.token);
 
+      await get(other.token, order.id).expect(404);
       await update(other.token, order.id, { note: 'mine now' }).expect(404);
       await update(other.token, order.id, { status: 'cancelled' }).expect(404);
+      await update(other.token, order.id, {
+        items: [{ id: order.items[0].id, title: 'Mine', unitPriceCents: 1 }],
+      }).expect(404);
       await remove(other.token, order.id).expect(404);
       await update(other.token, randomUUID(), { note: 'x' }).expect(404);
 
-      const row = await prisma.supplierOrder.findUniqueOrThrow({ where: { id: order.id } });
+      const row = await prisma.supplierOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        include: { items: true },
+      });
       expect(row).toMatchObject({ note: null, status: 'ordered' });
+      expect(row.items).toMatchObject([{ title: 'Test Album' }]);
+    });
+  });
+
+  describe('reading one', () => {
+    it('returns my order with its lines', async () => {
+      const { token } = await createUser();
+      const order = await recorded(token);
+
+      const res = await get(token, order.id).expect(200);
+
+      expect(res.body).toEqual(order);
+    });
+
+    it('is 404 for an id that does not exist', async () => {
+      const { token } = await createUser();
+
+      await get(token, randomUUID()).expect(404);
     });
   });
 
@@ -290,20 +319,252 @@ describe('Supplier orders (e2e)', () => {
       await update(token, order.id, {}).expect(400);
     });
 
-    // Unknown keys are dropped by the schema, so the shop and number an order
-    // was placed under can't be changed through PATCH.
-    it('never changes the shop or the order number', async () => {
+    // Unknown keys are dropped by the schema, so the shop an order was placed
+    // at can't be changed through PATCH.
+    it('never changes the shop', async () => {
       const { token } = await createUser();
       const order = await recorded(token);
 
-      await update(token, order.id, {
-        note: 'x',
-        supplier: 'cosmic',
-        orderNumber: 'OTHER',
-      }).expect(200);
+      await update(token, order.id, { note: 'x', supplier: 'cosmic' }).expect(200);
 
       const row = await prisma.supplierOrder.findUniqueOrThrow({ where: { id: order.id } });
-      expect(row).toMatchObject({ supplier: 'tht', orderNumber: order.orderNumber });
+      expect(row.supplier).toBe('tht');
+    });
+
+    it('changes the number, day and total, and clears the total', async () => {
+      const { token } = await createUser();
+      const order = await recorded(token, newOrder({ totalCents: 155_000 }));
+
+      const changed = await update(token, order.id, {
+        orderNumber: 'T-FIXED',
+        orderedAt: '2026-10-31',
+        totalCents: 159_100,
+      }).expect(200);
+      expect(changed.body).toMatchObject({
+        orderNumber: 'T-FIXED',
+        orderedAt: '2026-10-31',
+        totalCents: 159_100,
+      });
+
+      const cleared = await update(token, order.id, { totalCents: null }).expect(200);
+      expect(cleared.body).toMatchObject({ orderNumber: 'T-FIXED', totalCents: null });
+    });
+
+    it.each([
+      ['a blank order number', { orderNumber: '  ' }],
+      ['a bad day', { orderedAt: '2026-13-01' }],
+      ['a negative total', { totalCents: -1 }],
+      ['no lines', { items: [] }],
+      ['a version only', { expectedUpdatedAt: '2026-11-01T00:00:00.000Z' }],
+    ])('refuses %s', async (_, body) => {
+      const { token } = await createUser();
+      const order = await recorded(token);
+
+      await update(token, order.id, body).expect(400);
+    });
+  });
+
+  describe('editing lines', () => {
+    /** An order with two lines, A and B, as recorded. */
+    const twoLines = async (token: string) => {
+      const order = await recorded(
+        token,
+        newOrder({
+          items: [
+            { title: 'A', unitPriceCents: 100 },
+            { title: 'B', unitPriceCents: 200 },
+          ],
+        }),
+      );
+      const [a, b] = order.items;
+      return { order, a, b };
+    };
+
+    // The list is the order's lines: A is kept and changed, B is left out so
+    // removed, C has no id so is added. A keeps its id — what an offer link
+    // will hang on.
+    it('updates, adds and removes lines in one edit', async () => {
+      const { token } = await createUser();
+      const { order, a, b } = await twoLines(token);
+
+      const res = await update(token, order.id, {
+        items: [
+          {
+            id: a.id,
+            title: 'A (2nd press)',
+            quantity: 2,
+            unitPriceCents: 680,
+            expectedMonth: '2026-12',
+          },
+          { title: 'C', unitPriceCents: 300 },
+        ],
+      }).expect(200);
+
+      const items = (res.body as SupplierOrder).items;
+      expect(items).toMatchObject([
+        {
+          id: a.id,
+          title: 'A (2nd press)',
+          quantity: 2,
+          unitPriceCents: 680,
+          lineTotalCents: 1_360,
+          expectedMonth: '2026-12',
+        },
+        { title: 'C', quantity: 1, unitPriceCents: 300, expectedMonth: null },
+      ]);
+      expect(items.map(({ id }) => id)).not.toContain(b.id);
+      expect(await prisma.supplierOrderItem.count({ where: { id: b.id } })).toBe(0);
+    });
+
+    // A line of another order, or one already removed (by another tab), is
+    // refused rather than moved or brought back — and the refusal undoes the
+    // whole edit, the order's own fields included.
+    it.each([
+      ['a line of another of my orders', 'other'],
+      ['a line that was removed', 'removed'],
+    ])('refuses %s, changing nothing', async (_, kind) => {
+      const { token } = await createUser();
+      const { order, a, b } = await twoLines(token);
+      let foreignId: string;
+      if (kind === 'other') {
+        foreignId = (await recorded(token)).items[0].id;
+      } else {
+        await prisma.supplierOrderItem.delete({ where: { id: b.id } });
+        foreignId = b.id;
+      }
+
+      await update(token, order.id, {
+        note: 'should not stick',
+        items: [
+          { id: a.id, title: 'A changed', unitPriceCents: 1 },
+          { id: foreignId, title: 'Taken', unitPriceCents: 1 },
+        ],
+      }).expect(400);
+
+      const row = await prisma.supplierOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        include: { items: true },
+      });
+      expect(row.note).toBeNull();
+      expect(row.items.find(({ id }) => id === a.id)).toMatchObject({ title: 'A' });
+      expect(await prisma.supplierOrderItem.count({ where: { id: foreignId } })).toBe(
+        kind === 'other' ? 1 : 0,
+      );
+    });
+
+    it('refuses the same line twice', async () => {
+      const { token } = await createUser();
+      const { order, a } = await twoLines(token);
+
+      await update(token, order.id, {
+        items: [
+          { id: a.id, title: 'A', unitPriceCents: 1 },
+          { id: a.id, title: 'A again', unitPriceCents: 1 },
+        ],
+      }).expect(400);
+    });
+  });
+
+  describe('changing the order number', () => {
+    it('refuses a number another of my orders at the shop has', async () => {
+      const { token } = await createUser();
+      const taken = await recorded(token);
+      const order = await recorded(token);
+
+      const res = await update(token, order.id, { orderNumber: taken.orderNumber }).expect(409);
+
+      expect(res.body).toMatchObject({ code: 'SUPPLIER_ORDER_DUPLICATE' });
+    });
+
+    it("allows another shop's or another user's number", async () => {
+      const { token } = await createUser();
+      const other = await createUser();
+      const atCosmic = await recorded(token, newOrder({ supplier: 'cosmic' }));
+      const theirs = await recorded(other.token);
+      const order = await recorded(token);
+
+      await update(token, order.id, { orderNumber: atCosmic.orderNumber }).expect(200);
+      await update(token, order.id, { orderNumber: theirs.orderNumber }).expect(200);
+    });
+  });
+
+  // expectedUpdatedAt: an edit made from a copy of the order that is no
+  // longer current is refused, whatever changed it in between.
+  describe('version check', () => {
+    it('applies an edit made from the current version', async () => {
+      const { token } = await createUser();
+      const order = await recorded(token);
+
+      const res = await update(token, order.id, {
+        note: 'fresh',
+        expectedUpdatedAt: order.updatedAt,
+      }).expect(200);
+
+      const edited = res.body as SupplierOrder;
+      expect(edited.note).toBe('fresh');
+      expect(edited.updatedAt).not.toBe(order.updatedAt);
+    });
+
+    // Lines live in another table: changing only them must still move the
+    // order's version. The field edit pins that Prisma's @updatedAt is set by
+    // the conditional updateMany too.
+    it.each([
+      ['a field', false],
+      ['only the lines', true],
+    ])('refuses an old version after %s changed', async (_, linesOnly) => {
+      const { token } = await createUser();
+      const order = await recorded(token);
+      const firstEdit = linesOnly
+        ? { items: [{ id: order.items[0].id, title: 'Tab A', unitPriceCents: 1 }] }
+        : { note: 'tab A' };
+      await update(token, order.id, firstEdit).expect(200);
+
+      const res = await update(token, order.id, {
+        note: 'tab B',
+        expectedUpdatedAt: order.updatedAt,
+      }).expect(409);
+
+      expect(res.body).toMatchObject({ code: 'SUPPLIER_ORDER_STALE' });
+      const row = await prisma.supplierOrder.findUniqueOrThrow({ where: { id: order.id } });
+      expect(row.note).not.toBe('tab B');
+    });
+
+    // The real reason is the stale form, not the move it carries.
+    it('reports a stale edit as stale, even with a refused status', async () => {
+      const { token } = await createUser();
+      const order = await recorded(token);
+      await update(token, order.id, { status: 'shipped' }).expect(200);
+
+      const res = await update(token, order.id, {
+        status: 'preparing',
+        expectedUpdatedAt: order.updatedAt,
+      }).expect(409);
+
+      expect(res.body).toMatchObject({ code: 'SUPPLIER_ORDER_STALE' });
+    });
+
+    // Two tabs save edits from the same version at once: the row lock makes
+    // one wait, and it then finds the version moved — one is applied, whole.
+    it('lets one of two concurrent edits from the same version win', async () => {
+      const { token } = await createUser();
+      const order = await recorded(token);
+      const edit = (title: string) =>
+        update(token, order.id, {
+          note: title,
+          items: [{ title, unitPriceCents: 1 }],
+          expectedUpdatedAt: order.updatedAt,
+        });
+
+      const responses = await Promise.all([edit('Tab A'), edit('Tab B')]);
+
+      expect(responses.map((res) => res.status).sort()).toEqual([200, 409]);
+      const winner = responses.find((res) => res.status === 200)!.body as SupplierOrder;
+      const row = await prisma.supplierOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        include: { items: true },
+      });
+      expect(row.note).toBe(winner.note);
+      expect(row.items).toMatchObject([{ title: winner.note }]);
     });
   });
 
