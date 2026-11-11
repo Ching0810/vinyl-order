@@ -1,13 +1,11 @@
 'use client';
 
 import { Box } from '@chakra-ui/react';
-import { useQuery } from '@tanstack/react-query';
 
 import Grid from '@/components/product/grid';
 import GridSkeleton from '@/components/product/grid-skeleton';
 import SectionHeading from '@/components/ui/section-heading';
-import { searchProducts } from '@/services/api/products/search';
-import { productsQueryKey } from '@/services/queries/products/useProducts';
+import { useProductSearch } from '@/services/queries/products/useProductSearch';
 
 /** How many other releases to show. */
 const MAX_RELATED = 4;
@@ -24,10 +22,7 @@ const MAX_RELATED = 4;
  * @param excludeId - the product currently being viewed
  */
 export default function Related({ artist, excludeId }: { artist: string; excludeId: string }) {
-  const { data, isPending } = useQuery({
-    queryKey: [...productsQueryKey, 'search', artist],
-    queryFn: () => searchProducts(artist),
-  });
+  const { data, isPending } = useProductSearch(artist);
 
   const others = (data ?? []).filter((product) => product.id !== excludeId).slice(0, MAX_RELATED);
 

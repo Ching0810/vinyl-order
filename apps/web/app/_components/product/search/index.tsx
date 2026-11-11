@@ -1,12 +1,11 @@
 'use client';
 
 import { Box, Button, Drawer, Input, InputGroup, Portal } from '@chakra-ui/react';
-import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { SearchIcon } from '@/components/ui/icons';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { searchProducts } from '@/services/api/products/search';
+import { useProductSearch } from '@/services/queries/products/useProductSearch';
 
 import Results from './_components/results';
 /**
@@ -30,11 +29,7 @@ export default function Search() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const q = useDebouncedValue(term.trim(), 500);
 
-  const { data: results, isFetching } = useQuery({
-    queryKey: ['products', 'search', q],
-    queryFn: () => searchProducts(q),
-    enabled: q.length > 0,
-  });
+  const { data: results, isFetching } = useProductSearch(q, { enabled: q.length > 0 });
 
   const dropdownOpen = focused && term.trim().length > 0;
 
