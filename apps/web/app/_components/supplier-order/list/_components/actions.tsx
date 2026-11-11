@@ -7,6 +7,7 @@ import {
   canChangeSupplierOrderStatus,
   supplierOrderStatusSchema,
 } from '@vinyl-order/shared';
+import NextLink from 'next/link';
 import { useState } from 'react';
 
 import ConfirmDialog from '@/components/ui/confirm-dialog';
@@ -16,8 +17,6 @@ import { SUPPLIER_LABEL, SUPPLIER_ORDER_STATUS } from '@/lib/utils/supplier-orde
 import { currentStatusOf } from '@/services/api/supplier-orders/errors';
 import { useDeleteSupplierOrder } from '@/services/queries/supplier-orders/useDeleteSupplierOrder';
 import { useUpdateSupplierOrder } from '@/services/queries/supplier-orders/useUpdateSupplierOrder';
-
-import EditTrackingDialog from './edit-dialog';
 
 /**
  * The statuses that are final: once there, an order can't be moved on or
@@ -55,12 +54,12 @@ const failureMessage = (error: unknown): string => {
 };
 
 /** Which dialog is open, if any. */
-type Open = { kind: 'confirm'; to: SupplierOrderStatus } | { kind: 'edit' } | { kind: 'delete' };
+type Open = { kind: 'confirm'; to: SupplierOrderStatus } | { kind: 'delete' };
 
 /**
  * An order's actions, behind a "more" button: move it on to any status the
- * shared rule allows from where it is (and only those), edit its tracking
- * number and note, or delete it.
+ * shared rule allows from where it is (and only those), open it in the edit
+ * form, or delete it.
  *
  * Moving to a final status and deleting ask first. A refusal — typically
  * another tab having moved the order already — is handed to onFailure while
@@ -100,7 +99,9 @@ export default function SupplierOrderActions({
     });
 
   const choose = (value: string) => {
-    if (value === 'edit' || value === 'delete') return setOpen({ kind: value });
+    // A link: it navigates by itself.
+    if (value === 'edit') return null;
+    if (value === 'delete') return setOpen({ kind: value });
     const to = supplierOrderStatusSchema.parse(value);
     return FINAL[to] ? setOpen({ kind: 'confirm', to }) : move(to);
   };
@@ -132,7 +133,9 @@ export default function SupplierOrderActions({
                 </Menu.Item>
               ))}
               {nextStatuses.length > 0 ? <Menu.Separator /> : null}
-              <Menu.Item value="edit">Edit tracking & note</Menu.Item>
+              <Menu.Item value="edit" asChild>
+                <NextLink href={`/supplier-orders/${order.id}/edit`}>Edit order</NextLink>
+              </Menu.Item>
               <Menu.Separator />
               <Menu.Item value="delete" color="fg.error">
                 Delete
@@ -164,8 +167,6 @@ export default function SupplierOrderActions({
         pending={deleteMutation.isPending}
         onConfirm={remove}
       />
-
-      {open?.kind === 'edit' ? <EditTrackingDialog order={order} onClose={close} /> : null}
     </>
   );
 }
