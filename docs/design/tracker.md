@@ -67,9 +67,10 @@ stay, as a demo of the order flow, but sell from the suppliers' real data.
 - **Placing orders at the suppliers.** The site compares and records; buying
   stays on their sites.
 - **Logging in to the suppliers.** Their order pages need my credentials and
-  their robots.txt forbids them (§9.3).
-- **Other users.** Adding records, the dashboard and the supplier orders are
-  admin-only: this is one person's tool. Visitors get a read-only view (§12.1).
+  their robots.txt forbids them (§9.4).
+- **Other users managing the catalog.** Adding records and the dashboard are
+  admin-only. Supplier orders are the exception: anyone who signs up keeps
+  their own, seen by no one else (§12.1). Visitors get a read-only view.
 - **Automatic matching.** Editions differ — a European pressing, a Japanese
   one, a coloured variant, a used copy — and a wrong match is worse than
   none (§7.3).
@@ -187,20 +188,31 @@ of rows, rewritten by sync (§7.2), never edited by hand.
 Kept apart from `Order`, which is the demo store's own order with a payment
 lifecycle. A supplier order is a note of something bought elsewhere:
 
-| `SupplierOrder`  |                                                   |
-| ---------------- | ------------------------------------------------- |
-| `supplier`       |                                                   |
-| `orderNumber`    | the shop's; `@@unique([supplier, orderNumber])`   |
-| `orderedAt`      |                                                   |
-| `status`         | enum, §9.1                                        |
-| `totalCents`     | null — as the shop charged it, including shipping |
-| `currency`       | default `TWD`, as on `Offer` and `Order`          |
-| `trackingNumber` | null                                              |
-| `note`           | null                                              |
+| `SupplierOrder`  |                                                                  |
+| ---------------- | ---------------------------------------------------------------- |
+| `userId`         | whose note it is; every query is scoped by it (Cascade)          |
+| `supplier`       | never changes once recorded                                      |
+| `orderNumber`    | the shop's; `@@unique([userId, supplier, orderNumber])`          |
+| `orderedAt`      | `@db.Date`: a day, no time or timezone to invent                 |
+| `status`         | enum, §9.1                                                       |
+| `totalCents`     | null — typed as the shop charged it, shipping and discounts in   |
+| `currency`       | default `TWD`, as on `Offer` and `Order`                         |
+| `trackingNumber` | null                                                             |
+| `note`           | null                                                             |
+| `updatedAt`      | moves on every change, lines included: the edit's version (§9.3) |
+
+The unique key is per user: two people's numbers at one shop never collide
+in meaning, and a global key would tell one user another's number exists.
+For the same reason another user's order is a 404, never a 403. The total is
+typed, not summed from the lines, because shipping and point discounts
+aren't lines (燭光: 1550 + 60 − 19).
 
 `SupplierOrderItem`: `offerId` (SetNull, with `title` copied in, as
-`OrderItem` does), `quantity`, `unitPriceCents`, `expectedAt` (copied from
-the offer when added, editable).
+`OrderItem` does; null for every line until §14 step 9), `quantity`,
+`unitPriceCents`, `expectedMonth`. The expected date is a **month**,
+`CHAR(7)` `YYYY-MM` with a CHECK on its format: a month is all the shops
+promise ("預計2026/11出貨", "12月補貨預訂"), and a stored day would be
+invented.
 
 ### 5.6 Cart and order
 
@@ -434,16 +446,39 @@ the concurrency exercise the checkout was built around.
 ### 9.1 Statuses
 
 `ordered` (placed, nothing heard) → `preparing` (confirmed; for a pre-order,
-waiting for the release) → `shipped` → `delivered`, or `cancelled`. Any
-forward move is allowed by hand; nothing moves on its own until §9.3.
+waiting for the release) → `shipped` → `delivered`, or `cancelled`. Nothing
+moves on its own until §9.4. By hand, `canChangeSupplierOrderStatus`
+(shared, so the page offers only the moves the API accepts) allows:
+
+- any forward move, skipping steps — a shop that never confirms goes
+  straight from `ordered` to `shipped`;
+- cancelling until the order ships;
+- nothing out of `delivered` or `cancelled`, which are final, so the page
+  asks before either.
+
+A status change is a compare-and-set: the `UPDATE` matches only while the
+order still has the status the rule was checked against. Two tabs moving the
+same order get one 200 and one 409 `SUPPLIER_ORDER_BAD_TRANSITION` carrying
+the status it has now — the checkout's conditional-`UPDATE` idea again.
+Sending the status the order already has is not a change, so a repeated
+submit succeeds.
+
+Payment is not a status: paying and shipping are independent (a transfer
+can be outstanding on an order already shipped). It comes later as an
+optional `paidAt`.
 
 ### 9.2 The page
 
-Grouped by status, open groups first. Each line: cover, title, supplier,
-order number (linking to the shop's order page), ordered date, expected date,
-status. Sorted by expected date within a group, so the next arrival is on
-top. Entry is a form: supplier, order number, date, and items picked from my
-offers (or typed, for a record I don't track).
+Grouped by status, the ones moving first: shipped, preparing, ordered, then
+delivered and cancelled. Each card: shop, order number, ordered day, total,
+tracking number, note, and its lines with quantity, price and expected
+month. Not paginated: one person's orders are a page's worth, and paging by
+date would split the groups. Each card's menu moves the status (§9.1), opens
+the edit form (§9.3) or deletes the order.
+
+Entry is a form at `/supplier-orders/new`: shop, order number, day, total,
+tracking, note, and typed lines. Picking lines from my offers, and covers,
+come with step 9.
 
 **A line needn't be tracked.** `offerId` is optional from the start, not
 only after a delete: a typed line has its own `title`, `supplier` comes from
@@ -452,7 +487,57 @@ later can be linked to its line from the product page, and from then on the
 line's expected date can follow the offer's. This is what lets the page
 come first (§14 step 4), before any adapter exists.
 
-### 9.3 Later: from email
+### 9.3 Changing a recorded order
+
+Everything but the shop is edited in the entry form, filled in, at
+`/supplier-orders/[id]/edit`: number, day, total, tracking, note and lines.
+Status stays in the menu, so its rules live in one place. The first version
+let only tracking and note change — a mistake was deleted and typed again —
+but real use corrected a day, a month and a price straight in the database
+within a week, so editing came before payments.
+
+**Lines are sent as the whole list.** A line with an `id` is that line,
+changed; one without is new; the order's lines missing from the list are
+removed. An `id` that isn't one of this order's lines is a 400: it is one
+another tab removed, or another order's, and recreating or adopting it would
+be wrong either way. Ids are kept rather than every line replaced, because
+step 9 links a line to an offer, and that link hangs on the line's id.
+
+**⚖️ Decision: optimistic locking on `updatedAt`.** The form sends the
+`updatedAt` of the copy it was filled from as `expectedUpdatedAt`; the
+`UPDATE`'s `WHERE` carries it, so if anything changed the order since, nothing
+is written and the answer is 409 `SUPPLIER_ORDER_STALE`.
+
+- _Last write wins_ was the alternative: simpler, and two tabs on one
+  person's order are rare — but it silently drops one of the edits, and this
+  is a form of a dozen fields, not one toggle.
+- _`updatedAt`, not a `version` integer:_ every write already moves it, so
+  no migration. Its cost is that two writes in the same millisecond look
+  like one version; a counter would be the fix if that ever mattered.
+- _Optional in the request:_ a client that only moves the status has its own
+  check (§9.1), and the API shipped before the web, so the old tracking
+  dialog kept working in between.
+
+How it holds together:
+
+- **The order row is written first in the transaction**, lines after. Its
+  `UPDATE` takes the row lock, so a second edit of the same order waits
+  there, then re-checks its `WHERE`, finds the version moved and gets 409.
+  Two edits' lines never interleave, without raising the isolation level.
+- **Changing only lines still moves the version**: they live in another
+  table, so the order row's `updatedAt` is set explicitly whenever lines are
+  sent.
+- **The version is also checked against the first read**, not only in the
+  `WHERE`, so a stale form carrying a refused status move is reported as
+  stale — the real reason — rather than as a bad transition.
+- **All or nothing**: a refused line rolls back the order's fields too.
+- **The page holds the copy it was filled from.** React Query may refetch
+  the order in the background; sending that newer version with the older
+  fields would defeat the check. On 409 the page warns and offers "Reload",
+  which replaces the fields only when asked, so what was typed can be
+  copied first.
+
+### 9.4 Later: from email
 
 The shops have no customer API, and their order pages need my login. What
 every one of them does send is email: an order confirmation and a shipping
@@ -478,7 +563,8 @@ practical before that step starts.
 
 ## 11. API
 
-All admin-only, except the reads a visitor's pages make (§12.1).
+All admin-only, except the reads a visitor's pages make and the supplier
+orders, which any signed-in user has for their own (§12.1).
 
 | Method and path                                | Purpose                                            |
 | ---------------------------------------------- | -------------------------------------------------- |
@@ -493,7 +579,8 @@ All admin-only, except the reads a visitor's pages make (§12.1).
 | `GET /admin/dashboard`                         | the home page's three sections (§12.2)             |
 | `GET /products/hot`, `GET /products/slides`    | removed, with the carousel                         |
 | `POST /cart/items`                             | takes `offerId`                                    |
-| `GET/POST/PATCH /admin/supplier-orders`        | list, record, update status                        |
+| `GET/POST /supplier-orders`                    | my orders; record one (409 if already recorded)    |
+| `GET/PATCH/DELETE /supplier-orders/:id`        | read, change (§9.1, §9.3), delete; 404 if not mine |
 
 Shapes go in `packages/shared` as now.
 
@@ -506,13 +593,18 @@ Shapes go in `packages/shared` as now.
 | `/`                | the dashboard (§12.2)                    | tracked records, lowest price each  |
 | `/products/[id]`   | comparison, candidates, refresh, aliases | comparison, "add to cart" per offer |
 | `/admin/search`    | add a record from a supplier's catalog   | —                                   |
-| `/supplier-orders` | my orders at the suppliers (§9.2)        | —                                   |
+| `/supplier-orders` | my orders at the suppliers (§9.2)        | their own, once signed in           |
 | `/cart`, `/orders` | the demo store, as today                 | the demo store, as today            |
 
 **⚖️ Decision: visitors read, they don't see the personal pages.** The prices
 are the shops' public ones, so the comparison is safe to show and is what a
-portfolio visitor should see working. The dashboard and supplier orders are
-mine — order numbers, what I bought — and stay behind the admin role.
+portfolio visitor should see working. The dashboard is mine and stays behind
+the admin role.
+
+**Changed 2026-11-07: supplier orders are everyone's own.** Rather than
+admin-only, anyone who signs up records their own orders as a personal
+purchase log across the shops — the same row-level scoping as the cart and
+the demo orders (§5.5). Nobody sees anyone else's.
 
 The navigation names the two kinds of order apart: "訂單" for the demo store's
 own, "我的供應商訂單" for mine. They are different models (§5.5) and must not
@@ -595,7 +687,10 @@ Each step is its own PR.
    the step that stops using it (expand, then contract).
 4. Supplier orders by hand: the API, the entry form and `/supplier-orders`
    (§9.2), with typed lines. **The first usable page** — for the orders
-   already waiting to ship.
+   already waiting to ship. _(Done: per-user API #68; list and entry form
+   with expected months #69; status, tracking, note and delete #70; editing
+   with the version check (§9.3) #71 and the web PR after it. Next: an
+   optional `paidAt` (§9.1).)_
 5. Checkout on offers (§8): cart and order lines, the reservation guard,
    restock on cancel and expiry. `Product`'s `priceCents`, `currency` and
    `stock` and `CartItem.productId` are dropped here.
@@ -657,6 +752,9 @@ parsing.
 - **Integrating with sources you don't control** — validate, keep the last
   good value, label staleness, never fill a gap with a guess (§6.3).
 - **SSRF** — the moment a server fetches a user's URL (§6.4).
+- **Optimistic locking** — a version in the `WHERE`, a 409 when it moved,
+  and locking the parent row first so a whole-list replace of its children
+  can't interleave (§9.3).
 - **An alias table instead of a column per language** — one artist, any
   number of names; the data, not the schema, grows with each new case
   (§5.7).
