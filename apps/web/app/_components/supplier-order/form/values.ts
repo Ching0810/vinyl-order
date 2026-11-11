@@ -1,4 +1,10 @@
-import { type CreateSupplierOrderInput, monthSchema, supplierSchema } from '@vinyl-order/shared';
+import {
+  type CreateSupplierOrderInput,
+  type SupplierOrder,
+  type UpdateSupplierOrderInput,
+  monthSchema,
+  supplierSchema,
+} from '@vinyl-order/shared';
 import { z } from 'zod';
 
 import { todayInTaipei } from '@/lib/utils/date';
@@ -14,10 +20,11 @@ const optionalDollars = z.string().trim().regex(/^\d*$/, 'Whole NT$ only');
 
 /**
  * The form's own shape: every input holds a string, as inputs do, and money
- * is in dollars. toCreateInput turns it into the API's body on submit, so what
- * is easy to type and what the API stores can each stay as they are.
+ * is in dollars. toCreateInput / toUpdateInput turn it into the API's body on
+ * submit, so what is easy to type and what the API stores can each stay as
+ * they are.
  *
- * The limits mirror createSupplierOrderSchema's so a mistake is shown on its
+ * The limits mirror the shared create and update schemas' so a mistake is shown on its
  * field before anything is sent; the API checks again and has the last word.
  */
 export const supplierOrderFormSchema = z.object({
@@ -34,6 +41,9 @@ export const supplierOrderFormSchema = z.object({
   items: z
     .array(
       z.object({
+        // The line's id when editing one that's saved, '' for a new line. Not
+        // `id`: useFieldArray keys its rows by an `id` of its own.
+        lineId: z.string(),
         title: z.string().trim().min(1, 'Enter the record').max(300),
         quantity: z
           .string()
@@ -55,6 +65,7 @@ export type SupplierOrderFormValues = z.infer<typeof supplierOrderFormSchema>;
 
 /** A blank line: one copy, nothing else known yet. */
 export const blankLine: SupplierOrderFormValues['items'][number] = {
+  lineId: '',
   title: '',
   quantity: '1',
   price: '',
@@ -74,29 +85,84 @@ export const blankSupplierOrderForm = (): SupplierOrderFormValues => {
   };
 };
 
+/**
+ * A saved order as the form's values, to edit it. Money back to dollars and
+ * null back to blank, the reverse of what saving does.
+ */
+export const toFormValues = (order: SupplierOrder): SupplierOrderFormValues => {
+  return {
+    supplier: order.supplier,
+    orderNumber: order.orderNumber,
+    orderedAt: order.orderedAt,
+    total: order.totalCents === null ? '' : String(order.totalCents / 100),
+    trackingNumber: order.trackingNumber ?? '',
+    note: order.note ?? '',
+    items: order.items.map((item) => {
+      return {
+        lineId: item.id,
+        title: item.title,
+        quantity: String(item.quantity),
+        price: String(item.unitPriceCents / 100),
+        expectedMonth: item.expectedMonth ?? '',
+      };
+    }),
+  };
+};
+
 const toCents = (dollarsText: string): number => Number(dollarsText) * 100;
 
 /**
- * The API's body from values that passed supplierOrderFormSchema. Blank
- * optional fields are sent as null rather than '': blank means "not known",
- * which is what null says.
+ * What a new and an edited order send alike, from values that passed
+ * supplierOrderFormSchema. Blank optional fields are sent as null rather than
+ * '': blank means "not known", which is what null says.
  */
-export const toCreateInput = (values: SupplierOrderFormValues): CreateSupplierOrderInput => {
+const toOrderFields = (values: SupplierOrderFormValues) => {
   return {
-    // The form schema only passes a known shop, so this can't throw.
-    supplier: supplierSchema.parse(values.supplier),
     orderNumber: values.orderNumber.trim(),
     orderedAt: values.orderedAt,
     totalCents: values.total.trim() ? toCents(values.total.trim()) : null,
     trackingNumber: values.trackingNumber.trim() || null,
     note: values.note.trim() || null,
+  };
+};
+
+const toLineFields = (item: SupplierOrderFormValues['items'][number]) => {
+  return {
+    title: item.title.trim(),
+    quantity: Number(item.quantity),
+    unitPriceCents: toCents(item.price.trim()),
+    expectedMonth: item.expectedMonth || null,
+  };
+};
+
+/** POST /supplier-orders's body. */
+export const toCreateInput = (values: SupplierOrderFormValues): CreateSupplierOrderInput => {
+  return {
+    // The form schema only passes a known shop, so this can't throw.
+    supplier: supplierSchema.parse(values.supplier),
+    ...toOrderFields(values),
+    items: values.items.map(toLineFields),
+  };
+};
+
+/**
+ * PATCH /supplier-orders/:id's body for an edit: every field, the lines as
+ * the whole list (saved ones with their id), and the version the form was
+ * filled from, so an edit made from an out-of-date copy is refused rather
+ * than saved over a newer one. No shop: it can't change. No status: that
+ * moves from the list's menu, with its own rules.
+ *
+ * @param version - the `updatedAt` of the order the form was filled from
+ */
+export const toUpdateInput = (
+  values: SupplierOrderFormValues,
+  version: string,
+): UpdateSupplierOrderInput => {
+  return {
+    ...toOrderFields(values),
     items: values.items.map((item) => {
-      return {
-        title: item.title.trim(),
-        quantity: Number(item.quantity),
-        unitPriceCents: toCents(item.price.trim()),
-        expectedMonth: item.expectedMonth || null,
-      };
+      return { ...(item.lineId ? { id: item.lineId } : {}), ...toLineFields(item) };
     }),
+    expectedUpdatedAt: version,
   };
 };
