@@ -5,7 +5,7 @@ import type { ChangeEvent } from 'react';
 import type { Control, FieldErrors, UseFormRegister } from 'react-hook-form';
 
 import CategoryFields from '@/components/admin/category-fields';
-import Panel from '@/components/admin/panel';
+import Panel from '@/components/ui/panel';
 
 /**
  * Product form state. Numbers/lists are edited as UI-friendly shapes (price in

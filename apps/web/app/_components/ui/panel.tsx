@@ -3,9 +3,9 @@ import type { ReactNode } from 'react';
 /**
  * A titled card grouping related form fields.
  *
- * The product form is long — release metadata, pricing, artwork and
- * categories all in one column. Splitting it into labelled panels gives the
- * eye somewhere to land and makes it obvious which fields belong together.
+ * Long forms — a product's release metadata, pricing and artwork; a supplier
+ * order and its records — read better in labelled panels: the eye has
+ * somewhere to land, and it is obvious which fields belong together.
  *
  * @param title - the group's label
  * @param description - optional one-line explanation
