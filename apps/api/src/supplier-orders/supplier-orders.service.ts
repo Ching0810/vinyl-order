@@ -96,16 +96,24 @@ export class SupplierOrdersService {
   }
 
   /**
-   * Change an order's status, tracking number or note.
+   * Change an order: its number, date, total, status, tracking number or note.
    *
-   * A status change is a compare-and-set: the UPDATE only matches while the
-   * order still has the status the rule was checked against. If another tab
-   * changed it in between, nothing is written and the caller gets 409 with
-   * the status it has now, instead of one request silently overwriting the
-   * other — the same conditional-UPDATE idea as the checkout's stock guard.
+   * Two guards, both compare-and-set — the UPDATE's WHERE carries what was
+   * checked, so a change made in between matches nothing and is reported
+   * instead of silently overwritten (the checkout's stock guard, again):
+   *
+   * - A status change only matches while the order still has the status the
+   *   rule was checked against; else 409 with the status it has now.
+   * - With `expectedUpdatedAt` (optimistic locking), the whole write only
+   *   matches while the order is the version the client read; else 409
+   *   SUPPLIER_ORDER_STALE. Every write moves updatedAt, so any change from
+   *   another tab is caught, not only a status move.
    *
    * Sending the status the order already has is not a change, so a repeated
-   * submit succeeds instead of failing on its own first attempt.
+   * status submit succeeds instead of failing on its own first attempt.
+   *
+   * 409 SUPPLIER_ORDER_DUPLICATE if the new number is another of this user's
+   * orders at this shop; as in create, the unique index decides.
    */
   async update(
     userId: string,
@@ -114,13 +122,24 @@ export class SupplierOrdersService {
   ): Promise<SupplierOrderContract> {
     const current = await this.prisma.supplierOrder.findFirst({
       where: { id, userId },
-      select: { status: true },
+      select: { status: true, updatedAt: true },
     });
     if (!current) throw new NotFoundException('Supplier order not found');
 
-    // Only these fields: the shop, the number and the lines never change, and
-    // a body is never passed through as it came.
+    const expectedUpdatedAt =
+      input.expectedUpdatedAt === undefined ? undefined : new Date(input.expectedUpdatedAt);
+    // Checked against the read too, not only in the WHERE, so a stale form is
+    // reported as stale even when its status move would also be refused.
+    if (expectedUpdatedAt && current.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+      throw this.stale();
+    }
+
+    // Field by field: the shop never changes, and a body is never passed
+    // through as it came.
     const data: Prisma.SupplierOrderUpdateManyMutationInput = {};
+    if (input.orderNumber !== undefined) data.orderNumber = input.orderNumber;
+    if (input.orderedAt !== undefined) data.orderedAt = fromDay(input.orderedAt);
+    if (input.totalCents !== undefined) data.totalCents = input.totalCents;
     if (input.trackingNumber !== undefined) data.trackingNumber = input.trackingNumber;
     if (input.note !== undefined) data.note = blankToNull(input.note);
 
@@ -132,18 +151,37 @@ export class SupplierOrdersService {
       data.status = nextStatus;
     }
 
-    const { count } = await this.prisma.supplierOrder.updateMany({
-      where: { id, userId, ...(nextStatus ? { status: current.status } : {}) },
-      data,
-    });
+    let count: number;
+    try {
+      ({ count } = await this.prisma.supplierOrder.updateMany({
+        where: {
+          id,
+          userId,
+          ...(nextStatus ? { status: current.status } : {}),
+          ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
+        },
+        data,
+      }));
+    } catch (error) {
+      if (violatesUniqueIndex(error, DUPLICATE_INDEX)) {
+        throw conflict(
+          'SUPPLIER_ORDER_DUPLICATE',
+          `Order ${input.orderNumber} at this shop is already recorded.`,
+        );
+      }
+      throw error;
+    }
 
     if (count === 0) {
-      // Deleted in between, or (only when changing status) moved since read.
+      // Deleted in between, or changed since read: by version if the client
+      // sent one, else (only when changing status) by status.
       const now = await this.prisma.supplierOrder.findFirst({
         where: { id, userId },
         select: { status: true },
       });
-      if (!now || !nextStatus) throw new NotFoundException('Supplier order not found');
+      if (!now) throw new NotFoundException('Supplier order not found');
+      if (expectedUpdatedAt) throw this.stale();
+      if (!nextStatus) throw new NotFoundException('Supplier order not found');
       throw this.badTransition(now.status, nextStatus);
     }
 
@@ -171,6 +209,13 @@ export class SupplierOrdersService {
       `A ${from} order can't be marked ${to}.`,
       // The status it has now, so the page can re-render without a reload.
       { status: from },
+    );
+  }
+
+  private stale() {
+    return conflict(
+      'SUPPLIER_ORDER_STALE',
+      'This order was changed after you opened it. Reload it and try again.',
     );
   }
 }
