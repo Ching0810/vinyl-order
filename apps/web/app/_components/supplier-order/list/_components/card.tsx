@@ -33,7 +33,7 @@ const Line = ({ item, currency }: { item: SupplierOrderItem; currency: string })
  *
  * The order number is plain text for now; linking it needs each shop's order
  * page URL, which is behind their login and not yet known. Its actions —
- * status, tracking and note, delete — sit behind the "more" button.
+ * status, edit, delete — sit behind the "more" button.
  *
  * @param order - the order with its lines
  * @param onFailure - show why one of its actions didn't happen
