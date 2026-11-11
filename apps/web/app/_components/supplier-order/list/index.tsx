@@ -36,11 +36,13 @@ export default function SupplierOrderList() {
   const { data: orders, isPending, isError } = useSupplierOrders();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const [noticeOpen, setNoticeOpen] = useState(false);
+  // Stable: StatusDialog's auto-close effect depends on it, and a new function
+  // each render would restart its timer.
   const closeNotice = useCallback(() => setNoticeOpen(false), []);
-  const showFailure = useCallback((message: string) => {
+  const showFailure = (message: string) => {
     setNotice({ status: 'error', message });
     setNoticeOpen(true);
-  }, []);
+  };
 
   if (authPending) return <ListSkeleton />;
 

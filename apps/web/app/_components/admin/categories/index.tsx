@@ -4,7 +4,7 @@ import { Skeleton, Stack, Text } from '@chakra-ui/react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Category } from '@vinyl-order/shared';
 
-import Panel from '@/components/admin/panel';
+import Panel from '@/components/ui/panel';
 import { categoriesQueryKey, useCategories } from '@/services/queries/categories/useCategories';
 import { useCreateCategory } from '@/services/queries/categories/useCreateCategory';
 import { useDeleteCategory } from '@/services/queries/categories/useDeleteCategory';
