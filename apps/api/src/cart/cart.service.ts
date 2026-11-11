@@ -1,8 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AddCartItemInput, Cart as CartContract } from '@vinyl-order/shared';
 
-import { Prisma } from '../generated/prisma/client';
+import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { isRecordNotFound } from '../prisma/record-not-found';
 
 /** 409 body: a code the web can branch on, not a message it has to match. */
 const outOfStock = (): ConflictException =>
@@ -129,10 +130,8 @@ export class CartService {
         data: { quantity: Math.min(quantity, product.stock) },
       });
     } catch (error) {
-      // P2025 = no such line in this cart.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new NotFoundException('That product is not in your cart');
-      }
+      // No such line in this cart.
+      if (isRecordNotFound(error)) throw new NotFoundException('That product is not in your cart');
       throw error;
     }
 

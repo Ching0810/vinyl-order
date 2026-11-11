@@ -1,8 +1,16 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { CreateCategoryInput, UpdateCategoryInput } from '@vinyl-order/shared';
 
-import { Prisma, type Category } from '../generated/prisma/client';
+import type { Category, Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { isRecordNotFound } from '../prisma/record-not-found';
+import { violatesUniqueIndex } from '../prisma/unique-violation';
+
+/** The index that makes a reused slug a 409 (schema.prisma). */
+const SLUG_INDEX = 'Category_slug_key';
+
+const slugTaken = (): ConflictException =>
+  new ConflictException('A category with that slug already exists');
 
 /**
  * Data access for storefront navigation tabs.
@@ -42,10 +50,7 @@ export class CategoriesService {
     try {
       return await this.prisma.category.create({ data });
     } catch (error) {
-      // P2002 = unique violation; here the slug is already taken.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('A category with that slug already exists');
-      }
+      if (violatesUniqueIndex(error, SLUG_INDEX)) throw slugTaken();
       throw error;
     }
   }
@@ -54,12 +59,8 @@ export class CategoriesService {
     try {
       return await this.prisma.category.update({ where: { id }, data });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2025') throw new NotFoundException('Category not found');
-        if (error.code === 'P2002') {
-          throw new ConflictException('A category with that slug already exists');
-        }
-      }
+      if (isRecordNotFound(error)) throw new NotFoundException('Category not found');
+      if (violatesUniqueIndex(error, SLUG_INDEX)) throw slugTaken();
       throw error;
     }
   }
@@ -73,9 +74,7 @@ export class CategoriesService {
     try {
       await this.prisma.category.delete({ where: { id } });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new NotFoundException('Category not found');
-      }
+      if (isRecordNotFound(error)) throw new NotFoundException('Category not found');
       throw error;
     }
   }

@@ -7,9 +7,10 @@ import type {
   UpdateProductInput,
 } from '@vinyl-order/shared';
 
-import { Prisma, type Product } from '../generated/prisma/client';
+import type { Prisma, Product } from '../generated/prisma/client';
 import { paginate } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
+import { isRecordNotFound } from '../prisma/record-not-found';
 
 /**
  * Data-access layer for the Product entity. The public storefront reads through
@@ -97,9 +98,7 @@ export class ProductsService {
       });
     } catch (error) {
       // P2025 = record to update not found.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new NotFoundException('Product not found');
-      }
+      if (isRecordNotFound(error)) throw new NotFoundException('Product not found');
       throw error;
     }
   }
@@ -108,9 +107,7 @@ export class ProductsService {
     try {
       await this.prisma.product.delete({ where: { id } });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new NotFoundException('Product not found');
-      }
+      if (isRecordNotFound(error)) throw new NotFoundException('Product not found');
       throw error;
     }
   }
