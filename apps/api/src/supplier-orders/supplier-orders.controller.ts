@@ -40,6 +40,12 @@ export class SupplierOrdersController {
     return this.supplierOrders.list(user.id);
   }
 
+  /** GET /supplier-orders/:id — one order with its lines. 404 unless it's the user's. */
+  @Get(':id')
+  get(@CurrentUser() user: PublicUser, @Param('id') id: string): Promise<SupplierOrder> {
+    return this.supplierOrders.get(user.id, id);
+  }
+
   /** POST /supplier-orders — record an order and its lines. 409 if already recorded. */
   @Post()
   create(
@@ -49,7 +55,11 @@ export class SupplierOrdersController {
     return this.supplierOrders.create(user.id, dto);
   }
 
-  /** PATCH /supplier-orders/:id — status, tracking number or note. 404 unless it's the user's. */
+  /**
+   * PATCH /supplier-orders/:id — any of its fields but the shop, lines as a
+   * whole list. 404 unless it's the user's; 409 on a refused status, a
+   * duplicate number or a stale `expectedUpdatedAt`.
+   */
   @Patch(':id')
   update(
     @CurrentUser() user: PublicUser,

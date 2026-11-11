@@ -148,9 +148,6 @@ export type CreateSupplierOrderItemInput = z.infer<typeof createSupplierOrderIte
  * offers they track, accepting an id would only let a client link a line to
  * any offer it can guess. It comes with the product page's "record an order"
  * (tracker.md §14 step 9).
- *
- * Lines and the order number can't be edited afterwards — a mistake is
- * deleted and entered again — so they are checked here, once.
  */
 export const createSupplierOrderSchema = z.object({
   supplier: supplierSchema,
@@ -164,23 +161,62 @@ export const createSupplierOrderSchema = z.object({
 export type CreateSupplierOrderInput = z.infer<typeof createSupplierOrderSchema>;
 
 /**
+ * One line of an edited order. With an `id`, it is that existing line,
+ * changed; without one, it is a new line. Keeping ids, rather than replacing
+ * every line, keeps a line's identity — what an offer link (step 9) hangs on.
+ */
+export const updateSupplierOrderItemSchema = createSupplierOrderItemSchema.extend({
+  id: z.uuid().optional(),
+});
+export type UpdateSupplierOrderItemInput = z.infer<typeof updateSupplierOrderItemSchema>;
+
+/**
  * PATCH /supplier-orders/:id body: what changes after an order is placed.
  *
- * Every field optional with no defaults, so only what is sent changes; null
- * clears a tracking number or note. At least one field, so an empty PATCH is
- * a client mistake rather than a silent no-op. A status must be a change
- * canChangeSupplierOrderStatus allows from the current one, which only the API
- * can check. No `supplier`: an order placed at one shop is never another's.
+ * Every field optional, so only what is sent changes; null clears a total,
+ * tracking number or note. At least one field to change, so an empty PATCH is
+ * a client mistake rather than a silent no-op. No `supplier`: an order placed
+ * at one shop is never another's.
+ *
+ * - status: must be a change canChangeSupplierOrderStatus allows from the
+ *   current one, which only the API can check.
+ * - items: the order's whole list of lines, not a patch to it. Lines with an
+ *   id are updated, lines without are added, and the order's lines missing
+ *   from the list are removed. An id that isn't one of this order's lines is
+ *   refused, so a line another tab deleted is never quietly brought back.
+ * - expectedUpdatedAt: the order's `updatedAt` as the client last read it.
+ *   When sent, the change is only applied if the order hasn't changed since,
+ *   else 409 SUPPLIER_ORDER_STALE — so a form filled from an old copy can't
+ *   overwrite a newer edit. Optional so a client that only moves the status,
+ *   which has its own check, doesn't need it.
  */
 export const updateSupplierOrderSchema = z
   .object({
+    orderNumber: z.string().trim().min(1).max(100).optional(),
+    orderedAt: z.iso.date().optional(),
+    totalCents: z.number().int().nonnegative().nullable().optional(),
     status: supplierOrderStatusSchema.optional(),
     trackingNumber: z.string().trim().min(1).max(100).nullable().optional(),
     note: z.string().trim().max(1000).nullable().optional(),
+    items: z
+      .array(updateSupplierOrderItemSchema)
+      .min(1)
+      .max(50)
+      .refine(
+        (items) => {
+          const ids = items.flatMap((item) => (item.id ? [item.id] : []));
+          return new Set(ids).size === ids.length;
+        },
+        { message: 'Each line id may appear only once' },
+      )
+      .optional(),
+    expectedUpdatedAt: z.iso.datetime().optional(),
   })
-  .refine((body) => Object.keys(body).length > 0, {
-    message: 'Send at least one of status, trackingNumber or note',
-  });
+  .refine(
+    ({ expectedUpdatedAt: _version, ...changes }) =>
+      Object.values(changes).some((value) => value !== undefined),
+    { message: 'Send at least one field to change' },
+  );
 export type UpdateSupplierOrderInput = z.infer<typeof updateSupplierOrderSchema>;
 
 // ---- Errors ----
@@ -194,9 +230,13 @@ export type UpdateSupplierOrderInput = z.infer<typeof updateSupplierOrderSchema>
  * - SUPPLIER_ORDER_BAD_TRANSITION: the status change isn't one
  *   canChangeSupplierOrderStatus allows from where the order is now — typically a
  *   second tab that moved it first. The body carries the current `status`.
+ * - SUPPLIER_ORDER_STALE: the order changed after the client read it (its
+ *   `updatedAt` no longer matches `expectedUpdatedAt`); nothing was written.
+ *   The client reloads the order and lets the user redo the edit.
  */
 export const supplierOrderErrorCodeSchema = z.enum([
   'SUPPLIER_ORDER_DUPLICATE',
   'SUPPLIER_ORDER_BAD_TRANSITION',
+  'SUPPLIER_ORDER_STALE',
 ]);
 export type SupplierOrderErrorCode = z.infer<typeof supplierOrderErrorCodeSchema>;

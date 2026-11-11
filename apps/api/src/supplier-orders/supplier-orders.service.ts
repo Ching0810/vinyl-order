@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   canChangeSupplierOrderStatus,
   type CreateSupplierOrderInput,
   type SupplierOrder as SupplierOrderContract,
   type SupplierOrderStatus,
   type UpdateSupplierOrderInput,
+  type UpdateSupplierOrderItemInput,
 } from '@vinyl-order/shared';
 
 import type { Prisma } from '../generated/prisma/client';
@@ -53,6 +54,16 @@ export class SupplierOrdersService {
     return orders.map(toSupplierOrderContract);
   }
 
+  /** One of the user's orders with its lines, as the edit form loads it. */
+  async get(userId: string, id: string): Promise<SupplierOrderContract> {
+    const order = await this.prisma.supplierOrder.findFirst({
+      where: { id, userId },
+      include: withItems,
+    });
+    if (!order) throw new NotFoundException('Supplier order not found');
+    return toSupplierOrderContract(order);
+  }
+
   /**
    * Record an order and its lines in one write, so an order never exists
    * without the lines it was entered with.
@@ -96,31 +107,88 @@ export class SupplierOrdersService {
   }
 
   /**
-   * Change an order's status, tracking number or note.
+   * Change an order: its number, date, total, status, tracking number, note
+   * or lines (replaceItems).
    *
-   * A status change is a compare-and-set: the UPDATE only matches while the
-   * order still has the status the rule was checked against. If another tab
-   * changed it in between, nothing is written and the caller gets 409 with
-   * the status it has now, instead of one request silently overwriting the
-   * other — the same conditional-UPDATE idea as the checkout's stock guard.
+   * Two guards, both compare-and-set — the UPDATE's WHERE carries what was
+   * checked, so a change made in between matches nothing and is reported
+   * instead of silently overwritten (the checkout's stock guard, again):
+   *
+   * - A status change only matches while the order still has the status the
+   *   rule was checked against; else 409 with the status it has now.
+   * - With `expectedUpdatedAt` (optimistic locking), the whole write only
+   *   matches while the order is the version the client read; else 409
+   *   SUPPLIER_ORDER_STALE. Every write moves updatedAt, so any change from
+   *   another tab is caught, not only a status move.
    *
    * Sending the status the order already has is not a change, so a repeated
-   * submit succeeds instead of failing on its own first attempt.
+   * status submit succeeds instead of failing on its own first attempt.
+   *
+   * 409 SUPPLIER_ORDER_DUPLICATE if the new number is another of this user's
+   * orders at this shop; as in create, the unique index decides.
    */
   async update(
     userId: string,
     id: string,
     input: UpdateSupplierOrderInput,
   ): Promise<SupplierOrderContract> {
-    const current = await this.prisma.supplierOrder.findFirst({
+    try {
+      // One transaction, so a refused line leaves the order's fields unchanged
+      // too: an edit is applied whole or not at all.
+      await this.prisma.$transaction(async (transaction) => {
+        await this.updateOrderRow(transaction, userId, id, input);
+        if (input.items) await this.replaceItems(transaction, id, input.items);
+      });
+    } catch (error) {
+      if (violatesUniqueIndex(error, DUPLICATE_INDEX)) {
+        throw conflict(
+          'SUPPLIER_ORDER_DUPLICATE',
+          `Order ${input.orderNumber} at this shop is already recorded.`,
+        );
+      }
+      throw error;
+    }
+
+    return this.get(userId, id);
+  }
+
+  /** Delete an order and its lines. */
+  async remove(userId: string, id: string): Promise<void> {
+    const { count } = await this.prisma.supplierOrder.deleteMany({ where: { id, userId } });
+    if (count === 0) throw new NotFoundException('Supplier order not found');
+  }
+
+  /**
+   * update()'s write to the order row itself, with both guards. Runs first in
+   * the transaction: its UPDATE locks the row, so a second edit of the same
+   * order waits here rather than interleaving its lines with this one's.
+   */
+  private async updateOrderRow(
+    transaction: Prisma.TransactionClient,
+    userId: string,
+    id: string,
+    input: UpdateSupplierOrderInput,
+  ): Promise<void> {
+    const current = await transaction.supplierOrder.findFirst({
       where: { id, userId },
-      select: { status: true },
+      select: { status: true, updatedAt: true },
     });
     if (!current) throw new NotFoundException('Supplier order not found');
 
-    // Only these fields: the shop, the number and the lines never change, and
-    // a body is never passed through as it came.
+    const expectedUpdatedAt =
+      input.expectedUpdatedAt === undefined ? undefined : new Date(input.expectedUpdatedAt);
+    // Checked against the read too, not only in the WHERE, so a stale form is
+    // reported as stale even when its status move would also be refused.
+    if (expectedUpdatedAt && current.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+      throw this.stale();
+    }
+
+    // Field by field: the shop never changes, and a body is never passed
+    // through as it came.
     const data: Prisma.SupplierOrderUpdateManyMutationInput = {};
+    if (input.orderNumber !== undefined) data.orderNumber = input.orderNumber;
+    if (input.orderedAt !== undefined) data.orderedAt = fromDay(input.orderedAt);
+    if (input.totalCents !== undefined) data.totalCents = input.totalCents;
     if (input.trackingNumber !== undefined) data.trackingNumber = input.trackingNumber;
     if (input.note !== undefined) data.note = blankToNull(input.note);
 
@@ -132,37 +200,79 @@ export class SupplierOrdersService {
       data.status = nextStatus;
     }
 
-    const { count } = await this.prisma.supplierOrder.updateMany({
-      where: { id, userId, ...(nextStatus ? { status: current.status } : {}) },
+    // Lines live in their own table, so changing only them wouldn't touch
+    // this row. Set its updatedAt anyway: the version must move whenever the
+    // order as a whole changes, or another tab's stale lines would pass.
+    if (input.items) data.updatedAt = new Date();
+
+    const { count } = await transaction.supplierOrder.updateMany({
+      where: {
+        id,
+        userId,
+        ...(nextStatus ? { status: current.status } : {}),
+        ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
+      },
       data,
     });
 
     if (count === 0) {
-      // Deleted in between, or (only when changing status) moved since read.
-      const now = await this.prisma.supplierOrder.findFirst({
+      // Deleted in between, or changed since read: by version if the client
+      // sent one, else (only when changing status) by status.
+      const now = await transaction.supplierOrder.findFirst({
         where: { id, userId },
         select: { status: true },
       });
-      if (!now || !nextStatus) throw new NotFoundException('Supplier order not found');
+      if (!now) throw new NotFoundException('Supplier order not found');
+      if (expectedUpdatedAt) throw this.stale();
+      if (!nextStatus) throw new NotFoundException('Supplier order not found');
       throw this.badTransition(now.status, nextStatus);
     }
-
-    return this.findOne(userId, id);
   }
 
-  /** Delete an order and its lines: how a mistyped one is corrected. */
-  async remove(userId: string, id: string): Promise<void> {
-    const { count } = await this.prisma.supplierOrder.deleteMany({ where: { id, userId } });
-    if (count === 0) throw new NotFoundException('Supplier order not found');
-  }
-
-  private async findOne(userId: string, id: string): Promise<SupplierOrderContract> {
-    const order = await this.prisma.supplierOrder.findFirst({
-      where: { id, userId },
-      include: withItems,
+  /**
+   * Make the order's lines exactly `items`: lines with an id are updated,
+   * lines without are added, and the order's other lines are removed. Called
+   * after updateOrderRow, which has checked the order is this user's.
+   *
+   * 400 if an id isn't one of this order's lines — another order's line, or
+   * one already removed, say by another tab. Recreating it would bring back
+   * a line someone deleted; adopting another order's would move it.
+   */
+  private async replaceItems(
+    transaction: Prisma.TransactionClient,
+    supplierOrderId: string,
+    items: UpdateSupplierOrderItemInput[],
+  ): Promise<void> {
+    const existing = await transaction.supplierOrderItem.findMany({
+      where: { supplierOrderId },
+      select: { id: true },
     });
-    if (!order) throw new NotFoundException('Supplier order not found');
-    return toSupplierOrderContract(order);
+    const existingIds = new Set(existing.map((line) => line.id));
+    const keptIds = items.flatMap((item) => (item.id ? [item.id] : []));
+    const unknown = keptIds.filter((itemId) => !existingIds.has(itemId));
+    if (unknown.length > 0) {
+      throw new BadRequestException(`Not a line of this order: ${unknown.join(', ')}`);
+    }
+
+    await transaction.supplierOrderItem.deleteMany({
+      where: { supplierOrderId, id: { notIn: keptIds } },
+    });
+
+    // One UPDATE per kept line: each has its own values, and an order has at
+    // most 50 lines.
+    for (const { id, ...line } of items) {
+      const fields = {
+        title: line.title,
+        quantity: line.quantity,
+        unitPriceCents: line.unitPriceCents,
+        expectedMonth: line.expectedMonth ?? null,
+      };
+      if (id) {
+        await transaction.supplierOrderItem.update({ where: { id }, data: fields });
+      } else {
+        await transaction.supplierOrderItem.create({ data: { supplierOrderId, ...fields } });
+      }
+    }
   }
 
   private badTransition(from: SupplierOrderStatus, to: SupplierOrderStatus) {
@@ -171,6 +281,13 @@ export class SupplierOrdersService {
       `A ${from} order can't be marked ${to}.`,
       // The status it has now, so the page can re-render without a reload.
       { status: from },
+    );
+  }
+
+  private stale() {
+    return conflict(
+      'SUPPLIER_ORDER_STALE',
+      'This order was changed after you opened it. Reload it and try again.',
     );
   }
 }
