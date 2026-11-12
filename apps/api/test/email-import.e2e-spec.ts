@@ -65,6 +65,7 @@ describe('Email import: reading confirmations (e2e)', () => {
         orderNumber: '1001',
         orderedAt: '2026-11-04',
         totalCents: 94_000,
+        paidAt: null,
         items: [
           {
             title: 'Test Artist - Sample Album LP (12月補貨預訂)',
@@ -86,6 +87,7 @@ describe('Email import: reading confirmations (e2e)', () => {
         orderNumber: '2002',
         orderedAt: '2026-10-09',
         totalCents: 55_000,
+        paidAt: null,
         items: [
           {
             title: 'Test Band - Calendar 2027 【壁掛式年曆】（官方周邊） / 預購, LP',
@@ -104,6 +106,7 @@ describe('Email import: reading confirmations (e2e)', () => {
         orderNumber: '3003',
         orderedAt: '2026-10-05',
         totalCents: 124_000,
+        paidAt: null,
         items: [
           {
             title:
@@ -123,6 +126,20 @@ describe('Email import: reading confirmations (e2e)', () => {
     // 2026-11-03 16:30 UTC is already the 4th in Taipei.
     it("is dated by the email's day in Taipei, not in UTC", () => {
       expect(orderOf({ ...THT, date: '2026-11-03T16:30:00.000Z' }).orderedAt).toBe('2026-11-04');
+    });
+
+    // The fixture is cash on pickup: $0.00 paid at checkout, so unpaid (as
+    // above). Paid by card, the whole total shows there instead.
+    it('is paid on its day when Shopify says the whole total was paid', () => {
+      const html = ROTTEN_BLUES.html.replace('$0.00 TWD', '$1,240.00 TWD');
+
+      expect(orderOf({ ...ROTTEN_BLUES, html }).paidAt).toBe('2026-10-05');
+    });
+
+    it('is unpaid when only part of the total was paid', () => {
+      const html = ROTTEN_BLUES.html.replace('$0.00 TWD', '$100.00 TWD');
+
+      expect(orderOf({ ...ROTTEN_BLUES, html }).paidAt).toBeNull();
     });
 
     it('recognises the sender whatever the display name and case', () => {

@@ -38,20 +38,28 @@ export type Supplier = z.infer<typeof supplierSchema>;
  * - ordered: placed, nothing heard yet.
  * - preparing: the shop confirmed it; for a pre-order, waiting for release.
  * - shipped: on its way.
- * - delivered: arrived.
+ * - ready_for_pickup: waiting at the convenience store to be collected.
+ * - delivered: in the user's hands.
  * - cancelled: will not arrive.
  */
 export const supplierOrderStatusSchema = z.enum([
   'ordered',
   'preparing',
   'shipped',
+  'ready_for_pickup',
   'delivered',
   'cancelled',
 ]);
 export type SupplierOrderStatus = z.infer<typeof supplierOrderStatusSchema>;
 
 /** The way forward, in order. `cancelled` is a side exit, not a step. */
-const FORWARD: readonly SupplierOrderStatus[] = ['ordered', 'preparing', 'shipped', 'delivered'];
+const FORWARD: readonly SupplierOrderStatus[] = [
+  'ordered',
+  'preparing',
+  'shipped',
+  'ready_for_pickup',
+  'delivered',
+];
 
 /** Statuses an order can still be cancelled from: the shop hasn't sent it. */
 const CANCELLABLE: readonly SupplierOrderStatus[] = ['ordered', 'preparing'];
@@ -62,7 +70,8 @@ const CANCELLABLE: readonly SupplierOrderStatus[] = ['ordered', 'preparing'];
  * why updateSupplierOrderSchema has no `supplier`.
  *
  * Any forward move, skipping steps included — a shop that never confirms
- * before shipping goes straight from `ordered` to `shipped`. Never backwards,
+ * before shipping goes straight from `ordered` to `shipped`, and a parcel
+ * brought to the door never waits at a store. Never backwards,
  * and `delivered` and `cancelled` are final. Cancelling is allowed until the
  * order ships.
  *
@@ -128,6 +137,11 @@ export const supplierOrderSchema = z.object({
   totalCents: z.number().int().nullable(),
   /** ISO 4217 currency code, e.g. "TWD". */
   currency: z.string(),
+  /**
+   * `YYYY-MM-DD`, the day it was paid, or null while unpaid. Not a status:
+   * cash on pickup is paid after the parcel has shipped (tracker.md §9.1).
+   */
+  paidAt: z.iso.date().nullable(),
   trackingNumber: z.string().nullable(),
   note: z.string().nullable(),
   items: z.array(supplierOrderItemSchema),
@@ -160,6 +174,8 @@ export const createSupplierOrderSchema = z.object({
   orderNumber: z.string().trim().min(1).max(100),
   orderedAt: z.iso.date(),
   totalCents: z.number().int().nonnegative().nullable().optional(),
+  /** Left out or null: unpaid. The form fills in the order's day. */
+  paidAt: z.iso.date().nullable().optional(),
   trackingNumber: z.string().trim().min(1).max(100).nullable().optional(),
   note: z.string().trim().max(1000).nullable().optional(),
   items: z.array(createSupplierOrderItemSchema).min(1).max(50),
@@ -180,7 +196,8 @@ export type UpdateSupplierOrderItemInput = z.infer<typeof updateSupplierOrderIte
  * PATCH /supplier-orders/:id body: what changes after an order is placed.
  *
  * Every field optional, so only what is sent changes; null clears a total,
- * tracking number or note. At least one field to change, so an empty PATCH is
+ * payment day (unpaid again), tracking number or note. At least one field to
+ * change, so an empty PATCH is
  * a client mistake rather than a silent no-op. No `supplier`: an order placed
  * at one shop is never another's.
  *
@@ -201,6 +218,7 @@ export const updateSupplierOrderSchema = z
     orderNumber: z.string().trim().min(1).max(100).optional(),
     orderedAt: z.iso.date().optional(),
     totalCents: z.number().int().nonnegative().nullable().optional(),
+    paidAt: z.iso.date().nullable().optional(),
     status: supplierOrderStatusSchema.optional(),
     trackingNumber: z.string().trim().min(1).max(100).nullable().optional(),
     note: z.string().trim().max(1000).nullable().optional(),

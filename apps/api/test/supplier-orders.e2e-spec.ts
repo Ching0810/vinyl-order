@@ -141,6 +141,18 @@ describe('Supplier orders (e2e)', () => {
       expect(order.items[0].expectedMonth).toBe('2027-01');
     });
 
+    // Paid on a day of its own, or unpaid when no day is given (cash on
+    // pickup); the day is stored as a day, like the order's.
+    it('records the payment day, or none', async () => {
+      const { token } = await createUser();
+
+      const paid = await recorded(token, newOrder({ paidAt: '2026-12-31' }));
+      const unpaid = await recorded(token);
+
+      expect(paid.paidAt).toBe('2026-12-31');
+      expect(unpaid.paidAt).toBeNull();
+    });
+
     // The CHECK backs the schema: a month written around the API (a script,
     // a later import) still can't be "2026-13" or a day.
     it('refuses a malformed month in the database itself', async () => {
@@ -350,9 +362,22 @@ describe('Supplier orders (e2e)', () => {
       expect(cleared.body).toMatchObject({ orderNumber: 'T-FIXED', totalCents: null });
     });
 
+    // "Mark as paid", and back to unpaid; the order's other fields untouched.
+    it('marks it paid on a day, and unpaid again', async () => {
+      const { token } = await createUser();
+      const order = await recorded(token);
+
+      const paid = await update(token, order.id, { paidAt: '2026-11-12' }).expect(200);
+      expect(paid.body).toMatchObject({ paidAt: '2026-11-12', status: 'ordered' });
+
+      const unpaid = await update(token, order.id, { paidAt: null }).expect(200);
+      expect(unpaid.body).toMatchObject({ paidAt: null });
+    });
+
     it.each([
       ['a blank order number', { orderNumber: '  ' }],
       ['a bad day', { orderedAt: '2026-13-01' }],
+      ['a bad payment day', { paidAt: '2026-11-31' }],
       ['a negative total', { totalCents: -1 }],
       ['no lines', { items: [] }],
       ['a version only', { expectedUpdatedAt: '2026-11-01T00:00:00.000Z' }],
@@ -578,9 +603,28 @@ describe('Supplier orders (e2e)', () => {
       expect(res.body).toMatchObject({ status: 'shipped' });
     });
 
+    // Waiting at the store, then collected — paid at the counter in the same
+    // request, as the page sends it for cash on pickup.
+    it('moves through ready for pickup to delivered, paid on collecting', async () => {
+      const { token } = await createUser();
+      const order = await recorded(token);
+      await setStatus(order.id, 'shipped');
+
+      await update(token, order.id, { status: 'ready_for_pickup' }).expect(200);
+      const res = await update(token, order.id, {
+        status: 'delivered',
+        paidAt: '2026-11-12',
+      }).expect(200);
+
+      expect(res.body).toMatchObject({ status: 'delivered', paidAt: '2026-11-12' });
+    });
+
     it.each<[SupplierOrderStatus, SupplierOrderStatus]>([
       ['shipped', 'preparing'],
       ['shipped', 'cancelled'],
+      ['ready_for_pickup', 'shipped'],
+      ['ready_for_pickup', 'cancelled'],
+      ['delivered', 'ready_for_pickup'],
       ['delivered', 'shipped'],
       ['cancelled', 'ordered'],
     ])('refuses %s → %s, answering with the current status', async (from, to) => {
@@ -648,12 +692,16 @@ describe('Supplier orders (e2e)', () => {
     const allowed = new Set([
       'ordered→preparing',
       'ordered→shipped',
+      'ordered→ready_for_pickup',
       'ordered→delivered',
       'ordered→cancelled',
       'preparing→shipped',
+      'preparing→ready_for_pickup',
       'preparing→delivered',
       'preparing→cancelled',
+      'shipped→ready_for_pickup',
       'shipped→delivered',
+      'ready_for_pickup→delivered',
     ]);
     const statuses = supplierOrderStatusSchema.options;
     const pairs = statuses.flatMap((from) => statuses.map((to) => [from, to] as const));

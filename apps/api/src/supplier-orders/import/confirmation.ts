@@ -31,6 +31,12 @@ export interface ParsedOrder {
   /** `YYYY-MM-DD`, the email's day in Taipei. */
   orderedAt: string;
   totalCents: number;
+  /**
+   * The order's day if the email says the whole total was paid at checkout,
+   * else null — unpaid until the user, or a payment notice, says otherwise
+   * (tracker.md §9.1).
+   */
+  paidAt: string | null;
   items: ParsedLine[];
 }
 
@@ -49,5 +55,12 @@ export type StatedLine = Pick<ParsedLine, 'title' | 'quantity' | 'unitPriceCents
  * afterwards, the same way for every platform.
  */
 export type PlatformParse =
-  | { ok: true; orderNumber: string; totalCents: number; lines: StatedLine[] }
+  | {
+      ok: true;
+      orderNumber: string;
+      totalCents: number;
+      /** Whether the email says the whole total was paid when ordering. */
+      paidInFull: boolean;
+      lines: StatedLine[];
+    }
   | { ok: false; reason: string };

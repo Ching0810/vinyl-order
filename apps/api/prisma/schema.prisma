@@ -327,12 +327,13 @@ enum Availability {
   sold_out
 }
 
-/// Where an order I placed at a shop stands (tracker.md §9.1). Moved by hand
-/// for now; any forward move is allowed.
+/// Where an order I placed at a shop stands (tracker.md §9.1). Any forward
+/// move is allowed. ready_for_pickup: waiting at the convenience store.
 enum SupplierOrderStatus {
   ordered
   preparing
   shipped
+  ready_for_pickup
   delivered
   cancelled
 }
@@ -447,8 +448,8 @@ model OfferSnapshot {
 }
 
 /// An order a user placed at one of the shops: their own note of something
-/// bought elsewhere, with no payment lifecycle, seen only by them. Kept apart
-/// from Order, which is the demo store's own (tracker.md §5.5).
+/// bought elsewhere, seen only by them. Kept apart from Order, which is the
+/// demo store's own, with a payment lifecycle (tracker.md §5.5).
 model SupplierOrder {
   id          String              @id @default(uuid())
   /// Whose note this is. Every read and write is scoped by it. Cascade: a
@@ -463,7 +464,10 @@ model SupplierOrder {
 
   /// What the shop charged, shipping included. Null until entered.
   totalCents     Int?
-  currency       String  @default("TWD")
+  currency       String    @default("TWD")
+  /// The day it was paid; null is unpaid. Not a status: cash on pickup is
+  /// paid after the parcel has shipped (tracker.md §9.1).
+  paidAt         DateTime? @db.Date
   trackingNumber String?
   note           String?
 
