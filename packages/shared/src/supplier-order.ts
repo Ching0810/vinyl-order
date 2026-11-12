@@ -99,6 +99,12 @@ export const supplierOrderItemSchema = z.object({
   lineTotalCents: z.number().int(),
   /** The month the shop expects to send it, or null if it doesn't say. */
   expectedMonth: monthSchema.nullable(),
+  /**
+   * The cover the shop's confirmation email showed, or null — set only by
+   * email import, and only from the shops' CDNs (tracker.md §9.4). Not in
+   * any request: a typed URL could point the page at any host.
+   */
+  imageUrl: z.url().nullable(),
 });
 export type SupplierOrderItem = z.infer<typeof supplierOrderItemSchema>;
 
@@ -219,11 +225,76 @@ export const updateSupplierOrderSchema = z
   );
 export type UpdateSupplierOrderInput = z.infer<typeof updateSupplierOrderSchema>;
 
+// ---- Import token ----
+
+/**
+ * The user's token for importing orders from their confirmation emails
+ * (tracker.md §9.4), as the page shows it: when it was made and last used.
+ * Never the token itself — that is shown once, when it is created.
+ */
+export const supplierOrderImportTokenSchema = z.object({
+  createdAt: z.iso.datetime(),
+  /** When the Apps Script last used it, or null if it never has. */
+  lastUsedAt: z.iso.datetime().nullable(),
+});
+export type SupplierOrderImportToken = z.infer<typeof supplierOrderImportTokenSchema>;
+
+/**
+ * GET /supplier-orders/import-token: the user's token, or null if they have
+ * none. Wrapped so "none" is a JSON body rather than an empty response.
+ */
+export const supplierOrderImportTokenStatusSchema = z.object({
+  importToken: supplierOrderImportTokenSchema.nullable(),
+});
+export type SupplierOrderImportTokenStatus = z.infer<typeof supplierOrderImportTokenStatusSchema>;
+
+/**
+ * POST /supplier-orders/import-token: a new token, replacing any before it.
+ * The only response that carries the token; only its hash is kept.
+ */
+export const createdSupplierOrderImportTokenSchema = supplierOrderImportTokenSchema.extend({
+  /** `vo_imp_` and 43 URL-safe characters (32 random bytes). */
+  token: z.string(),
+});
+export type CreatedSupplierOrderImportToken = z.infer<typeof createdSupplierOrderImportTokenSchema>;
+
+// ---- Email import ----
+
+/**
+ * POST /supplier-orders/import body: one confirmation email as the user's
+ * Apps Script sends it, with its import token in the Authorization header
+ * (tracker.md §9.4). Links are already stripped. The limits are generous for
+ * the emails seen (the largest body is ~31 KB) and bound what one request
+ * can make the parser read.
+ */
+export const importSupplierOrderEmailSchema = z.object({
+  /** The From header, display name and all. */
+  from: z.string().min(1).max(320),
+  subject: z.string().max(500),
+  /** The Date header, as an ISO datetime. */
+  date: z.iso.datetime({ offset: true }),
+  html: z.string().min(1).max(90_000),
+});
+export type ImportSupplierOrderEmailInput = z.infer<typeof importSupplierOrderEmailSchema>;
+
+/**
+ * What an import came to. Never the order itself: the route only writes, so
+ * a leaked token can't be used to read anyone's orders by guessing numbers.
+ *
+ * - created (201): recorded now.
+ * - already_recorded (200): this order number at this shop is already in the
+ *   user's list — the same email sent again, or the order typed in by hand.
+ */
+export const importSupplierOrderResultSchema = z.object({
+  result: z.enum(['created', 'already_recorded']),
+});
+export type ImportSupplierOrderResult = z.infer<typeof importSupplierOrderResultSchema>;
+
 // ---- Errors ----
 
 /**
- * Why a supplier order request was refused (all 409). A code so the page can
- * branch without matching on text.
+ * Why a supplier order request was refused — a 409, except where noted. A
+ * code so the page can branch without matching on text.
  *
  * - SUPPLIER_ORDER_DUPLICATE: this user already recorded this order number at
  *   this shop. Another user's orders never cause it.
@@ -233,10 +304,14 @@ export type UpdateSupplierOrderInput = z.infer<typeof updateSupplierOrderSchema>
  * - SUPPLIER_ORDER_STALE: the order changed after the client read it (its
  *   `updatedAt` no longer matches `expectedUpdatedAt`); nothing was written.
  *   The client reloads the order and lets the user redo the edit.
+ * - SUPPLIER_ORDER_EMAIL_UNREADABLE (422): an imported email isn't a
+ *   confirmation this site can read. The body's `reason` says why in a short
+ *   phrase, never quoting the email; it waits to be typed by hand.
  */
 export const supplierOrderErrorCodeSchema = z.enum([
   'SUPPLIER_ORDER_DUPLICATE',
   'SUPPLIER_ORDER_BAD_TRANSITION',
   'SUPPLIER_ORDER_STALE',
+  'SUPPLIER_ORDER_EMAIL_UNREADABLE',
 ]);
 export type SupplierOrderErrorCode = z.infer<typeof supplierOrderErrorCodeSchema>;

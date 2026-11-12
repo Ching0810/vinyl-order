@@ -59,6 +59,7 @@ export const toSupplierOrderContract = (order: SupplierOrderWithItems): Supplier
     lineTotalCents: item.unitPriceCents * item.quantity,
     // Stored as the same `YYYY-MM` text the contract carries.
     expectedMonth: item.expectedMonth,
+    imageUrl: item.imageUrl,
   })),
   createdAt: order.createdAt.toISOString(),
   updatedAt: order.updatedAt.toISOString(),

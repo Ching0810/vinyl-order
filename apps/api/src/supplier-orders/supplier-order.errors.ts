@@ -10,3 +10,10 @@ export const conflict = (
   message: string,
   extra: object = {},
 ): ConflictException => new ConflictException({ statusCode: 409, code, message, ...extra });
+
+/** Whether an error is the 409 `conflict` made with this code. */
+export const isConflict = (error: unknown, code: SupplierOrderErrorCode): boolean => {
+  if (!(error instanceof ConflictException)) return false;
+  const body = error.getResponse();
+  return typeof body === 'object' && 'code' in body && body.code === code;
+};

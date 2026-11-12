@@ -51,9 +51,10 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  cart           Cart?
-  orders         Order[]
-  supplierOrders SupplierOrder[]
+  cart                     Cart?
+  orders                   Order[]
+  supplierOrders           SupplierOrder[]
+  supplierOrderImportToken SupplierOrderImportToken?
 }
 
 /// A customer's shopping cart. One per user, created lazily on first add.
@@ -493,14 +494,39 @@ model SupplierOrderItem {
   offer   Offer?  @relation(fields: [offerId], references: [id], onDelete: SetNull)
 
   title          String
-  quantity       Int       @default(1)
+  quantity       Int     @default(1)
   unitPriceCents Int
   /// The month the shop expects to send it, "YYYY-MM", or null if it doesn't
   /// say. A month, not a day: the shops only ever promise one ("預計2026/11出貨"),
   /// and a stored day would be invented. As text it is the same on the wire and
   /// in a month input, and sorts in time order. CHECK (format) in the migration.
-  expectedMonth  String?   @db.Char(7)
+  expectedMonth  String? @db.Char(7)
+  /// The cover the shop's confirmation email showed, or null. Only from the
+  /// CDNs the web allows, which the API checks rather than a CHECK here: that
+  /// list changes, a month's format doesn't. Superseded by the linked offer's
+  /// image once there is one (tracker.md §14 step 9).
+  imageUrl       String?
 
   @@index([supplierOrderId])
   @@index([offerId])
+}
+
+/// A user's token for importing supplier orders from their confirmation
+/// emails (tracker.md §9.4). It can do nothing but add orders to its user's
+/// own list. One per user: creating another replaces it, deleting it revokes.
+///
+/// Only the SHA-256 is kept. The token is 32 random bytes, so unlike a
+/// password it needs no slow hash or salt to resist guessing, and a leaked
+/// row holds nothing that works.
+model SupplierOrderImportToken {
+  id         String    @id @default(uuid())
+  /// Cascade: the token goes with its account, as the orders do.
+  userId     String    @unique
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Hex SHA-256 of the token, which is shown once and never stored. Unique,
+  /// so a request's token finds its user through the index.
+  tokenHash  String    @unique @db.Char(64)
+  createdAt  DateTime  @default(now())
+  /// When the script last used it: shows whether the daily import runs.
+  lastUsedAt DateTime?
 }
