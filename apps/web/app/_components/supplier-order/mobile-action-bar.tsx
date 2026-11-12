@@ -22,7 +22,7 @@ export default function SupplierOrderMobileActionBar() {
       position="sticky"
       bottom="0"
       justify="space-between"
-      gap="2"
+      gap="3"
       mt="8"
       // Out to the container's edges, so the bar spans the screen.
       mx="-4"

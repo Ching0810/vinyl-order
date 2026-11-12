@@ -217,6 +217,18 @@ its own). The expected date is a **month**,
 promise ("預計2026/11出貨", "12月補貨預訂"), and a stored day would be
 invented.
 
+**⚖️ Decision: the expected month belongs to the line; the order's is
+derived.** The shops promise per record, in each line's title, and one
+order can hold a record in stock beside a pre-order. Storing one month per
+order would make import choose which promise to keep and lose the rest; the
+order's month can always be worked out from its lines, not the other way
+round. That month is the **latest** of its lines: an order ships as one
+parcel — one status, one tracking number — so it waits for its last record,
+and the soonest would promise it early. The list sorts by it, while each
+card shows every record's own month beside its price, so the one holding
+the order up is seen. A shop that ships what it has first would need a
+status per line, left for later.
+
 ### 5.6 Cart and order
 
 - **`CartItem`** points at an `offerId` instead of a `productId`: buying "this
@@ -500,28 +512,36 @@ the form.
 
 ### 9.2 The page
 
-In tabs by stage, each with its count: **All**, **To pick up**, **Shipped**,
+Two filters, held at the top of the screen under the site header while the
+list scrolls: by stage — **All statuses**, **To pick up**, **Shipped**,
 **Not shipped** (ordered and preparing: both still with the shop),
-**Delivered** and **Cancelled**. The tab is in the URL (`?tab=shipped`), so
-a reload or Back keeps it. On a phone, "Email import" and "Record an order"
-sit in a bar held at the bottom of the screen, so the list comes first. All
-is grouped by status, what needs me first:
-ready for pickup, then the ones moving — shipped, preparing, ordered — then
-delivered and cancelled; the other tabs list their orders without
-headings, sorted as a group is.
+**Delivered** and **Cancelled**, each with its count — and by **shop**. They
+are laid out as the shops' own catalogues lay theirs: on a wide screen,
+"Filter:" with each as a text dropdown and how many orders show at the far
+end; on a phone, one "Filter" row opening a side drawer, where each filter
+is a row leading into its choices, held as a draft until **Apply** (or
+cleared by **Remove all**). Both are
+in the URL (`?status=shipped&shop=tht`), so a reload or Back keeps them. On
+a phone, "Email import" and "Record an order" sit in a bar held at the
+bottom of the screen, so the list comes first. All statuses is grouped by
+status, what needs me first: ready for pickup, then the ones moving —
+shipped, preparing, ordered — then delivered and cancelled; any other
+choice lists its orders without headings, sorted as a group is.
 
 The page is black and white, light grey cards on the page, so the covers
-are its only colour; a status keeps a dot of its own colour. Each card is
-titled by its first record, since what I bought is what I look for, and
-every card has the same lines in the same places, whatever the order holds:
-a list of uneven cards reads as clutter. So a card shows the first
-record's cover, title (one line, cut short with an ellipsis, "+N" for
-further records) and price × quantity, "Unpaid", the status and its menu,
-the total, shop, order number and day, and the soonest expected month when
-a shop gave one. On a phone the cards are tiles two to a row, the cover
-alone on top; on a wider screen, rows. The other records, the tracking
-number, the note and the next step's hint (§9.5) belong to the order's own
-page, still to come. Not paginated: one person's orders are a page's
+are its only colour; a status is a pill tinted in its own colour. Each card
+is titled by the order — its order number, with its shop as a badge at the
+right, which together are what makes it one — since the status, payment and
+total on it are the order's; the first record's cover stands for it. Every card has the same
+lines in the same places, whatever the order holds: a list of uneven cards
+reads as clutter. So a card shows that cover and title, the first record's
+title (one line, cut short with an ellipsis) and price × quantity with its own
+expected month (§5.5; none once delivered or cancelled), "Unpaid", the
+status and its menu, the total and the day. Further records fold under "N more records", which opens
+them in place. On a phone the cards are tiles two to a row, the cover alone
+on top and the menu in the bottom-right corner; on a wider screen, rows.
+The tracking number, the note and the next step's hint (§9.5) belong to the
+order's own page, still to come. Not paginated: one person's orders are a page's
 worth, and paging by date would split the groups. Each card's menu moves
 the status (§9.1), marks it paid, opens the edit form (§9.3) or deletes
 the order.

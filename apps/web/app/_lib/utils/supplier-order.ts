@@ -1,4 +1,9 @@
-import type { Supplier, SupplierOrder, SupplierOrderStatus } from '@vinyl-order/shared';
+import type {
+  Supplier,
+  SupplierOrder,
+  SupplierOrderItem,
+  SupplierOrderStatus,
+} from '@vinyl-order/shared';
 
 /**
  * Each shop under the name it goes by. A Record over Supplier, so a shop added
@@ -108,26 +113,41 @@ export const isUnpaid = (order: SupplierOrder): boolean =>
 const isOpen = (status: SupplierOrderStatus): boolean => GROUP_RANK[status] < GROUP_RANK.delivered;
 
 /**
- * The earliest expected month among an order's lines, or null if none has
- * one. `YYYY-MM` sorts as text, so no Date is needed.
+ * When the whole order is expected: the latest month among its lines, or
+ * null if none has one (tracker.md §5.5). An order ships as one parcel —
+ * one status, one tracking number — so it waits for its last record; the
+ * soonest month would promise it early. `YYYY-MM` sorts as text, so no Date
+ * is needed.
  */
-export const nextExpectedMonth = (order: SupplierOrder): string | null =>
+const orderExpectedMonth = (order: SupplierOrder): string | null =>
   order.items
     .map((item) => item.expectedMonth)
     .filter((month): month is string => month !== null)
-    .sort()[0] ?? null;
+    .sort()
+    .at(-1) ?? null;
+
+/**
+ * The expected month a card shows beside one of its records: the record's
+ * own, so each one's promise is seen, while the order is still to arrive.
+ * Once delivered or cancelled it is past telling, so none.
+ *
+ * @param order - the order the record is in
+ * @param item - one of its records
+ */
+export const shownExpectedMonth = (order: SupplierOrder, item: SupplierOrderItem): string | null =>
+  isOpen(order.status) ? item.expectedMonth : null;
 
 /** Newest order first; id keeps orders placed the same day in a stable order. */
 const byOrderedAtDesc = (a: SupplierOrder, b: SupplierOrder): number =>
   b.orderedAt.localeCompare(a.orderedAt) || a.id.localeCompare(b.id);
 
 /**
- * Soonest expected first, so the next arrival is on top; orders with no month
- * yet go last, since nothing says they are coming soon. Within one month,
- * newest order first.
+ * Soonest expected order first, so the next arrival is on top; orders with no
+ * month yet go last, since nothing says they are coming soon. Within one
+ * month, newest order first.
  */
-const byNextExpected = (a: SupplierOrder, b: SupplierOrder): number => {
-  const [monthA, monthB] = [nextExpectedMonth(a), nextExpectedMonth(b)];
+const byExpected = (a: SupplierOrder, b: SupplierOrder): number => {
+  const [monthA, monthB] = [orderExpectedMonth(a), orderExpectedMonth(b)];
   if (monthA !== monthB) {
     if (monthA === null) return 1;
     if (monthB === null) return -1;
@@ -140,8 +160,9 @@ export type SupplierOrderGroup = { status: SupplierOrderStatus; orders: Supplier
 
 /**
  * The page's sections (tracker.md §9.2): one per status that has orders, in
- * GROUP_RANK order. Open groups sort by next expected month; finished ones by
- * when they were ordered, since their expected months are past.
+ * GROUP_RANK order. Open groups sort by the order's expected month;
+ * finished ones by when they were ordered, since their expected months are
+ * past.
  *
  * Pure and separate from the component, so the rule reads in one place.
  *
@@ -156,18 +177,18 @@ export const groupByStatus = (orders: SupplierOrder[]): SupplierOrderGroup[] => 
   return [...groups.entries()]
     .sort(([a], [b]) => GROUP_RANK[a] - GROUP_RANK[b])
     .map(([status, group]) => {
-      const order = isOpen(status) ? byNextExpected : byOrderedAtDesc;
+      const order = isOpen(status) ? byExpected : byOrderedAtDesc;
       return { status, orders: group.toSorted(order) };
     });
 };
 
 /**
- * The list's tabs, in order. "Not shipped" joins ordered and preparing: both
- * are still with the shop. Each tab's statuses are all open or all finished,
- * so one sort fits the whole tab.
+ * The list's status filter, in order. "Not shipped" joins ordered and
+ * preparing: both are still with the shop. Each choice's statuses are all
+ * open or all finished, so one sort fits it.
  */
-export const SUPPLIER_ORDER_TABS = [
-  { value: 'all', label: 'All', statuses: null },
+export const STATUS_FILTERS = [
+  { value: 'all', label: 'All statuses', statuses: null },
   { value: 'pickup', label: 'To pick up', statuses: ['ready_for_pickup'] },
   { value: 'shipped', label: 'Shipped', statuses: ['shipped'] },
   { value: 'not_shipped', label: 'Not shipped', statuses: ['ordered', 'preparing'] },
@@ -179,24 +200,35 @@ export const SUPPLIER_ORDER_TABS = [
   statuses: readonly SupplierOrderStatus[] | null;
 }[];
 
-export type SupplierOrderTab = (typeof SUPPLIER_ORDER_TABS)[number]['value'];
+export type StatusFilter = (typeof STATUS_FILTERS)[number]['value'];
 
 /**
- * The tab a `?tab=` value names; "all" for none, or for one that isn't a tab
- * (an old or mistyped link), rather than an empty page.
+ * The status filter a `?status=` value names; "all" for none, or for one
+ * that isn't a choice (an old or mistyped link), rather than an empty page.
  *
  * @param value - the query parameter, or null when absent
  */
-export const toSupplierOrderTab = (value: string | null): SupplierOrderTab =>
-  SUPPLIER_ORDER_TABS.find((tab) => tab.value === value)?.value ?? 'all';
+export const toStatusFilter = (value: string | null): StatusFilter =>
+  STATUS_FILTERS.find((filter) => filter.value === value)?.value ?? 'all';
+
+/** The list's shop filter: one shop, or all of them. */
+export type SupplierFilter = Supplier | 'all';
 
 /**
- * One tab's orders, sorted as groupByStatus sorts a group: open ones by next
- * expected month, finished ones newest first. Not for "all", which is shown
- * grouped.
+ * The shop a `?shop=` value names; "all" for none or an unknown one.
+ *
+ * @param value - the query parameter, or null when absent
+ */
+export const toSupplierFilter = (value: string | null): SupplierFilter =>
+  (Object.keys(SUPPLIER_LABEL) as Supplier[]).find((supplier) => supplier === value) ?? 'all';
+
+/**
+ * The orders in one status filter, sorted as groupByStatus sorts a group:
+ * open ones by expected month, finished ones newest first. Not for "all",
+ * which is shown grouped.
  *
  * @param orders - the user's orders, in any order
- * @param statuses - the tab's statuses
+ * @param statuses - the filter's statuses
  */
 export const ordersWithStatus = (
   orders: SupplierOrder[],
@@ -204,4 +236,31 @@ export const ordersWithStatus = (
 ): SupplierOrder[] =>
   orders
     .filter((order) => statuses.includes(order.status))
-    .toSorted(isOpen(statuses[0]) ? byNextExpected : byOrderedAtDesc);
+    .toSorted(isOpen(statuses[0]) ? byExpected : byOrderedAtDesc);
+
+/**
+ * The orders at one shop, or all of them.
+ *
+ * @param orders - the user's orders
+ * @param supplier - the shop filter
+ */
+export const ordersAtShop = (orders: SupplierOrder[], supplier: SupplierFilter): SupplierOrder[] =>
+  supplier === 'all' ? orders : orders.filter((order) => order.supplier === supplier);
+
+/**
+ * How many orders a pair of filters leaves — for a filter's choices, and
+ * for what a drawer's choices would show before they are applied.
+ *
+ * @param orders - the user's orders
+ * @param status - the status filter
+ * @param supplier - the shop filter
+ */
+export const countOrders = (
+  orders: SupplierOrder[],
+  status: StatusFilter,
+  supplier: SupplierFilter,
+): number => {
+  const atShop = ordersAtShop(orders, supplier);
+  const { statuses } = STATUS_FILTERS.find((filter) => filter.value === status)!;
+  return statuses ? ordersWithStatus(atShop, statuses).length : atShop.length;
+};

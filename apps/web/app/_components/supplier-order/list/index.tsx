@@ -1,16 +1,6 @@
 'use client';
 
-import {
-  Box,
-  Button,
-  HStack,
-  SimpleGrid,
-  Skeleton,
-  Stack,
-  Tabs,
-  Text,
-  chakra,
-} from '@chakra-ui/react';
+import { Box, Button, HStack, SimpleGrid, Skeleton, Stack, Text, chakra } from '@chakra-ui/react';
 import type { SupplierOrder } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -20,16 +10,19 @@ import RecordSupplierOrderButton from '@/components/supplier-order/record-button
 import EmptyState from '@/components/ui/empty-state';
 import StatusDialog, { type StatusNotice } from '@/components/ui/status-dialog';
 import {
+  STATUS_FILTERS,
   SUPPLIER_ORDER_STATUS,
-  SUPPLIER_ORDER_TABS,
-  type SupplierOrderTab,
+  type StatusFilter,
+  type SupplierFilter,
   groupByStatus,
+  ordersAtShop,
   ordersWithStatus,
 } from '@/lib/utils/supplier-order';
 import { useMe } from '@/services/queries/auth/useMe';
 import { useSupplierOrders } from '@/services/queries/supplier-orders/useSupplierOrders';
 
 import SupplierOrderCard from './_components/card';
+import SupplierOrderFilters from './_components/filters';
 import SupplierOrderTile from './_components/tile';
 
 const ListSkeleton = () => (
@@ -43,34 +36,7 @@ const ListSkeleton = () => (
 type OnFailure = (message: string) => void;
 
 /**
- * How many orders a tab holds. An urgent tab with any shows it as a small
- * filled circle, the one mark on the black-and-white track that asks to be
- * looked at.
- */
-const TabCount = ({ count, urgent }: { count: number; urgent: boolean }) =>
-  urgent && count > 0 ? (
-    <chakra.span
-      display="inline-grid"
-      placeItems="center"
-      minW="5"
-      h="5"
-      px="1"
-      borderRadius="full"
-      fontSize="xs"
-      fontWeight="semibold"
-      bg="purple.500"
-      color="white"
-    >
-      {count}
-    </chakra.span>
-  ) : (
-    <chakra.span fontSize="xs" opacity="0.6">
-      {count}
-    </chakra.span>
-  );
-
-/**
- * One tab's orders, or a line saying it has none: tiles two to a row on a
+ * Orders under the chosen filters, or a line saying there are none: tiles two to a row on a
  * phone, row cards on a wider screen. Both are rendered and switched with
  * `display`, not useBreakpointValue, which would hydrate mismatched (see
  * product/search).
@@ -83,7 +49,7 @@ const OrderStack = ({ orders, onFailure }: { orders: SupplierOrder[]; onFailure:
           <SupplierOrderTile key={order.id} order={order} onFailure={onFailure} />
         ))}
       </SimpleGrid>
-      <Stack display={{ base: 'none', md: 'flex' }} gap="3">
+      <Stack display={{ base: 'none', md: 'flex' }} gap="4">
         {orders.map((order) => (
           <SupplierOrderCard key={order.id} order={order} onFailure={onFailure} />
         ))}
@@ -94,7 +60,7 @@ const OrderStack = ({ orders, onFailure }: { orders: SupplierOrder[]; onFailure:
   );
 
 /**
- * The "All" tab: every order, in a section per status, in groupByStatus's
+ * "All statuses": every order, in a section per status, in groupByStatus's
  * order — waiting at the store first, finished orders last.
  */
 const GroupedOrders = ({
@@ -104,10 +70,10 @@ const GroupedOrders = ({
   orders: SupplierOrder[];
   onFailure: OnFailure;
 }) => (
-  <Stack gap="10">
+  <Stack gap="8">
     {groupByStatus(orders).map(({ status, orders: group }) => (
       <chakra.section key={status} aria-labelledby={`supplier-orders-${status}`}>
-        <HStack gap="2" mb="4" colorPalette={SUPPLIER_ORDER_STATUS[status].palette}>
+        <HStack gap="2" mb="3" colorPalette={SUPPLIER_ORDER_STATUS[status].palette}>
           <Box boxSize="2" borderRadius="full" bg="colorPalette.solid" />
           <Text
             id={`supplier-orders-${status}`}
@@ -130,18 +96,26 @@ const GroupedOrders = ({
 );
 
 /**
- * The signed-in user's orders at the shops (tracker.md §9.2), in tabs by
- * where they stand: "All", grouped by status, and one tab per stage.
+ * The signed-in user's orders at the shops (tracker.md §9.2), filtered by
+ * where they stand and by shop: "All statuses" grouped by status, any other
+ * choice as one list.
  *
  * Orders are recorded on /supplier-orders/new and changed from each card's
  * actions. Why an action failed is shown here, above the cards: a failed
- * change refreshes the list, which can move the card to another tab or
- * group and remount it, so a dialog inside the card could vanish before it
- * was read.
+ * change refreshes the list, which can move the card out of the filter or
+ * into another group and remount it, so a dialog inside the card could
+ * vanish before it was read.
  *
- * @param tab - the tab to show, from the URL
+ * @param status - the status filter, from the URL
+ * @param supplier - the shop filter, from the URL
  */
-export default function SupplierOrderList({ tab }: { tab: SupplierOrderTab }) {
+export default function SupplierOrderList({
+  status,
+  supplier,
+}: {
+  status: StatusFilter;
+  supplier: SupplierFilter;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const { data: user, isPending: authPending } = useMe();
@@ -187,62 +161,29 @@ export default function SupplierOrderList({ tab }: { tab: SupplierOrderTab }) {
     );
   }
 
-  // The URL holds the tab, so a reload or Back returns to it. Replaced rather
-  // than pushed: switching tabs isn't a page to go back through.
-  const selectTab = (value: string) =>
-    router.replace(value === 'all' ? pathname : `${pathname}?tab=${value}`, { scroll: false });
+  // The URL holds the filters, so a reload or Back returns to them. Replaced
+  // rather than pushed: choosing a filter isn't a page to go back through.
+  const select = (next: { status: StatusFilter; supplier: SupplierFilter }) => {
+    const query = new URLSearchParams();
+    if (next.status !== 'all') query.set('status', next.status);
+    if (next.supplier !== 'all') query.set('shop', next.supplier);
+    const search = query.toString();
+    router.replace(search ? `${pathname}?${search}` : pathname, { scroll: false });
+  };
+
+  const atShop = ordersAtShop(orders, supplier);
+  const { statuses } = STATUS_FILTERS.find((filter) => filter.value === status)!;
 
   return (
     <>
-      <Tabs.Root
-        value={tab}
-        onValueChange={({ value }) => selectTab(value)}
-        variant="enclosed"
-        lazyMount
-        unmountOnExit
-      >
-        {/* A light grey track with the chosen tab as a black pill; on a phone
-            it scrolls sideways rather than wrapping. */}
-        <Tabs.List
-          w="fit-content"
-          maxW="full"
-          overflowX="auto"
-          mb="6"
-          p="1"
-          borderRadius="full"
-          bg="gray.100"
-          css={{ scrollbarWidth: 'none' }}
-        >
-          {SUPPLIER_ORDER_TABS.map(({ value, label, statuses }) => (
-            <Tabs.Trigger
-              key={value}
-              value={value}
-              flexShrink="0"
-              gap="1.5"
-              px="3.5"
-              borderRadius="full"
-              color="gray.600"
-              _selected={{ bg: 'gray.900', color: 'white' }}
-            >
-              {label}
-              <TabCount
-                count={statuses ? ordersWithStatus(orders, statuses).length : orders.length}
-                // Something waiting at the store is the one to act on.
-                urgent={value === 'pickup'}
-              />
-            </Tabs.Trigger>
-          ))}
-        </Tabs.List>
-        {SUPPLIER_ORDER_TABS.map(({ value, statuses }) => (
-          <Tabs.Content key={value} value={value} p="0">
-            {statuses ? (
-              <OrderStack orders={ordersWithStatus(orders, statuses)} onFailure={showFailure} />
-            ) : (
-              <GroupedOrders orders={orders} onFailure={showFailure} />
-            )}
-          </Tabs.Content>
-        ))}
-      </Tabs.Root>
+      <SupplierOrderFilters orders={orders} status={status} supplier={supplier} onChange={select} />
+      {statuses ? (
+        <OrderStack orders={ordersWithStatus(atShop, statuses)} onFailure={showFailure} />
+      ) : atShop.length > 0 ? (
+        <GroupedOrders orders={atShop} onFailure={showFailure} />
+      ) : (
+        <Text color="gray.600">Nothing here.</Text>
+      )}
       <StatusDialog open={noticeOpen} notice={notice} onClose={closeNotice} />
     </>
   );

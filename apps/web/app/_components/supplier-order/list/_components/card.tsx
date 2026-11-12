@@ -1,15 +1,15 @@
-import { Box, HStack, Stack, Text } from '@chakra-ui/react';
+import { HStack, Stack, Text } from '@chakra-ui/react';
 import type { SupplierOrder } from '@vinyl-order/shared';
 
 import SupplierOrderStatusBadge from '@/components/supplier-order/status-badge';
 import Cover from '@/components/ui/cover';
 import { formatPrice } from '@/lib/utils/currency';
 import { formatDay } from '@/lib/utils/date';
-import { SUPPLIER_LABEL, isUnpaid, nextExpectedMonth } from '@/lib/utils/supplier-order';
+import { isUnpaid } from '@/lib/utils/supplier-order';
 
 import SupplierOrderActions from './actions';
-import ExpectedBadge from './expected-badge';
-import OtherRecords from './other-records';
+import { MoreRecords, SupplierOrderRecord } from './records';
+import SupplierBadge from './supplier-badge';
 import UnpaidBadge from './unpaid-badge';
 
 /**
@@ -18,12 +18,12 @@ import UnpaidBadge from './unpaid-badge';
  * Phones get SupplierOrderTile.
  *
  * Every row has the same slots at the same height, whatever the order holds,
- * so the list reads evenly: the first record's cover and title (cut short
- * with an ellipsis), its price × quantity and the soonest expected month,
- * then shop, order number and day; on the right, "Unpaid", the status, the
- * menu and the total. Further records show as "+N" on the cover; they, the
- * tracking number, the note and the next step are left for the order's own
- * page.
+ * so the list reads evenly: the first record's cover, standing for the
+ * order; its order number with the shop as a badge right after it, then its
+ * first record with price × quantity and expected month, the day, and "N
+ * more records" for any others, which opens them in place; on the right,
+ * "Unpaid", the status, the menu and the total. The tracking number, the
+ * note and the next step are left for the order's own page.
  *
  * @param order - the order with its lines
  * @param onFailure - show why one of its actions didn't happen
@@ -38,26 +38,24 @@ export default function SupplierOrderCard({
   const [first] = order.items;
 
   return (
-    <HStack gap="4" p="4" borderRadius="1.25rem" bg="gray.100">
-      <Box position="relative" flexShrink="0">
-        <Cover src={first.imageUrl} size="20" px={80} radius="10px" />
-        <OtherRecords order={order} position="absolute" bottom="1" right="1" />
-      </Box>
+    <HStack gap="4" p="4" align="start" borderRadius="1.25rem" bg="gray.100">
+      <Cover src={first.imageUrl} size="20" px={80} radius="10px" />
 
-      <Stack gap="1.5" flex="1" minW="0">
-        <Text fontWeight="semibold" color="gray.900" truncate>
-          {first.title}
-        </Text>
-        <HStack gap="2" minW="0">
-          <Text fontSize="sm" color="gray.600" flexShrink="0">
-            {formatPrice(first.unitPriceCents, order.currency)} × {first.quantity}
+      <Stack gap="2" flex="1" minW="0">
+        {/* The shop right after the number, not pushed to the far edge, where
+            it would read as one of the status badges beside it. */}
+        {/* As tall as the menu button across from it, so the two rows line up. */}
+        <HStack gap="2" minW="0" minH="8">
+          <Text fontSize="lg" fontWeight="semibold" color="gray.900" truncate>
+            #{order.orderNumber}
           </Text>
-          <ExpectedBadge month={nextExpectedMonth(order)} />
+          <SupplierBadge supplier={order.supplier} />
         </HStack>
-        <Text fontSize="sm" color="gray.600" truncate>
-          {SUPPLIER_LABEL[order.supplier]} · Order {order.orderNumber} ·{' '}
+        <SupplierOrderRecord order={order} item={first} />
+        <Text fontSize="sm" color="gray.600">
           {formatDay(order.orderedAt)}
         </Text>
+        <MoreRecords order={order} />
       </Stack>
 
       <Stack gap="2" align="end" alignSelf="stretch" justify="space-between" flexShrink="0">

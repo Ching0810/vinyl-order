@@ -10,12 +10,18 @@ import SupplierOrderList from '@/components/supplier-order/list';
 import SupplierOrderMobileActionBar from '@/components/supplier-order/mobile-action-bar';
 import RecordSupplierOrderButton from '@/components/supplier-order/record-button';
 import SectionHeading from '@/components/ui/section-heading';
-import { toSupplierOrderTab } from '@/lib/utils/supplier-order';
+import { toStatusFilter, toSupplierFilter } from '@/lib/utils/supplier-order';
 
-/** Reads the `?tab=` the list is showing, then hands it down. */
-const ListFromUrl = () => (
-  <SupplierOrderList tab={toSupplierOrderTab(useSearchParams().get('tab'))} />
-);
+/** Reads the list's filters, `?status=` and `?shop=`, then hands them down. */
+const ListFromUrl = () => {
+  const params = useSearchParams();
+  return (
+    <SupplierOrderList
+      status={toStatusFilter(params.get('status'))}
+      supplier={toSupplierFilter(params.get('shop'))}
+    />
+  );
+};
 
 /**
  * `/supplier-orders` — the signed-in user's orders at the shops, apart from
