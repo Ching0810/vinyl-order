@@ -1,10 +1,10 @@
 import { Box } from '@chakra-ui/react';
 import Image from 'next/image';
 /**
- * A square record cover from an order line's snapshot, or a plain tile when
- * the record had no image.
+ * A square record cover beside an order line — the demo store's snapshot, or
+ * a supplier order's imported cover — or a plain tile when there is none.
  *
- * @param src - the snapshotted image URL
+ * @param src - the image URL, on a host next.config.ts allows
  * @param size - rendered edge length, as a Chakra size token
  * @param px - the same edge length in pixels, for the image `sizes` hint
  */

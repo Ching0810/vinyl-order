@@ -2,15 +2,21 @@ import { Flex, HStack, Stack, Text } from '@chakra-ui/react';
 import type { SupplierOrder, SupplierOrderItem } from '@vinyl-order/shared';
 
 import SupplierOrderStatusBadge from '@/components/supplier-order/status-badge';
+import Cover from '@/components/ui/cover';
 import { formatPrice } from '@/lib/utils/currency';
 import { formatDay, formatMonth } from '@/lib/utils/date';
 import { SUPPLIER_LABEL } from '@/lib/utils/supplier-order';
 
 import SupplierOrderActions from './actions';
 
-/** One record in the order: title, price × quantity, and when it's due if known. */
+/**
+ * One record in the order: title, price × quantity, and when it's due if
+ * known. Its cover only when it has one — those come from imported emails,
+ * and a blank tile on every typed line would read as broken images.
+ */
 const Line = ({ item, currency }: { item: SupplierOrderItem; currency: string }) => (
   <HStack gap="3" align="start">
+    {item.imageUrl ? <Cover src={item.imageUrl} size="12" px={48} /> : null}
     <Stack gap="0" flex="1" minW="0">
       <Text fontSize="sm" fontWeight="medium" truncate>
         {item.title}

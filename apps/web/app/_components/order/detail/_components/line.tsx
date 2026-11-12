@@ -2,7 +2,7 @@ import { HStack, Stack, Text } from '@chakra-ui/react';
 import type { OrderItem } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 
-import Cover from '@/components/order/cover';
+import Cover from '@/components/ui/cover';
 import { formatPrice } from '@/lib/utils/currency';
 /**
  * One line of a placed order, rendered only from what was copied at checkout.

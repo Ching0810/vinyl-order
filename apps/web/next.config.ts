@@ -22,8 +22,13 @@ const nextConfig: NextConfig = {
     unoptimized: process.env.NODE_ENV === 'development',
     // Allowlist hosts next/image may load (enforced when optimization is on):
     // - localhost:3001/uploads: images uploaded to the dev StorageService
+    // - the shops' CDNs: covers from imported confirmation emails. The same
+    //   two the API keeps covers from (COVER_HOSTS, tracker.md §9.4), narrowed
+    //   to their product image paths.
     remotePatterns: [
       { protocol: 'http', hostname: 'localhost', port: '3001', pathname: '/uploads/**' },
+      { protocol: 'https', hostname: 'cdn.store-assets.com', pathname: '/s/**' },
+      { protocol: 'https', hostname: 'cdn.shopify.com', pathname: '/s/files/**' },
     ],
   },
   experimental: {
