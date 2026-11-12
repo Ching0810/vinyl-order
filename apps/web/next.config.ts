@@ -22,13 +22,16 @@ const nextConfig: NextConfig = {
     unoptimized: process.env.NODE_ENV === 'development',
     // Allowlist hosts next/image may load (enforced when optimization is on):
     // - localhost:3001/uploads: images uploaded to the dev StorageService
-    // - the shops' CDNs: covers from imported confirmation emails. The same
-    //   two the API keeps covers from (COVER_HOSTS, tracker.md §9.4), narrowed
-    //   to their product image paths.
+    // - the shops' image hosts: covers read from confirmation emails or
+    //   pasted into the order form. The same ones, narrowed to the same
+    //   paths, the API accepts covers from (isAllowedCoverUrl in
+    //   @vinyl-order/shared, tracker.md §9.4); Candlelight's host serves every
+    //   WACA shop, so only its own shop's path is allowed.
     remotePatterns: [
       { protocol: 'http', hostname: 'localhost', port: '3001', pathname: '/uploads/**' },
       { protocol: 'https', hostname: 'cdn.store-assets.com', pathname: '/s/**' },
       { protocol: 'https', hostname: 'cdn.shopify.com', pathname: '/s/files/**' },
+      { protocol: 'https', hostname: 'img.cloudimg.in', pathname: '/uploads/shops/37376/**' },
     ],
   },
   experimental: {

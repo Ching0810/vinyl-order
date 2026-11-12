@@ -1,14 +1,17 @@
 'use client';
 
 import { Button, Field, IconButton, Input, SimpleGrid, Stack, Text } from '@chakra-ui/react';
+import { isAllowedCoverUrl } from '@vinyl-order/shared';
 import type { ReactNode } from 'react';
 import {
   type Control,
   type FieldErrors,
   type UseFormRegister,
   useFieldArray,
+  useWatch,
 } from 'react-hook-form';
 
+import Cover from '@/components/ui/cover';
 import { CloseIcon } from '@/components/ui/icons';
 
 import { type SupplierOrderFormValues, blankLine } from '../values';
@@ -34,14 +37,35 @@ const LineField = ({
   </Field.Root>
 );
 
-/** One record's fields: what it is, how many, at what price, and when it's due. */
+/**
+ * The line's cover as typed, shown beside its title. Only an address the
+ * API would accept is loaded, so a half-typed or foreign one shows the blank
+ * tile rather than a broken image.
+ */
+const CoverPreview = ({
+  control,
+  index,
+}: {
+  control: Control<SupplierOrderFormValues>;
+  index: number;
+}) => {
+  const imageUrl = useWatch({ control, name: `items.${index}.imageUrl` }).trim();
+  return <Cover src={isAllowedCoverUrl(imageUrl) ? imageUrl : null} size="10" px={40} />;
+};
+
+/**
+ * One record's fields: what it is, how many, at what price, when it's due,
+ * and its cover.
+ */
 const Line = ({
   index,
+  control,
   register,
   errors = {},
   onRemove,
 }: {
   index: number;
+  control: Control<SupplierOrderFormValues>;
   register: UseFormRegister<SupplierOrderFormValues>;
   errors: LineErrors | undefined;
   /** Absent for the only line, which can't be removed. */
@@ -49,6 +73,7 @@ const Line = ({
 }) => (
   <Stack gap="3" p="4" borderWidth="1px" borderColor="border.muted" borderRadius="card">
     <Stack direction="row" align="end" gap="2">
+      <CoverPreview control={control} index={index} />
       <LineField label="Record" error={errors.title?.message} required>
         <Input placeholder="Artist – Title" {...register(`items.${index}.title`)} />
       </LineField>
@@ -73,6 +98,21 @@ const Line = ({
         <Input type="month" placeholder="YYYY-MM" {...register(`items.${index}.expectedMonth`)} />
       </LineField>
     </SimpleGrid>
+
+    <Field.Root invalid={Boolean(errors.imageUrl)}>
+      <Field.Label>Cover image</Field.Label>
+      <Input
+        type="url"
+        inputMode="url"
+        autoComplete="off"
+        placeholder="https://…"
+        {...register(`items.${index}.imageUrl`)}
+      />
+      <Field.HelperText>
+        On the shop&apos;s product page, right-click the cover and copy its image address.
+      </Field.HelperText>
+      <Field.ErrorText>{errors.imageUrl?.message}</Field.ErrorText>
+    </Field.Root>
   </Stack>
 );
 
@@ -98,6 +138,7 @@ export default function SupplierOrderLines({ control, register, errors }: Props)
         <Line
           key={field.id}
           index={index}
+          control={control}
           register={register}
           errors={errors.items?.[index]}
           onRemove={fields.length > 1 ? () => remove(index) : undefined}
