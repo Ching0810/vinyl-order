@@ -1,4 +1,4 @@
-import type { Supplier } from '@vinyl-order/shared';
+import { type Supplier, isAllowedCoverUrl } from '@vinyl-order/shared';
 
 import type { ConfirmationEmail, ParseResult, PlatformParse } from './confirmation';
 import { emailLines } from './email-text';
@@ -15,13 +15,6 @@ interface Platform {
 
 const EASYSTORE: Platform = { parse: (lines) => parseEasyStore(lines), covers: easyStoreCovers };
 const SHOPIFY: Platform = { parse: parseShopify, covers: shopifyCovers };
-
-/**
- * The only hosts a cover is kept from (tracker.md §9.4): the shops' own CDNs.
- * Anything else — a tracking redirect, a host a forged email names — is
- * dropped, so the page never loads an image from wherever an email points.
- */
-const COVER_HOSTS = new Set(['cdn.store-assets.com', 'cdn.shopify.com']);
 
 /**
  * The senders whose confirmations are read, and what they are. Must match
@@ -49,15 +42,13 @@ const taipeiDay = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
-/** The URL, if it is https on an allowed host; else null. */
-const allowedCover = (src: string): string | null => {
-  try {
-    const url = new URL(src);
-    return url.protocol === 'https:' && COVER_HOSTS.has(url.hostname) ? src : null;
-  } catch {
-    return null; // not a URL at all
-  }
-};
+/**
+ * The cover, if it is from one of the shops' own image hosts
+ * (isAllowedCoverUrl, tracker.md §9.4); else null. Anything else — a
+ * tracking redirect, a host a forged email names — is dropped, so the page
+ * never loads an image from wherever an email points.
+ */
+const allowedCover = (src: string): string | null => (isAllowedCoverUrl(src) ? src : null);
 
 /**
  * Read a shop's order confirmation into the order it confirms.

@@ -2,6 +2,7 @@ import {
   type CreateSupplierOrderInput,
   type SupplierOrder,
   type UpdateSupplierOrderInput,
+  coverUrlSchema,
   monthSchema,
   supplierSchema,
 } from '@vinyl-order/shared';
@@ -58,6 +59,10 @@ export const supplierOrderFormSchema = z.object({
         expectedMonth: z.union([monthSchema, z.literal('')], {
           error: 'A month, as YYYY-MM',
         }),
+        // Blank for none; else an image address from the shop's own site.
+        imageUrl: z.union([z.literal(''), coverUrlSchema], {
+          error: "An image address from the shop's own site",
+        }),
       }),
     )
     .min(1, 'Add at least one record')
@@ -72,6 +77,7 @@ export const blankLine: SupplierOrderFormValues['items'][number] = {
   quantity: '1',
   price: '',
   expectedMonth: '',
+  imageUrl: '',
 };
 
 /**
@@ -112,6 +118,7 @@ export const toFormValues = (order: SupplierOrder): SupplierOrderFormValues => {
         quantity: String(item.quantity),
         price: String(item.unitPriceCents / 100),
         expectedMonth: item.expectedMonth ?? '',
+        imageUrl: item.imageUrl ?? '',
       };
     }),
   };
@@ -141,6 +148,7 @@ const toLineFields = (item: SupplierOrderFormValues['items'][number]) => {
     quantity: Number(item.quantity),
     unitPriceCents: toCents(item.price.trim()),
     expectedMonth: item.expectedMonth || null,
+    imageUrl: item.imageUrl.trim() || null,
   };
 };
 

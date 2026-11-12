@@ -89,6 +89,64 @@ export function canChangeSupplierOrderStatus(
   return fromStep !== -1 && toStep > fromStep;
 }
 
+// ---- Covers ----
+
+/**
+ * Where a record's cover may come from: each shop's own image host, narrowed
+ * to the path its product images live under (tracker.md §9.4). Candlelight's
+ * host serves every WACA shop, so it is narrowed to Candlelight's own shop
+ * (37376). Must stay in sync with the web's `next.config.ts` image hosts.
+ */
+const COVER_SOURCES = [
+  { host: 'cdn.store-assets.com', path: '/s/' }, // THT, Cosmic (EasyStore)
+  { host: 'cdn.shopify.com', path: '/s/files/' }, // Rotten Blues (Shopify)
+  { host: 'img.cloudimg.in', path: '/uploads/shops/37376/' }, // Candlelight (WACA)
+] as const;
+
+/**
+ * The WHATWG URL parser, which both the browser and Node provide. Declared
+ * here, as much of it as is read, because this package compiles against the
+ * ES library alone, which has no URL — and parsing a URL by hand is how an
+ * allowlist gets fooled.
+ */
+declare const URL: new (input: string) => {
+  protocol: string;
+  username: string;
+  password: string;
+  port: string;
+  hostname: string;
+  pathname: string;
+};
+
+/**
+ * Whether a URL is a cover the page may load: https, no credentials or port,
+ * on one of the shops' image hosts under its product path. The path is read
+ * after the URL is parsed, so `..` can't climb out of it.
+ *
+ * @param value - the URL, typed or read from an email
+ */
+export const isAllowedCoverUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      COVER_SOURCES.some(({ host, path }) => url.hostname === host && url.pathname.startsWith(path))
+    );
+  } catch {
+    return false; // not a URL at all
+  }
+};
+
+/** A cover URL in a request: one isAllowedCoverUrl accepts. */
+export const coverUrlSchema = z
+  .string()
+  .trim()
+  .max(1000)
+  .refine(isAllowedCoverUrl, "Only images from the shops' own sites");
+
 // ---- Responses ----
 
 /** One record in a supplier order. */
@@ -109,9 +167,10 @@ export const supplierOrderItemSchema = z.object({
   /** The month the shop expects to send it, or null if it doesn't say. */
   expectedMonth: monthSchema.nullable(),
   /**
-   * The cover the shop's confirmation email showed, or null — set only by
-   * email import, and only from the shops' CDNs (tracker.md §9.4). Not in
-   * any request: a typed URL could point the page at any host.
+   * The record's cover, or null — read from the shop's confirmation email,
+   * or pasted from its product page; either way only from the shops' own
+   * image hosts (coverUrlSchema), so the page never loads an image from
+   * wherever a request points.
    */
   imageUrl: z.url().nullable(),
 });
@@ -158,6 +217,11 @@ export const createSupplierOrderItemSchema = z.object({
   quantity: z.number().int().min(1).max(99).default(1),
   unitPriceCents: z.number().int().nonnegative(),
   expectedMonth: monthSchema.nullable().optional(),
+  /**
+   * The cover, copied from the shop's product page; null or left out for
+   * none. Editing a saved line, left out keeps the cover it has.
+   */
+  imageUrl: coverUrlSchema.nullable().optional(),
 });
 export type CreateSupplierOrderItemInput = z.infer<typeof createSupplierOrderItemSchema>;
 
