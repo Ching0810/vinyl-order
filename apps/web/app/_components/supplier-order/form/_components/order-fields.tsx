@@ -18,7 +18,7 @@ interface Props {
   fixedSupplier?: Supplier;
 }
 
-/** The order's own fields: shop, number, date, total, tracking and note. */
+/** The order's own fields: shop, number, date, total, payment day, tracking and note. */
 export default function SupplierOrderFields({ register, errors, fixedSupplier }: Props) {
   return (
     <>
@@ -63,6 +63,13 @@ export default function SupplierOrderFields({ register, errors, fixedSupplier }:
           <Input inputMode="numeric" {...register('total')} />
           <Field.HelperText>What the shop charged, shipping included.</Field.HelperText>
           <Field.ErrorText>{errors.total?.message}</Field.ErrorText>
+        </Field.Root>
+
+        <Field.Root invalid={Boolean(errors.paidAt)}>
+          <Field.Label>Paid on</Field.Label>
+          <Input type="date" {...register('paidAt')} />
+          <Field.HelperText>Leave blank if not paid yet, e.g. cash on pickup.</Field.HelperText>
+          <Field.ErrorText>{errors.paidAt?.message}</Field.ErrorText>
         </Field.Root>
 
         <Field.Root invalid={Boolean(errors.trackingNumber)}>

@@ -23,7 +23,8 @@ const ListSkeleton = () => (
 
 /**
  * The signed-in user's orders at the shops, grouped by status (tracker.md
- * §9.2): what's on its way at the top, the next arrival first within each
+ * §9.2): what's waiting at the store at the top, then what's on its way,
+ * the next arrival first within each
  * group, finished orders at the bottom. The order lives in groupByStatus.
  *
  * Orders are recorded on /supplier-orders/new and changed from each card's

@@ -488,8 +488,9 @@ and the order isn't cancelled.
   unpaid. EasyStore's confirmation says nothing about payment, so its
   orders start unpaid until the shop's payment notice is read (§9.5).
 - **"Mark as paid"** on a card sets today (Taipei). Marking an unpaid order
-  `delivered` offers to set it paid today as well: at a store, collecting
-  and paying cash are one act.
+  `delivered` sets it paid today as well, and its confirmation says so: at
+  a store, collecting and paying cash are one act. A different day is set
+  in the edit form.
 - **Orders recorded before `paidAt` existed** were all paid, so the
   migration sets each to its order's day.
 

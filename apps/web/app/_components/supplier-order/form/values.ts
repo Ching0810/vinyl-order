@@ -36,6 +36,8 @@ export const supplierOrderFormSchema = z.object({
   orderNumber: z.string().trim().min(1, "Enter the shop's order number").max(100),
   orderedAt: z.iso.date('Pick the date you ordered'),
   total: optionalDollars,
+  // Blank: unpaid, e.g. cash on pickup.
+  paidAt: z.union([z.iso.date(), z.literal('')], { error: 'Pick the date you paid' }),
   trackingNumber: z.string().trim().max(100),
   note: z.string().trim().max(1000),
   items: z
@@ -72,13 +74,18 @@ export const blankLine: SupplierOrderFormValues['items'][number] = {
   expectedMonth: '',
 };
 
-/** A blank form, ordered today, with one line to fill in. */
+/**
+ * A blank form, ordered and paid today — most orders are paid at checkout —
+ * with one line to fill in.
+ */
 export const blankSupplierOrderForm = (): SupplierOrderFormValues => {
+  const today = todayInTaipei();
   return {
     supplier: '',
     orderNumber: '',
-    orderedAt: todayInTaipei(),
+    orderedAt: today,
     total: '',
+    paidAt: today,
     trackingNumber: '',
     note: '',
     items: [blankLine],
@@ -95,6 +102,7 @@ export const toFormValues = (order: SupplierOrder): SupplierOrderFormValues => {
     orderNumber: order.orderNumber,
     orderedAt: order.orderedAt,
     total: order.totalCents === null ? '' : String(order.totalCents / 100),
+    paidAt: order.paidAt ?? '',
     trackingNumber: order.trackingNumber ?? '',
     note: order.note ?? '',
     items: order.items.map((item) => {
@@ -121,6 +129,7 @@ const toOrderFields = (values: SupplierOrderFormValues) => {
     orderNumber: values.orderNumber.trim(),
     orderedAt: values.orderedAt,
     totalCents: values.total.trim() ? toCents(values.total.trim()) : null,
+    paidAt: values.paidAt || null,
     trackingNumber: values.trackingNumber.trim() || null,
     note: values.note.trim() || null,
   };

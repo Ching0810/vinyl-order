@@ -1,11 +1,11 @@
-import { Flex, HStack, Stack, Text } from '@chakra-ui/react';
+import { Badge, Flex, HStack, Stack, Text } from '@chakra-ui/react';
 import type { SupplierOrder, SupplierOrderItem } from '@vinyl-order/shared';
 
 import SupplierOrderStatusBadge from '@/components/supplier-order/status-badge';
 import Cover from '@/components/ui/cover';
 import { formatPrice } from '@/lib/utils/currency';
 import { formatDay, formatMonth } from '@/lib/utils/date';
-import { SUPPLIER_LABEL } from '@/lib/utils/supplier-order';
+import { SUPPLIER_LABEL, isUnpaid, nextStepHint } from '@/lib/utils/supplier-order';
 
 import SupplierOrderActions from './actions';
 
@@ -34,13 +34,44 @@ const Line = ({ item, currency }: { item: SupplierOrderItem; currency: string })
 );
 
 /**
+ * What to do next (tracker.md §9.5). Waiting at the store is the one that
+ * needs doing now, so it stands out; the others are a quiet reminder of
+ * what to watch for.
+ */
+const NextStep = ({ order }: { order: SupplierOrder }) => {
+  const hint = nextStepHint(order);
+  if (!hint) return null;
+  if (order.status === 'ready_for_pickup') {
+    return (
+      <Text
+        fontSize="sm"
+        fontWeight="medium"
+        colorPalette="purple"
+        color="colorPalette.fg"
+        bg="colorPalette.subtle"
+        px="3"
+        py="2"
+        borderRadius="md"
+      >
+        {hint}
+      </Text>
+    );
+  }
+  return (
+    <Text fontSize="sm" color="fg.muted">
+      {hint}
+    </Text>
+  );
+};
+
+/**
  * One supplier order, fully open: there are only a handful, and what's in
  * each and when it's due is the point of the page, so nothing hides behind a
  * click.
  *
  * The order number is plain text for now; linking it needs each shop's order
  * page URL, which is behind their login and not yet known. Its actions —
- * status, edit, delete — sit behind the "more" button.
+ * status, paid, edit, delete — sit behind the "more" button.
  *
  * @param order - the order with its lines
  * @param onFailure - show why one of its actions didn't happen
@@ -75,7 +106,14 @@ export default function SupplierOrderCard({
             {order.totalCents !== null ? (
               <Text fontWeight="bold">{formatPrice(order.totalCents, order.currency)}</Text>
             ) : null}
-            <SupplierOrderStatusBadge status={order.status} />
+            <HStack gap="1.5">
+              {isUnpaid(order) ? (
+                <Badge colorPalette="orange" variant="outline" borderRadius="full" px="2.5">
+                  Unpaid
+                </Badge>
+              ) : null}
+              <SupplierOrderStatusBadge status={order.status} />
+            </HStack>
           </Stack>
           <SupplierOrderActions order={order} onFailure={onFailure} />
         </HStack>
@@ -93,6 +131,8 @@ export default function SupplierOrderCard({
           {order.note ? <Text whiteSpace="pre-wrap">{order.note}</Text> : null}
         </Stack>
       ) : null}
+
+      <NextStep order={order} />
     </Stack>
   );
 }
