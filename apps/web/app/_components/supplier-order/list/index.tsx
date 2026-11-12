@@ -1,6 +1,16 @@
 'use client';
 
-import { Badge, Button, Skeleton, Stack, Tabs, Text, chakra } from '@chakra-ui/react';
+import {
+  Box,
+  Button,
+  HStack,
+  SimpleGrid,
+  Skeleton,
+  Stack,
+  Tabs,
+  Text,
+  chakra,
+} from '@chakra-ui/react';
 import type { SupplierOrder } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -20,39 +30,67 @@ import { useMe } from '@/services/queries/auth/useMe';
 import { useSupplierOrders } from '@/services/queries/supplier-orders/useSupplierOrders';
 
 import SupplierOrderCard from './_components/card';
+import SupplierOrderTile from './_components/tile';
 
 const ListSkeleton = () => (
   <Stack gap="3">
     {Array.from({ length: 3 }, (_, i) => (
-      <Skeleton key={i} h="32" borderRadius="card" />
+      <Skeleton key={i} h="36" borderRadius="1.25rem" />
     ))}
   </Stack>
 );
 
 type OnFailure = (message: string) => void;
 
-/** How many orders a tab holds; highlighted when an urgent tab has any. */
-const TabCount = ({ count, urgent }: { count: number; urgent: boolean }) => (
-  <Badge
-    colorPalette={urgent && count > 0 ? 'purple' : 'gray'}
-    variant={urgent && count > 0 ? 'solid' : 'subtle'}
-    borderRadius="full"
-    size="sm"
-  >
-    {count}
-  </Badge>
-);
+/**
+ * How many orders a tab holds. An urgent tab with any shows it as a small
+ * filled circle, the one mark on the black-and-white track that asks to be
+ * looked at.
+ */
+const TabCount = ({ count, urgent }: { count: number; urgent: boolean }) =>
+  urgent && count > 0 ? (
+    <chakra.span
+      display="inline-grid"
+      placeItems="center"
+      minW="5"
+      h="5"
+      px="1"
+      borderRadius="full"
+      fontSize="xs"
+      fontWeight="semibold"
+      bg="purple.500"
+      color="white"
+    >
+      {count}
+    </chakra.span>
+  ) : (
+    <chakra.span fontSize="xs" opacity="0.6">
+      {count}
+    </chakra.span>
+  );
 
-/** One tab's cards, or a line saying it has none. */
+/**
+ * One tab's orders, or a line saying it has none: tiles two to a row on a
+ * phone, row cards on a wider screen. Both are rendered and switched with
+ * `display`, not useBreakpointValue, which would hydrate mismatched (see
+ * product/search).
+ */
 const OrderStack = ({ orders, onFailure }: { orders: SupplierOrder[]; onFailure: OnFailure }) =>
   orders.length > 0 ? (
-    <Stack gap="3">
-      {orders.map((order) => (
-        <SupplierOrderCard key={order.id} order={order} onFailure={onFailure} />
-      ))}
-    </Stack>
+    <>
+      <SimpleGrid display={{ base: 'grid', md: 'none' }} columns={2} gap="3">
+        {orders.map((order) => (
+          <SupplierOrderTile key={order.id} order={order} onFailure={onFailure} />
+        ))}
+      </SimpleGrid>
+      <Stack display={{ base: 'none', md: 'flex' }} gap="3">
+        {orders.map((order) => (
+          <SupplierOrderCard key={order.id} order={order} onFailure={onFailure} />
+        ))}
+      </Stack>
+    </>
   ) : (
-    <Text color="fg.muted">Nothing here.</Text>
+    <Text color="gray.600">Nothing here.</Text>
   );
 
 /**
@@ -69,15 +107,22 @@ const GroupedOrders = ({
   <Stack gap="10">
     {groupByStatus(orders).map(({ status, orders: group }) => (
       <chakra.section key={status} aria-labelledby={`supplier-orders-${status}`}>
-        <Text
-          id={`supplier-orders-${status}`}
-          textStyle="eyebrow"
-          mb="3"
-          role="heading"
-          aria-level={2}
-        >
-          {SUPPLIER_ORDER_STATUS[status].label} · {group.length}
-        </Text>
+        <HStack gap="2" mb="4" colorPalette={SUPPLIER_ORDER_STATUS[status].palette}>
+          <Box boxSize="2" borderRadius="full" bg="colorPalette.solid" />
+          <Text
+            id={`supplier-orders-${status}`}
+            fontWeight="semibold"
+            fontSize="lg"
+            color="gray.900"
+            role="heading"
+            aria-level={2}
+          >
+            {SUPPLIER_ORDER_STATUS[status].label}
+          </Text>
+          <Text color="gray.500" fontSize="sm">
+            {group.length}
+          </Text>
+        </HStack>
         <OrderStack orders={group} onFailure={onFailure} />
       </chakra.section>
     ))}
@@ -152,12 +197,33 @@ export default function SupplierOrderList({ tab }: { tab: SupplierOrderTab }) {
       <Tabs.Root
         value={tab}
         onValueChange={({ value }) => selectTab(value)}
+        variant="enclosed"
         lazyMount
         unmountOnExit
       >
-        <Tabs.List overflowX="auto" mb="6">
+        {/* A light grey track with the chosen tab as a black pill; on a phone
+            it scrolls sideways rather than wrapping. */}
+        <Tabs.List
+          w="fit-content"
+          maxW="full"
+          overflowX="auto"
+          mb="6"
+          p="1"
+          borderRadius="full"
+          bg="gray.100"
+          css={{ scrollbarWidth: 'none' }}
+        >
           {SUPPLIER_ORDER_TABS.map(({ value, label, statuses }) => (
-            <Tabs.Trigger key={value} value={value} flexShrink="0">
+            <Tabs.Trigger
+              key={value}
+              value={value}
+              flexShrink="0"
+              gap="1.5"
+              px="3.5"
+              borderRadius="full"
+              color="gray.600"
+              _selected={{ bg: 'gray.900', color: 'white' }}
+            >
               {label}
               <TabCount
                 count={statuses ? ordersWithStatus(orders, statuses).length : orders.length}

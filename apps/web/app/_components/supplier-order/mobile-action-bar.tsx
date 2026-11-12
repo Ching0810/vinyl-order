@@ -28,9 +28,11 @@ export default function SupplierOrderMobileActionBar() {
       mx="-4"
       px="4"
       py="3"
-      bg="bg"
-      borderTopWidth="1px"
-      borderColor="border"
+      // Frosted rather than ruled off: the list shows faintly through it, and
+      // a soft upward shadow separates it from the cards below.
+      bg="bg/80"
+      backdropFilter="blur(12px)"
+      boxShadow="0 -8px 24px -12px rgb(16 14 13 / 18%)"
     >
       <EmailImportLink />
       <RecordSupplierOrderButton />
