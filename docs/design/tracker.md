@@ -552,12 +552,12 @@ and nothing else: the confirmation email arrives, and the order appears here
 |                          | THT, Cosmic (EasyStore)                                                | Rotten Blues (Shopify)                                 | Candlelight (WACA)         |
 | ------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------- |
 | Sender                   | `notifications+thtrecords@` / `+universalvinylmusic@mail.easystore.co` | `store+100236001461@t.shopifyemail.com`                | no confirmation of its own |
-| Subject                  | `您的訂單已確認。`                                                     | `訂單 #2895 已確認`                                    | —                          |
-| Order number             | body: `下訂單#8685`                                                    | subject and body                                       | —                          |
+| Subject                  | `您的訂單已確認。`                                                     | `訂單 #3003 已確認`                                    | —                          |
+| Order number             | body: `下訂單#1001`                                                    | subject and body                                       | —                          |
 | Lines                    | `title × qty`, then the **line total** `TWD 880`                       | `title × qty` (title may wrap), line total `$1,180.00` | —                          |
 | Total                    | `總額: TWD 940` (shipping, tax and points in)                          | `總計 $1,240.00 TWD`                                   | —                          |
 | Expected                 | in the title: `(12月補貨預訂)`, `(10/23發行預訂）`                     | none                                                   | —                          |
-| Cover                    | THT: `cdn.store-assets.com`; Cosmic: behind a tracking redirect        | `cdn.shopify.com`                                      | —                          |
+| Cover                    | `cdn.store-assets.com`, a CSS background in the order's table          | `cdn.shopify.com`, `img.order-list__product-image`     | —                          |
 | Link to the product page | none                                                                   | none                                                   | —                          |
 
 Candlelight's mail all comes from its payment provider, PayNow: a card
@@ -614,6 +614,13 @@ Parsing rules, pinned by fixture tests:
   other records with prices that must not become lines.
 - **Amounts are line totals**: `unitPriceCents = lineTotal / quantity`.
   Thousands separators and `.00` are dropped (`$1,180.00` → 118 000 cents).
+- **The lines must add up to the email's subtotal** ("金額:", "小計"),
+  exactly. Every sample has one line of quantity 1, where a line total and a
+  unit price look the same, and no order with more exists to sample. Were
+  the amount a unit price, two copies would import at half price — plausible
+  and wrong; against the subtotal it doesn't add up, and the email is
+  refused. A discount shown inside the list is caught the same way. The
+  total isn't used for this: shipping, tax and points make it differ.
 - **Expected month from the title**: `12月` and `10/23` give the month; the
   year is the order's if that month is not before the order's month, else
   the next year's (ordered November, "1月" → January next year). The text
@@ -621,8 +628,12 @@ Parsing rules, pinned by fixture tests:
 - **The order's day** is the email's `Date`, as a day in Taipei. The emails
   carry no order date of their own, and a confirmation can come a day after
   the order; the day stays editable (§9.3).
-- **A cover** is kept only from a host the web already allows
-  (`cdn.store-assets.com`, `cdn.shopify.com`); Cosmic's redirect is dropped.
+- **A cover** is taken from where each platform puts it beside a line, never
+  from any image in the email: EasyStore's first `<img>` is the shop's logo,
+  and Cosmic's "為您推薦產品" have pictures too. It is kept only from the
+  shops' CDNs (`cdn.store-assets.com`, `cdn.shopify.com`, which the web must
+  allow in `next.config.ts`), and paired with lines only when there is one
+  per line.
 
 **The import token.** The script can't hold a login session (it expires),
 so each user has one long-lived token that does one thing: import into
