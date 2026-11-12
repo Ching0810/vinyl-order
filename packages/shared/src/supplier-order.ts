@@ -219,6 +219,39 @@ export const updateSupplierOrderSchema = z
   );
 export type UpdateSupplierOrderInput = z.infer<typeof updateSupplierOrderSchema>;
 
+// ---- Import token ----
+
+/**
+ * The user's token for importing orders from their confirmation emails
+ * (tracker.md §9.4), as the page shows it: when it was made and last used.
+ * Never the token itself — that is shown once, when it is created.
+ */
+export const supplierOrderImportTokenSchema = z.object({
+  createdAt: z.iso.datetime(),
+  /** When the Apps Script last used it, or null if it never has. */
+  lastUsedAt: z.iso.datetime().nullable(),
+});
+export type SupplierOrderImportToken = z.infer<typeof supplierOrderImportTokenSchema>;
+
+/**
+ * GET /supplier-orders/import-token: the user's token, or null if they have
+ * none. Wrapped so "none" is a JSON body rather than an empty response.
+ */
+export const supplierOrderImportTokenStatusSchema = z.object({
+  importToken: supplierOrderImportTokenSchema.nullable(),
+});
+export type SupplierOrderImportTokenStatus = z.infer<typeof supplierOrderImportTokenStatusSchema>;
+
+/**
+ * POST /supplier-orders/import-token: a new token, replacing any before it.
+ * The only response that carries the token; only its hash is kept.
+ */
+export const createdSupplierOrderImportTokenSchema = supplierOrderImportTokenSchema.extend({
+  /** `vo_imp_` and 43 URL-safe characters (32 random bytes). */
+  token: z.string(),
+});
+export type CreatedSupplierOrderImportToken = z.infer<typeof createdSupplierOrderImportTokenSchema>;
+
 // ---- Errors ----
 
 /**
