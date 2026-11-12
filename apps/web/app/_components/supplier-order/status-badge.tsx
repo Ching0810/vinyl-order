@@ -1,12 +1,12 @@
-import { Badge, Box } from '@chakra-ui/react';
+import { Badge } from '@chakra-ui/react';
 import type { SupplierOrderStatus } from '@vinyl-order/shared';
 
 import { SUPPLIER_ORDER_STATUS } from '@/lib/utils/supplier-order';
 
 /**
- * Where a supplier order stands: a black-and-white pill, with a dot of the
- * status's colour as the only tint, so it reads at a glance without
- * colouring the page. Its own component, not the demo store's StatusBadge:
+ * Where a supplier order stands, as a pill in its status's colour: tinted
+ * text, background and border, the only colour on the black-and-white page
+ * besides the covers. Its own component, not the demo store's StatusBadge:
  * the two kinds of order have different statuses and must not read as one
  * list.
  *
@@ -18,16 +18,14 @@ export default function SupplierOrderStatusBadge({ status }: { status: SupplierO
   return (
     <Badge
       colorPalette={palette}
-      bg="white"
-      color="gray.900"
+      bg="colorPalette.subtle"
+      color="colorPalette.fg"
       borderWidth="1px"
-      borderColor="gray.900"
+      borderColor="colorPalette.muted"
       borderRadius="full"
       px="2.5"
       py="0.5"
-      gap="1.5"
     >
-      <Box boxSize="1.5" borderRadius="full" bg="colorPalette.solid" />
       {label}
     </Badge>
   );

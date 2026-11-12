@@ -94,6 +94,29 @@ export const CloseIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+/** Sliders: opens a list's filters. */
+export const FilterIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+    <circle cx="16" cy="7" r="2" />
+    <circle cx="8" cy="17" r="2" />
+  </svg>
+);
+
+/** Into a nested list, such as one filter's choices. */
+export const ArrowRightIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </svg>
+);
+
+/** Back out of a nested list. */
+export const ArrowLeftIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...props}>
+    <path d="M19 12H5M11 6l-6 6 6 6" />
+  </svg>
+);
+
 /** Record mark used as the wordmark glyph. */
 export const DiscIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...props}>
