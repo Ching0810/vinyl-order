@@ -61,5 +61,7 @@ export const parseEasyStore = (lines: string[]): PlatformParse => {
   const totalCents = amountAfter(lines, '總額:', AMOUNT);
   if (totalCents === null) return { ok: false, reason: 'no total found' };
 
-  return { ok: true, orderNumber, totalCents, lines: items };
+  // The confirmation says nothing about payment; the shop's 確認收款通知 does
+  // (tracker.md §9.5), so until that is read the order starts unpaid.
+  return { ok: true, orderNumber, totalCents, paidInFull: false, lines: items };
 };

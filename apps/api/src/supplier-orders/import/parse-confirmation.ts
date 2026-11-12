@@ -98,6 +98,7 @@ export const parseConfirmation = (email: ConfirmationEmail): ParseResult => {
       orderNumber: read.orderNumber,
       orderedAt,
       totalCents: read.totalCents,
+      paidAt: read.paidInFull ? orderedAt : null,
       items: read.lines.map((line, index) => {
         return {
           ...line,

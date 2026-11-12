@@ -115,6 +115,8 @@ describe('Supplier order import (e2e)', () => {
         orderedAt: '2026-11-04',
         status: 'ordered',
         totalCents: 94_000,
+        // EasyStore's confirmation says nothing about payment.
+        paidAt: null,
         trackingNumber: null,
         note: null,
       });
@@ -128,6 +130,17 @@ describe('Supplier order import (e2e)', () => {
           offerId: null,
         }),
       ]);
+    });
+
+    // The route keeps what the parser read about payment, not only the lines.
+    it('records a card-paid Shopify order as paid on its day', async () => {
+      const { session, token } = await createImporter();
+      const html = ROTTEN_BLUES.html.replace('$0.00 TWD', '$1,240.00 TWD');
+
+      await send(token, { ...ROTTEN_BLUES, html }).expect(201);
+
+      const [order] = await listOf(session);
+      expect(order).toMatchObject({ supplier: 'rotten_blues', paidAt: '2026-10-05' });
     });
 
     it('records the use of the token', async () => {

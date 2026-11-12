@@ -25,23 +25,27 @@ export const SUPPLIER_ORDER_STATUS: Record<
   ordered: { label: 'Ordered', palette: 'gray' },
   preparing: { label: 'Preparing', palette: 'orange' },
   shipped: { label: 'Shipped', palette: 'blue' },
+  ready_for_pickup: { label: 'Ready for pickup', palette: 'purple' },
   delivered: { label: 'Delivered', palette: 'green' },
   cancelled: { label: 'Cancelled', palette: 'red' },
 };
 
 /**
- * Where each status's group sits on the page, top first. Open orders before
- * finished ones, and among the open, the nearest to arriving first: what's on
- * its way, then what the shop confirmed, then what's only placed.
+ * Where each status's group sits on the page, top first. What waits at a
+ * store comes first, since it is the one that asks something of me
+ * (tracker.md §9.2); then the other open orders, nearest to arriving first:
+ * what's on its way, then what the shop confirmed, then what's only placed;
+ * then finished ones.
  *
  * A Record over SupplierOrderStatus, so a new status needs a place here.
  */
 const GROUP_RANK: Record<SupplierOrderStatus, number> = {
-  shipped: 0,
-  preparing: 1,
-  ordered: 2,
-  delivered: 3,
-  cancelled: 4,
+  ready_for_pickup: 0,
+  shipped: 1,
+  preparing: 2,
+  ordered: 3,
+  delivered: 4,
+  cancelled: 5,
 };
 
 /** Statuses whose orders are still to arrive, so an expected month matters. */

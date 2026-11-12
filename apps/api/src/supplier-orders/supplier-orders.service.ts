@@ -90,6 +90,7 @@ export class SupplierOrdersService {
           orderNumber: input.orderNumber,
           orderedAt: fromDay(input.orderedAt),
           totalCents: input.totalCents ?? null,
+          paidAt: input.paidAt ? fromDay(input.paidAt) : null,
           trackingNumber: input.trackingNumber ?? null,
           note: blankToNull(input.note),
           items: {
@@ -117,8 +118,8 @@ export class SupplierOrdersService {
   }
 
   /**
-   * Change an order: its number, date, total, status, tracking number, note
-   * or lines (replaceItems).
+   * Change an order: its number, date, total, payment day, status, tracking
+   * number, note or lines (replaceItems).
    *
    * Two guards, both compare-and-set — the UPDATE's WHERE carries what was
    * checked, so a change made in between matches nothing and is reported
@@ -199,6 +200,7 @@ export class SupplierOrdersService {
     if (input.orderNumber !== undefined) data.orderNumber = input.orderNumber;
     if (input.orderedAt !== undefined) data.orderedAt = fromDay(input.orderedAt);
     if (input.totalCents !== undefined) data.totalCents = input.totalCents;
+    if (input.paidAt !== undefined) data.paidAt = input.paidAt && fromDay(input.paidAt);
     if (input.trackingNumber !== undefined) data.trackingNumber = input.trackingNumber;
     if (input.note !== undefined) data.note = blankToNull(input.note);
 

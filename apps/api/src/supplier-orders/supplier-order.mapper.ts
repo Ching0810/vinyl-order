@@ -48,6 +48,7 @@ export const toSupplierOrderContract = (order: SupplierOrderWithItems): Supplier
   status: order.status,
   totalCents: order.totalCents,
   currency: order.currency,
+  paidAt: order.paidAt && toDay(order.paidAt),
   trackingNumber: order.trackingNumber,
   note: order.note,
   items: order.items.map((item) => ({

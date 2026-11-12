@@ -53,5 +53,9 @@ export const parseShopify = (lines: string[], subject: string): PlatformParse =>
   const totalCents = amountAfter(lines, '總計', TOTAL_AMOUNT);
   if (totalCents === null) return { ok: false, reason: 'no total in TWD found' };
 
-  return { ok: true, orderNumber, totalCents, lines: items };
+  // What was paid at checkout: the total when paid by card, $0.00 for cash
+  // on pickup. Anything short of the total, or no such line, is unpaid.
+  const paidCents = amountAfter(lines, '本日總付款金額', TOTAL_AMOUNT);
+
+  return { ok: true, orderNumber, totalCents, paidInFull: paidCents === totalCents, lines: items };
 };
