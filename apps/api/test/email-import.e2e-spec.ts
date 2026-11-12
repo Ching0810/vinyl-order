@@ -159,6 +159,16 @@ describe('Email import: reading confirmations (e2e)', () => {
       expect(orderOf({ ...THT, html }).items[0].imageUrl).toBeNull();
     });
 
+    // The host is right but the path isn't the shop's product images.
+    it("are dropped from outside the shop CDN's product path", () => {
+      const html = THT.html.replace(
+        'https://cdn.store-assets.com/s/270153/i/10000001.jpg',
+        'https://cdn.store-assets.com/elsewhere/cover.jpg',
+      );
+
+      expect(orderOf({ ...THT, html }).items[0].imageUrl).toBeNull();
+    });
+
     // Two lines, one picture: pairing by position would give one record
     // another's cover, so neither gets one.
     it('are left out when there is not one per line', () => {

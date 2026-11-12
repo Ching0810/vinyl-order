@@ -389,6 +389,61 @@ describe('Supplier orders (e2e)', () => {
     });
   });
 
+  // A cover pasted from a shop's product page (tracker.md §9.4): only from
+  // the shops' own image hosts, so the page never loads one from wherever a
+  // request points.
+  describe('covers', () => {
+    const CANDLELIGHT_COVER =
+      'https://img.cloudimg.in/uploads/shops/37376/products/00/0000000000000000.jpg';
+    const THT_COVER = 'https://cdn.store-assets.com/s/270153/i/10000001.jpg';
+
+    const withCover = (imageUrl: string | null) =>
+      newOrder({ items: [{ title: 'Covered', unitPriceCents: 1, imageUrl }] });
+
+    it("records a cover from Candlelight's own shop", async () => {
+      const { token } = await createUser();
+
+      const order = await recorded(token, withCover(CANDLELIGHT_COVER));
+
+      expect(order.items[0].imageUrl).toBe(CANDLELIGHT_COVER);
+    });
+
+    it.each([
+      ['another host', 'https://images.example/uploads/shops/37376/a.jpg'],
+      ['plain http', 'http://img.cloudimg.in/uploads/shops/37376/a.jpg'],
+      ['another shop on the same host', 'https://img.cloudimg.in/uploads/shops/99999/a.jpg'],
+      ['a path that climbs out', 'https://img.cloudimg.in/uploads/shops/37376/../99999/a.jpg'],
+      ['credentials in the URL', 'https://me@img.cloudimg.in/uploads/shops/37376/a.jpg'],
+      ['a port', 'https://img.cloudimg.in:8443/uploads/shops/37376/a.jpg'],
+      ['not a URL', 'cover.jpg'],
+    ])('refuses %s', async (_, imageUrl) => {
+      const { token } = await createUser();
+
+      await create(token, withCover(imageUrl)).expect(400);
+    });
+
+    // Editing a line without sending its cover — an imported one, say —
+    // keeps it; null clears it; a new one replaces it.
+    it('keeps a cover an edit leaves out, clears it on null, replaces it', async () => {
+      const { token } = await createUser();
+      const order = await recorded(token, withCover(THT_COVER));
+      const [line] = order.items;
+      const edit = (cover: object) =>
+        update(token, order.id, {
+          items: [{ id: line.id, title: 'Covered', unitPriceCents: 1, ...cover }],
+        }).expect(200);
+
+      const kept = await edit({});
+      expect((kept.body as SupplierOrder).items[0].imageUrl).toBe(THT_COVER);
+
+      const replaced = await edit({ imageUrl: CANDLELIGHT_COVER });
+      expect((replaced.body as SupplierOrder).items[0].imageUrl).toBe(CANDLELIGHT_COVER);
+
+      const cleared = await edit({ imageUrl: null });
+      expect((cleared.body as SupplierOrder).items[0].imageUrl).toBeNull();
+    });
+  });
+
   describe('editing lines', () => {
     /** An order with two lines, A and B, as recorded. */
     const twoLines = async (token: string) => {

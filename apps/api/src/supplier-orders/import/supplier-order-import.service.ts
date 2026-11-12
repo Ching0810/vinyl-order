@@ -53,31 +53,16 @@ export class SupplierOrderImportService {
     const { order } = parsed;
 
     // The same limits a typed order meets (title length, 50 lines, 99
-    // copies…): an email can't record what the form couldn't. The cover is
-    // checked by the parser, which keeps only the shops' CDNs.
-    const valid = createSupplierOrderSchema.safeParse({
-      ...order,
-      items: order.items.map((line) => {
-        return {
-          title: line.title,
-          quantity: line.quantity,
-          unitPriceCents: line.unitPriceCents,
-          expectedMonth: line.expectedMonth,
-        };
-      }),
-    });
+    // copies, covers only from the shops' own image hosts): an email can't
+    // record what the form couldn't.
+    const valid = createSupplierOrderSchema.safeParse(order);
     if (!valid.success) {
       this.logger.warn(`Email from ${order.supplier} not imported: outside the order limits`);
       throw unreadable('the order is outside what can be recorded');
     }
 
     try {
-      await this.supplierOrders.create(userId, {
-        ...valid.data,
-        items: valid.data.items.map((line, index) => {
-          return { ...line, imageUrl: order.items[index].imageUrl };
-        }),
-      });
+      await this.supplierOrders.create(userId, valid.data);
       return { result: 'created' };
     } catch (error) {
       if (isConflict(error, 'SUPPLIER_ORDER_DUPLICATE')) return { result: 'already_recorded' };

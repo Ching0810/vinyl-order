@@ -30,15 +30,6 @@ const listOrder = [
 const blankToNull = (text: string | null | undefined): string | null => text || null;
 
 /**
- * What create() records: the POST body, or an imported email's order, whose
- * lines may also carry a cover. The cover isn't part of the POST body
- * (supplierOrderItemSchema says why), so only email import can set one.
- */
-export type NewSupplierOrder = Omit<CreateSupplierOrderInput, 'items'> & {
-  items: (CreateSupplierOrderInput['items'][number] & { imageUrl?: string | null })[];
-};
-
-/**
  * A user's own record of what they ordered at the shops (tracker.md §9).
  *
  * Every query carries userId in its WHERE, so another user's order is simply
@@ -81,7 +72,7 @@ export class SupplierOrdersService {
    * at this shop. The unique index decides, not a lookup first: two submits of
    * one form could both pass a lookup.
    */
-  async create(userId: string, input: NewSupplierOrder): Promise<SupplierOrderContract> {
+  async create(userId: string, input: CreateSupplierOrderInput): Promise<SupplierOrderContract> {
     try {
       const order = await this.prisma.supplierOrder.create({
         data: {
@@ -280,9 +271,17 @@ export class SupplierOrdersService {
         expectedMonth: line.expectedMonth ?? null,
       };
       if (id) {
-        await transaction.supplierOrderItem.update({ where: { id }, data: fields });
+        // A cover left out stays as it is — an imported one isn't lost to a
+        // client that doesn't send it; null clears it.
+        const cover = line.imageUrl === undefined ? {} : { imageUrl: line.imageUrl };
+        await transaction.supplierOrderItem.update({
+          where: { id },
+          data: { ...fields, ...cover },
+        });
       } else {
-        await transaction.supplierOrderItem.create({ data: { supplierOrderId, ...fields } });
+        await transaction.supplierOrderItem.create({
+          data: { supplierOrderId, ...fields, imageUrl: line.imageUrl ?? null },
+        });
       }
     }
   }
