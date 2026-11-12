@@ -3,7 +3,7 @@
 import { Button, HStack, Skeleton, Stack, Text } from '@chakra-ui/react';
 import NextLink from 'next/link';
 
-import Cover from '@/components/order/cover';
+import Cover from '@/components/ui/cover';
 import { formatPrice } from '@/lib/utils/currency';
 import { useOrder } from '@/services/queries/orders/useOrder';
 /**

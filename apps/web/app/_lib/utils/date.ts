@@ -64,6 +64,32 @@ const isoDayInTaipei = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei
  */
 export const todayInTaipei = (): string => isoDayInTaipei.format(new Date());
 
+const relativeFormat = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+/** Largest unit first: the first one the gap fills is the one to say. */
+const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['day', 86_400_000],
+  ['hour', 3_600_000],
+  ['minute', 60_000],
+];
+
+/**
+ * How long ago a moment was, e.g. "3 hours ago", "yesterday", "just now" —
+ * for "is the daily import running?", where the gap matters more than the
+ * hour. Only for values rendered in the browser after a fetch: "now" differs
+ * between a server render and hydration.
+ *
+ * @param iso - ISO 8601 timestamp, in the past
+ * @param now - the moment to measure from; injectable for tests
+ */
+export const formatTimeAgo = (iso: string, now: number = Date.now()): string => {
+  const elapsed = now - Date.parse(iso);
+  for (const [unit, ms] of RELATIVE_UNITS) {
+    if (elapsed >= ms) return relativeFormat.format(-Math.floor(elapsed / ms), unit);
+  }
+  return 'just now';
+};
+
 /**
  * Format a remaining duration as `m:ss`, e.g. 754_000 → "12:34". Rounded up,
  * so the last second reads "0:01" rather than "0:00" while time is still left.

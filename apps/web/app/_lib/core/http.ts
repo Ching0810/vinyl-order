@@ -11,6 +11,16 @@
 // throws when the base is relative.
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 
+/**
+ * An API path as a full URL, for handing to something outside this site —
+ * the email import's Apps Script. Browser only: a relative base is resolved
+ * against the page's own address.
+ *
+ * @param path - e.g. `/supplier-orders/import`
+ */
+export const absoluteApiUrl = (path: string): string =>
+  new URL(`${BASE_URL}${path}`, window.location.origin).href;
+
 /** Thrown on any non-2xx response; carries the status and parsed error body. */
 export class HttpError extends Error {
   constructor(

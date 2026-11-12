@@ -2,15 +2,22 @@ import { Flex, HStack, Stack, Text } from '@chakra-ui/react';
 import type { SupplierOrder, SupplierOrderItem } from '@vinyl-order/shared';
 
 import SupplierOrderStatusBadge from '@/components/supplier-order/status-badge';
+import Cover from '@/components/ui/cover';
 import { formatPrice } from '@/lib/utils/currency';
 import { formatDay, formatMonth } from '@/lib/utils/date';
 import { SUPPLIER_LABEL } from '@/lib/utils/supplier-order';
 
 import SupplierOrderActions from './actions';
 
-/** One record in the order: title, price × quantity, and when it's due if known. */
+/**
+ * One record in the order: its cover, title, price × quantity, and when it's
+ * due if known. Every line keeps the cover's place — a blank tile when there
+ * is none (typed lines, and lines from a shop whose email shows none) — so
+ * titles line up whether or not a line has one.
+ */
 const Line = ({ item, currency }: { item: SupplierOrderItem; currency: string }) => (
   <HStack gap="3" align="start">
+    <Cover src={item.imageUrl} size="12" px={48} />
     <Stack gap="0" flex="1" minW="0">
       <Text fontSize="sm" fontWeight="medium" truncate>
         {item.title}

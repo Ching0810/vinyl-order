@@ -582,16 +582,26 @@ but moving orders to `shipped` from them isn't needed for now.
 
 How it runs:
 
-1. Once a day, a time-driven trigger searches
-   `from:(the three senders) subject:已確認 -label:vinyl-imported`.
-2. Each email whose `Authentication-Results` says `dkim=pass` for its
-   sender's domain is POSTed — sender, subject, `Date`, and the HTML body
-   with every link removed — to `POST /supplier-orders/import`, with the
-   user's import token in the `Authorization` header.
-3. On `201` (created) or `200` (already recorded) it is labelled
-   `vinyl-imported`; on `422` (not understood) `vinyl-import-failed`, for
-   typing by hand; on anything else it is left alone and tried the next day
-   — which is also what happens when Render is asleep.
+1. Once a day (10:00 Taipei, inside the wake ping's hours), a time-driven
+   trigger searches `from:(the three senders) subject:已確認 newer_than:7d`,
+   and pings `/health` until the API is awake.
+2. Each email whose first `Authentication-Results` — the one Gmail adds —
+   says `dkim=pass` for its sender's domain is POSTed — sender, subject,
+   `Date`, and the HTML body with every link removed — to
+   `POST /supplier-orders/import`, with the user's import token in the
+   `Authorization` header.
+3. On `201` or `200` its thread is labelled `vinyl-imported`; on `422`
+   `vinyl-import-failed`, for typing by hand. Anything else is sent again
+   the next day, as long as the email is within the week.
+
+- **A window, not a "done" label.** The plan was to search
+  `-label:vinyl-imported`, but the shops reuse one subject, so Gmail
+  threads their confirmations together — and labels belong to threads: a
+  new confirmation arriving in a labelled thread would never be found.
+  Each run sends the whole week instead and the API's idempotency absorbs
+  the repeats; labels only tell the user what happened. A week rides out a
+  few days of downtime, and confirmations older than that are never sent,
+  so setting it up doesn't fill the list with long-delivered orders.
 
 - **The parsers live in the API, not in the script.** The script only finds
   and forwards, so a shop changing its template is a fix with fixtures and
@@ -811,8 +821,8 @@ Each step is its own PR.
    (§9.2), with typed lines. **The first usable page** — for the orders
    already waiting to ship. _(Done: per-user API #68; list and entry form
    with expected months #69; status, tracking, note and delete #70; editing
-   with the version check (§9.3) #71–#72. Next: step 13's email import,
-   pulled ahead (§9.4), then an optional `paidAt` (§9.1).)_
+   with the version check (§9.3) #71–#72; step 13's email import pulled
+   ahead (§9.4). Next: an optional `paidAt` (§9.1).)_
 5. Checkout on offers (§8): cart and order lines, the reservation guard,
    restock on cancel and expiry. `Product`'s `priceCents`, `currency` and
    `stock` and `CartItem.productId` are dropped here.
@@ -834,7 +844,8 @@ Each step is its own PR.
 13. Supplier orders from email — **pulled ahead to follow step 4**, once
     typing orders in had shown what it costs: confirmations from THT, Cosmic
     and Rotten Blues (§9.4). Shipping notices and Candlelight are not part
-    of it.
+    of it. _(Done: API #74 — parsers, import token, import route; web and
+    the Apps Script (`tools/gmail-import/`) in the PR after it.)_
 
 Removal first so the model change starts from a schema with nothing of
 Discogs left in it. **Supplier orders come straight after the model**,
