@@ -15,7 +15,8 @@ export default function RecordSupplierOrderButton() {
   if (!user) return null;
 
   return (
-    <Button asChild colorPalette="brand" borderRadius="full" size="sm">
+    // Black, as the supplier orders pages are black and white.
+    <Button asChild colorPalette="gray" borderRadius="full" size="sm">
       <NextLink href="/supplier-orders/new">Record an order</NextLink>
     </Button>
   );

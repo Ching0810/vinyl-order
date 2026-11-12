@@ -500,14 +500,31 @@ the form.
 
 ### 9.2 The page
 
-Grouped by status, what needs me first: ready for pickup, then the ones
-moving — shipped, preparing, ordered — then delivered and cancelled. Each
-card: shop, order number, ordered day, total, an "Unpaid" badge, tracking
-number, note, its lines with quantity, price and expected month, and the
-next step's hint (§9.5). Not paginated: one person's orders are a page's
+In tabs by stage, each with its count: **All**, **To pick up**, **Shipped**,
+**Not shipped** (ordered and preparing: both still with the shop),
+**Delivered** and **Cancelled**. The tab is in the URL (`?tab=shipped`), so
+a reload or Back keeps it. On a phone, "Email import" and "Record an order"
+sit in a bar held at the bottom of the screen, so the list comes first. All
+is grouped by status, what needs me first:
+ready for pickup, then the ones moving — shipped, preparing, ordered — then
+delivered and cancelled; the other tabs list their orders without
+headings, sorted as a group is.
+
+The page is black and white, light grey cards on the page, so the covers
+are its only colour; a status keeps a dot of its own colour. Each card is
+titled by its first record, since what I bought is what I look for, and
+every card has the same lines in the same places, whatever the order holds:
+a list of uneven cards reads as clutter. So a card shows the first
+record's cover, title (one line, cut short with an ellipsis, "+N" for
+further records) and price × quantity, "Unpaid", the status and its menu,
+the total, shop, order number and day, and the soonest expected month when
+a shop gave one. On a phone the cards are tiles two to a row, the cover
+alone on top; on a wider screen, rows. The other records, the tracking
+number, the note and the next step's hint (§9.5) belong to the order's own
+page, still to come. Not paginated: one person's orders are a page's
 worth, and paging by date would split the groups. Each card's menu moves
-the status (§9.1), marks it paid, opens the edit form (§9.3) or deletes the
-order.
+the status (§9.1), marks it paid, opens the edit form (§9.3) or deletes
+the order.
 
 Entry is a form at `/supplier-orders/new`: shop, order number, day, total,
 tracking, note, and typed lines. Picking lines from my offers, and covers,

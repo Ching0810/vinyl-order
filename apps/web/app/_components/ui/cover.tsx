@@ -7,22 +7,25 @@ import Image from 'next/image';
  * @param src - the image URL, on a host next.config.ts allows
  * @param size - rendered edge length, as a Chakra size token
  * @param px - the same edge length in pixels, for the image `sizes` hint
+ * @param radius - corner rounding, to match the surface it sits on
  */
 export default function Cover({
   src,
   size,
   px,
+  radius = 'md',
 }: {
   src: string | null;
   size: string | Record<string, string>;
   px: number;
+  radius?: string;
 }) {
   return (
     <Box
       position="relative"
       boxSize={size}
       flexShrink="0"
-      borderRadius="md"
+      borderRadius={radius}
       overflow="hidden"
       bg="bg.muted"
     >

@@ -160,3 +160,48 @@ export const groupByStatus = (orders: SupplierOrder[]): SupplierOrderGroup[] => 
       return { status, orders: group.toSorted(order) };
     });
 };
+
+/**
+ * The list's tabs, in order. "Not shipped" joins ordered and preparing: both
+ * are still with the shop. Each tab's statuses are all open or all finished,
+ * so one sort fits the whole tab.
+ */
+export const SUPPLIER_ORDER_TABS = [
+  { value: 'all', label: 'All', statuses: null },
+  { value: 'pickup', label: 'To pick up', statuses: ['ready_for_pickup'] },
+  { value: 'shipped', label: 'Shipped', statuses: ['shipped'] },
+  { value: 'not_shipped', label: 'Not shipped', statuses: ['ordered', 'preparing'] },
+  { value: 'delivered', label: 'Delivered', statuses: ['delivered'] },
+  { value: 'cancelled', label: 'Cancelled', statuses: ['cancelled'] },
+] as const satisfies readonly {
+  value: string;
+  label: string;
+  statuses: readonly SupplierOrderStatus[] | null;
+}[];
+
+export type SupplierOrderTab = (typeof SUPPLIER_ORDER_TABS)[number]['value'];
+
+/**
+ * The tab a `?tab=` value names; "all" for none, or for one that isn't a tab
+ * (an old or mistyped link), rather than an empty page.
+ *
+ * @param value - the query parameter, or null when absent
+ */
+export const toSupplierOrderTab = (value: string | null): SupplierOrderTab =>
+  SUPPLIER_ORDER_TABS.find((tab) => tab.value === value)?.value ?? 'all';
+
+/**
+ * One tab's orders, sorted as groupByStatus sorts a group: open ones by next
+ * expected month, finished ones newest first. Not for "all", which is shown
+ * grouped.
+ *
+ * @param orders - the user's orders, in any order
+ * @param statuses - the tab's statuses
+ */
+export const ordersWithStatus = (
+  orders: SupplierOrder[],
+  statuses: readonly SupplierOrderStatus[],
+): SupplierOrder[] =>
+  orders
+    .filter((order) => statuses.includes(order.status))
+    .toSorted(isOpen(statuses[0]) ? byNextExpected : byOrderedAtDesc);

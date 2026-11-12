@@ -1,77 +1,29 @@
-import { Badge, Flex, HStack, Stack, Text } from '@chakra-ui/react';
-import type { SupplierOrder, SupplierOrderItem } from '@vinyl-order/shared';
+import { Box, HStack, Stack, Text } from '@chakra-ui/react';
+import type { SupplierOrder } from '@vinyl-order/shared';
 
 import SupplierOrderStatusBadge from '@/components/supplier-order/status-badge';
 import Cover from '@/components/ui/cover';
 import { formatPrice } from '@/lib/utils/currency';
-import { formatDay, formatMonth } from '@/lib/utils/date';
-import { SUPPLIER_LABEL, isUnpaid, nextStepHint } from '@/lib/utils/supplier-order';
+import { formatDay } from '@/lib/utils/date';
+import { SUPPLIER_LABEL, isUnpaid, nextExpectedMonth } from '@/lib/utils/supplier-order';
 
 import SupplierOrderActions from './actions';
+import ExpectedBadge from './expected-badge';
+import OtherRecords from './other-records';
+import UnpaidBadge from './unpaid-badge';
 
 /**
- * One record in the order: its cover, title, price × quantity, and when it's
- * due if known. Every line keeps the cover's place — a blank tile when there
- * is none (typed lines, and lines from a shop whose email shows none) — so
- * titles line up whether or not a line has one.
- */
-const Line = ({ item, currency }: { item: SupplierOrderItem; currency: string }) => (
-  <HStack gap="3" align="start">
-    <Cover src={item.imageUrl} size="12" px={48} />
-    <Stack gap="0" flex="1" minW="0">
-      <Text fontSize="sm" fontWeight="medium" truncate>
-        {item.title}
-      </Text>
-      <Text fontSize="xs" color="fg.muted">
-        {formatPrice(item.unitPriceCents, currency)} × {item.quantity}
-        {item.expectedMonth ? ` · expected ${formatMonth(item.expectedMonth)}` : ''}
-      </Text>
-    </Stack>
-    <Text fontSize="sm" fontWeight="semibold" flexShrink="0">
-      {formatPrice(item.lineTotalCents, currency)}
-    </Text>
-  </HStack>
-);
-
-/**
- * What to do next (tracker.md §9.5). Waiting at the store is the one that
- * needs doing now, so it stands out; the others are a quiet reminder of
- * what to watch for.
- */
-const NextStep = ({ order }: { order: SupplierOrder }) => {
-  const hint = nextStepHint(order);
-  if (!hint) return null;
-  if (order.status === 'ready_for_pickup') {
-    return (
-      <Text
-        fontSize="sm"
-        fontWeight="medium"
-        colorPalette="purple"
-        color="colorPalette.fg"
-        bg="colorPalette.subtle"
-        px="3"
-        py="2"
-        borderRadius="md"
-      >
-        {hint}
-      </Text>
-    );
-  }
-  return (
-    <Text fontSize="sm" color="fg.muted">
-      {hint}
-    </Text>
-  );
-};
-
-/**
- * One supplier order, fully open: there are only a handful, and what's in
- * each and when it's due is the point of the page, so nothing hides behind a
- * click.
+ * One supplier order on a wide screen, as a row: a light grey card in the
+ * black-and-white of a record shop's catalogue, the cover its only colour.
+ * Phones get SupplierOrderTile.
  *
- * The order number is plain text for now; linking it needs each shop's order
- * page URL, which is behind their login and not yet known. Its actions —
- * status, paid, edit, delete — sit behind the "more" button.
+ * Every row has the same slots at the same height, whatever the order holds,
+ * so the list reads evenly: the first record's cover and title (cut short
+ * with an ellipsis), its price × quantity and the soonest expected month,
+ * then shop, order number and day; on the right, "Unpaid", the status, the
+ * menu and the total. Further records show as "+N" on the cover; they, the
+ * tracking number, the note and the next step are left for the order's own
+ * page.
  *
  * @param order - the order with its lines
  * @param onFailure - show why one of its actions didn't happen
@@ -83,56 +35,44 @@ export default function SupplierOrderCard({
   order: SupplierOrder;
   onFailure: (message: string) => void;
 }) {
+  const [first] = order.items;
+
   return (
-    <Stack
-      gap="4"
-      p="4"
-      borderWidth="1px"
-      borderColor="border.muted"
-      borderRadius="card"
-      bg="bg.panel"
-    >
-      <Flex justify="space-between" align="start" gap="4">
-        <Stack gap="1" minW="0">
-          <Text fontWeight="semibold">{SUPPLIER_LABEL[order.supplier]}</Text>
-          <Text fontSize="sm" color="fg.muted">
-            Order {order.orderNumber} · {formatDay(order.orderedAt)}
+    <HStack gap="4" p="4" borderRadius="1.25rem" bg="gray.100">
+      <Box position="relative" flexShrink="0">
+        <Cover src={first.imageUrl} size="20" px={80} radius="10px" />
+        <OtherRecords order={order} position="absolute" bottom="1" right="1" />
+      </Box>
+
+      <Stack gap="1.5" flex="1" minW="0">
+        <Text fontWeight="semibold" color="gray.900" truncate>
+          {first.title}
+        </Text>
+        <HStack gap="2" minW="0">
+          <Text fontSize="sm" color="gray.600" flexShrink="0">
+            {formatPrice(first.unitPriceCents, order.currency)} × {first.quantity}
           </Text>
-        </Stack>
-
-        <HStack gap="1" align="start" flexShrink="0">
-          <Stack gap="1.5" align="end">
-            {/* Entered by hand and optional: a blank total is unknown, not zero. */}
-            {order.totalCents !== null ? (
-              <Text fontWeight="bold">{formatPrice(order.totalCents, order.currency)}</Text>
-            ) : null}
-            <HStack gap="1.5">
-              {isUnpaid(order) ? (
-                <Badge colorPalette="orange" variant="outline" borderRadius="full" px="2.5">
-                  Unpaid
-                </Badge>
-              ) : null}
-              <SupplierOrderStatusBadge status={order.status} />
-            </HStack>
-          </Stack>
-          <SupplierOrderActions order={order} onFailure={onFailure} />
+          <ExpectedBadge month={nextExpectedMonth(order)} />
         </HStack>
-      </Flex>
-
-      <Stack gap="3" pt="4" borderTopWidth="1px" borderColor="border.muted">
-        {order.items.map((item) => (
-          <Line key={item.id} item={item} currency={order.currency} />
-        ))}
+        <Text fontSize="sm" color="gray.600" truncate>
+          {SUPPLIER_LABEL[order.supplier]} · Order {order.orderNumber} ·{' '}
+          {formatDay(order.orderedAt)}
+        </Text>
       </Stack>
 
-      {order.trackingNumber || order.note ? (
-        <Stack gap="1" fontSize="sm" color="fg.muted">
-          {order.trackingNumber ? <Text>Tracking {order.trackingNumber}</Text> : null}
-          {order.note ? <Text whiteSpace="pre-wrap">{order.note}</Text> : null}
-        </Stack>
-      ) : null}
-
-      <NextStep order={order} />
-    </Stack>
+      <Stack gap="2" align="end" alignSelf="stretch" justify="space-between" flexShrink="0">
+        <HStack gap="1.5">
+          {isUnpaid(order) ? <UnpaidBadge /> : null}
+          <SupplierOrderStatusBadge status={order.status} />
+          <SupplierOrderActions order={order} onFailure={onFailure} />
+        </HStack>
+        {/* Entered by hand and optional: a blank total is unknown, not zero. */}
+        {order.totalCents !== null ? (
+          <Text fontSize="lg" fontWeight="bold" color="gray.900">
+            {formatPrice(order.totalCents, order.currency)}
+          </Text>
+        ) : null}
+      </Stack>
+    </HStack>
   );
 }
