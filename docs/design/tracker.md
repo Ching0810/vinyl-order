@@ -197,6 +197,7 @@ lifecycle. A supplier order is a note of something bought elsewhere:
 | `status`         | enum, §9.1                                                       |
 | `totalCents`     | null — typed as the shop charged it, shipping and discounts in   |
 | `currency`       | default `TWD`, as on `Offer` and `Order`                         |
+| `paidAt`         | null — `@db.Date`, the day it was paid; null is unpaid (§9.1)    |
 | `trackingNumber` | null                                                             |
 | `note`           | null                                                             |
 | `updatedAt`      | moves on every change, lines included: the edit's version (§9.3) |
@@ -448,16 +449,24 @@ the concurrency exercise the checkout was built around.
 ### 9.1 Statuses
 
 `ordered` (placed, nothing heard) → `preparing` (confirmed; for a pre-order,
-waiting for the release) → `shipped` → `delivered`, or `cancelled`. Nothing
-moves on its own: email import (§9.4) only creates orders. By hand,
-`canChangeSupplierOrderStatus`
-(shared, so the page offers only the moves the API accepts) allows:
+waiting for the release) → `shipped` → `ready_for_pickup` (at the
+convenience store, waiting for me) → `delivered` (in my hands), or
+`cancelled`. Which moves happen on their own, and which wait for me, is
+§9.5. `canChangeSupplierOrderStatus` (shared, so the page offers only the
+moves the API accepts) allows:
 
 - any forward move, skipping steps — a shop that never confirms goes
-  straight from `ordered` to `shipped`;
+  straight from `ordered` to `shipped`, a parcel delivered to the door never
+  waits at a store, and a pickup notice can come with no shipping notice
+  before it;
 - cancelling until the order ships;
 - nothing out of `delivered` or `cancelled`, which are final, so the page
   asks before either.
+
+`ready_for_pickup` is its own status, not a note on `shipped`, because it is
+the one that asks something of me: go to the store before the parcel is
+sent back. The page puts it first (§9.2). A parcel left uncollected and
+returned has no status yet; a note covers it until it happens.
 
 A status change is a compare-and-set: the `UPDATE` matches only while the
 order still has the status the rule was checked against. Two tabs moving the
@@ -466,18 +475,38 @@ the status it has now — the checkout's conditional-`UPDATE` idea again.
 Sending the status the order already has is not a change, so a repeated
 submit succeeds.
 
-Payment is not a status: paying and shipping are independent (a transfer
-can be outstanding on an order already shipped). It comes later as an
-optional `paidAt`.
+**Payment is not a status**: paying and shipping are independent. Most
+orders are paid at checkout, but cash on pickup (Rotten Blues' 超商貨到付款)
+is paid only at the store, after the parcel has shipped and arrived. So
+`paidAt` is its own nullable day, and an order is **unpaid** while it is null
+and the order isn't cancelled.
+
+- **Typed orders**: the form's "Paid on" starts at the order's day, the
+  common case; cleared, the order is unpaid.
+- **Imported orders**: Shopify's confirmation says what was paid
+  (`本日總付款金額`): the whole total → paid on the order's day; `$0.00` →
+  unpaid. EasyStore's confirmation says nothing about payment, so its
+  orders start unpaid until the shop's payment notice is read (§9.5).
+- **"Mark as paid"** on a card sets today (Taipei). Marking an unpaid order
+  `delivered` offers to set it paid today as well: at a store, collecting
+  and paying cash are one act.
+- **Orders recorded before `paidAt` existed** were all paid, so the
+  migration sets each to its order's day.
+
+A payment day isn't checked against the order's day: the order's day of an
+imported order is only the email's (§9.4), and a mistyped one is fixed in
+the form.
 
 ### 9.2 The page
 
-Grouped by status, the ones moving first: shipped, preparing, ordered, then
-delivered and cancelled. Each card: shop, order number, ordered day, total,
-tracking number, note, and its lines with quantity, price and expected
-month. Not paginated: one person's orders are a page's worth, and paging by
-date would split the groups. Each card's menu moves the status (§9.1), opens
-the edit form (§9.3) or deletes the order.
+Grouped by status, what needs me first: ready for pickup, then the ones
+moving — shipped, preparing, ordered — then delivered and cancelled. Each
+card: shop, order number, ordered day, total, an "Unpaid" badge, tracking
+number, note, its lines with quantity, price and expected month, and the
+next step's hint (§9.5). Not paginated: one person's orders are a page's
+worth, and paging by date would split the groups. Each card's menu moves
+the status (§9.1), marks it paid, opens the edit form (§9.3) or deletes the
+order.
 
 Entry is a form at `/supplier-orders/new`: shop, order number, day, total,
 tracking, note, and typed lines. Picking lines from my offers, and covers,
@@ -565,8 +594,8 @@ receipt, an e-invoice notice (invoice number, day and total — no order
 number, no lines; the lines are behind a link to the invoice page) and a
 pickup notice. Without an order number there is nothing to deduplicate on,
 and without lines nothing to record, so **Candlelight stays typed by hand**.
-Shipping notices exist (THT's `更新訂單出貨通知` carries the order number),
-but moving orders to `shipped` from them isn't needed for now.
+Payment, shipping and pickup notices move orders already recorded; they
+are §9.5.
 
 **⚖️ Decision: a Google Apps Script in my own account sends the emails.**
 
@@ -677,6 +706,54 @@ What remains: the HTML passes through Vercel and Render (over HTTPS, without
 links) and is held only for the request; and the script, like any Gmail
 automation, can read the whole mailbox — the price of the site never having
 that access itself.
+
+### 9.5 After the order: automatic where an email says so, a prompt where none does
+
+What I open the page for, once an order is placed, is one question: **can I
+go and pick it up?** Each shop tells some of the answer by email, and the
+rest only by SMS from the convenience store (全家, 7-11), which the site
+can't read. So every step after the order is one of two kinds, per shop:
+
+- **automatic** — an email the import reads (as §9.4) moves the order;
+- **by hand** — the card says where to look and what to mark, so a step
+  that can't be automatic is never silently missing.
+
+What the emails make possible (samples from 2026-07/11, all DKIM-signed):
+
+|                       | THT                                      | Cosmic                        | Rotten Blues                                 | Candlelight                                     |
+| --------------------- | ---------------------------------------- | ----------------------------- | -------------------------------------------- | ----------------------------------------------- |
+| Paid                  | `確認收款通知`: order number, 支付日期   | the same template (or `收據`) | the confirmation's `本日總付款金額` (§9.1)   | by hand                                         |
+| Shipped               | `更新訂單出貨通知`: number, `( 已出貨 )` | by hand — no sample yet       | `訂單 #… 的貨件配送中`, with tracking number | by hand                                         |
+| Ready for pickup      | by hand — 全家 SMS only                  | by hand — 7-11 SMS only       | `訂單 #… 的貨件已送達`: arrived at the store | PayNow's `物流到店取貨通知`, with a pickup date |
+| Delivered (collected) | by hand                                  | by hand                       | by hand                                      | by hand                                         |
+
+No shop says when a parcel is collected — collecting it is my own act, so
+`delivered` is always by hand. Rotten Blues' "已送達" means arrived at the
+store, not collected: it is sent before pickup.
+
+Rules for the notices, when they are read:
+
+- **They only move forward.** A notice older than what I've marked by hand
+  is ignored (`canChangeSupplierOrderStatus`, §9.1), and a repeat changes
+  nothing — the same idempotency as confirmations.
+- **Confirmations go first.** A run sends a week's confirmations before any
+  other notice, so a payment notice doesn't reach the API before its order;
+  if it still does, the API answers "not yet" and the next day's run sends
+  it again, within the week.
+- **Candlelight's pickup notice names no order**: it is matched by shop and
+  total among my Candlelight orders not yet collected, and applied only
+  when exactly one matches; none or several → `422`, for me to mark.
+- **The table lives in code**, read by the page to choose each card's hint.
+  It says "by hand" for every cell until the import of that notice ships,
+  so the page never promises an update that won't come.
+
+Each open card shows its next step:
+
+- the next step is automatic → "Updates when THT emails that it has
+  shipped";
+- it is by hand → where to look: "THT doesn't email when it reaches the
+  store. Check FamilyMart's app or SMS, then mark Ready for pickup";
+- ready for pickup → "Pick it up, then mark Delivered".
 
 ## 10. Freshness on free plans
 
@@ -822,7 +899,9 @@ Each step is its own PR.
    already waiting to ship. _(Done: per-user API #68; list and entry form
    with expected months #69; status, tracking, note and delete #70; editing
    with the version check (§9.3) #71–#72; step 13's email import pulled
-   ahead (§9.4). Next: an optional `paidAt` (§9.1).)_
+   ahead (§9.4). Next: `paidAt` and `ready_for_pickup` by hand, with the
+   next-step hints (§9.1, §9.5); then the payment, shipping and pickup
+   notices, one shop's notice at a time.)_
 5. Checkout on offers (§8): cart and order lines, the reservation guard,
    restock on cancel and expiry. `Product`'s `priceCents`, `currency` and
    `stock` and `CartItem.productId` are dropped here.
@@ -843,9 +922,9 @@ Each step is its own PR.
     snapshots (price drop, back in stock, one or two left).
 13. Supplier orders from email — **pulled ahead to follow step 4**, once
     typing orders in had shown what it costs: confirmations from THT, Cosmic
-    and Rotten Blues (§9.4). Shipping notices and Candlelight are not part
-    of it. _(Done: API #74 — parsers, import token, import route; web and
-    the Apps Script (`tools/gmail-import/`) in the PR after it.)_
+    and Rotten Blues (§9.4). _(Done: API #74 — parsers, import token,
+    import route; web and the Apps Script (`tools/gmail-import/`) #75.)_
+    Payment, shipping and pickup notices follow (§9.5).
 
 Removal first so the model change starts from a schema with nothing of
 Discogs left in it. **Supplier orders come straight after the model**,
@@ -891,6 +970,10 @@ parsing.
 - **Ingesting from a channel you don't control** — a dumb forwarder, parsers
   on the server under test, the natural key as the idempotency key, and a
   `422` that waits for a person instead of a guess (§9.4).
+- **Automate what the channel says, prompt for what it doesn't** — a
+  per-shop table of which steps an email moves, which the page reads, so a
+  step that can't be automatic is shown as the user's to do rather than
+  silently missing (§9.5).
 - **API tokens** — long-lived, single-purpose, shown once, stored as a
   SHA-256 because they are random, unlike passwords (§9.4).
 - **Optimistic locking** — a version in the `WHERE`, a 409 when it moved,
