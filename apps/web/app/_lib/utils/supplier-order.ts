@@ -48,6 +48,62 @@ const GROUP_RANK: Record<SupplierOrderStatus, number> = {
   cancelled: 5,
 };
 
+/**
+ * What tells the user each shop's order has moved on (tracker.md §9.5), as
+ * the end of "Mark … when …". Every step is by hand until the import reads
+ * that notice; then its entry changes, so the page never promises an update
+ * that won't come.
+ *
+ * - shipped: null where the shop sends no shipping notice, so the hint skips
+ *   straight to the parcel reaching the store.
+ * - arrived: what says it is at the convenience store.
+ */
+const NEXT_SIGNAL: Record<Supplier, { shipped: string | null; arrived: string }> = {
+  tht: {
+    shipped: 'THT emails that it has shipped',
+    arrived: 'the convenience store texts you (THT sends no email for it)',
+  },
+  cosmic: {
+    shipped: 'CM ships it',
+    arrived: 'the convenience store texts you (CM sends no email for it)',
+  },
+  rotten_blues: {
+    shipped: "Rotten Blues emails that it's on its way",
+    arrived: 'Rotten Blues emails that it has arrived (已送達)',
+  },
+  candlelight: {
+    shipped: null,
+    arrived: 'PayNow emails that it has reached the store',
+  },
+};
+
+/**
+ * What the user does next for an order, shown on its card, or null once
+ * there is nothing left to do.
+ *
+ * @param order - the order, open or finished
+ */
+export const nextStepHint = (order: SupplierOrder): string | null => {
+  const signal = NEXT_SIGNAL[order.supplier];
+  switch (order.status) {
+    case 'ordered':
+    case 'preparing':
+      if (signal.shipped) return `Mark Shipped when ${signal.shipped}.`;
+      return `Mark Ready for pickup when ${signal.arrived}.`;
+    case 'shipped':
+      return `Mark Ready for pickup when ${signal.arrived}.`;
+    case 'ready_for_pickup':
+      return 'Pick it up, then mark Delivered.';
+    case 'delivered':
+    case 'cancelled':
+      return null;
+  }
+};
+
+/** Unpaid: no payment day, and not cancelled — a cancelled order is owed nothing. */
+export const isUnpaid = (order: SupplierOrder): boolean =>
+  order.paidAt === null && order.status !== 'cancelled';
+
 /** Statuses whose orders are still to arrive, so an expected month matters. */
 const isOpen = (status: SupplierOrderStatus): boolean => GROUP_RANK[status] < GROUP_RANK.delivered;
 

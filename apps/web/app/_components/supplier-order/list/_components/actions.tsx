@@ -4,6 +4,7 @@ import { IconButton, Menu, Portal } from '@chakra-ui/react';
 import {
   type SupplierOrder,
   type SupplierOrderStatus,
+  type UpdateSupplierOrderInput,
   canChangeSupplierOrderStatus,
   supplierOrderStatusSchema,
 } from '@vinyl-order/shared';
@@ -13,18 +14,19 @@ import { useState } from 'react';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { MoreIcon } from '@/components/ui/icons';
 import { HttpError } from '@/lib/core/http';
-import { SUPPLIER_LABEL, SUPPLIER_ORDER_STATUS } from '@/lib/utils/supplier-order';
+import { todayInTaipei } from '@/lib/utils/date';
+import { SUPPLIER_LABEL, SUPPLIER_ORDER_STATUS, isUnpaid } from '@/lib/utils/supplier-order';
 import { currentStatusOf } from '@/services/api/supplier-orders/errors';
 import { useDeleteSupplierOrder } from '@/services/queries/supplier-orders/useDeleteSupplierOrder';
 import { useUpdateSupplierOrder } from '@/services/queries/supplier-orders/useUpdateSupplierOrder';
+
+type FinalQuestion = { title: string; body: string; confirm: string; palette: string };
 
 /**
  * The statuses that are final: once there, an order can't be moved on or
  * back (canChangeSupplierOrderStatus), so a slip of the finger is asked about.
  */
-const FINAL: Partial<
-  Record<SupplierOrderStatus, { title: string; body: string; confirm: string; palette: string }>
-> = {
+const FINAL: Partial<Record<SupplierOrderStatus, FinalQuestion>> = {
   delivered: {
     title: 'Mark as delivered?',
     body: "Delivered is final: the order can't be moved back afterwards.",
@@ -38,6 +40,21 @@ const FINAL: Partial<
     palette: 'red',
   },
 };
+
+/**
+ * Collecting an unpaid order: at the store, collecting and paying cash are
+ * one act (tracker.md §9.1), so it is marked paid today in the same change.
+ */
+const DELIVERED_AND_PAID: FinalQuestion = {
+  title: 'Mark as delivered and paid?',
+  body: "It's unpaid here, so it will be marked paid today too — cash on pickup is paid when it's collected. Delivered is final; a different payment day can be set in Edit order.",
+  confirm: 'Mark as delivered and paid',
+  palette: 'green',
+};
+
+/** The question asked before moving an order to `to`, if it is final. */
+const finalQuestion = (order: SupplierOrder, to: SupplierOrderStatus): FinalQuestion | undefined =>
+  to === 'delivered' && isUnpaid(order) ? DELIVERED_AND_PAID : FINAL[to];
 
 /** What the menu calls a move to each status. */
 const moveLabel = (to: SupplierOrderStatus): string =>
@@ -58,8 +75,8 @@ type Open = { kind: 'confirm'; to: SupplierOrderStatus } | { kind: 'delete' };
 
 /**
  * An order's actions, behind a "more" button: move it on to any status the
- * shared rule allows from where it is (and only those), open it in the edit
- * form, or delete it.
+ * shared rule allows from where it is (and only those), mark it paid today
+ * while it is unpaid, open it in the edit form, or delete it.
  *
  * Moving to a final status and deleting ask first. A refusal — typically
  * another tab having moved the order already — is handed to onFailure while
@@ -84,10 +101,14 @@ export default function SupplierOrderActions({
   const report = (error: unknown) => onFailure(failureMessage(error));
   const close = () => setOpen(null);
 
+  const change = (input: UpdateSupplierOrderInput) =>
+    updateMutation.mutate({ id: order.id, input }, { onError: report, onSettled: close });
+
   const move = (to: SupplierOrderStatus) =>
-    updateMutation.mutate(
-      { id: order.id, input: { status: to } },
-      { onError: report, onSettled: close },
+    change(
+      to === 'delivered' && isUnpaid(order)
+        ? { status: to, paidAt: todayInTaipei() }
+        : { status: to },
     );
 
   const remove = () =>
@@ -102,14 +123,15 @@ export default function SupplierOrderActions({
     // A link: it navigates by itself.
     if (value === 'edit') return null;
     if (value === 'delete') return setOpen({ kind: value });
+    if (value === 'paid') return change({ paidAt: todayInTaipei() });
     const to = supplierOrderStatusSchema.parse(value);
-    return FINAL[to] ? setOpen({ kind: 'confirm', to }) : move(to);
+    return finalQuestion(order, to) ? setOpen({ kind: 'confirm', to }) : move(to);
   };
 
   const nextStatuses = supplierOrderStatusSchema.options.filter((to) =>
     canChangeSupplierOrderStatus(order.status, to),
   );
-  const final = open?.kind === 'confirm' ? FINAL[open.to] : undefined;
+  const final = open?.kind === 'confirm' ? finalQuestion(order, open.to) : undefined;
 
   return (
     <>
@@ -133,6 +155,7 @@ export default function SupplierOrderActions({
                 </Menu.Item>
               ))}
               {nextStatuses.length > 0 ? <Menu.Separator /> : null}
+              {isUnpaid(order) ? <Menu.Item value="paid">Mark as paid today</Menu.Item> : null}
               <Menu.Item value="edit" asChild>
                 <NextLink href={`/supplier-orders/${order.id}/edit`}>Edit order</NextLink>
               </Menu.Item>
