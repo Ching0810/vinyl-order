@@ -211,8 +211,8 @@ aren't lines (燭光: 1550 + 60 − 19).
 `SupplierOrderItem`: `offerId` (SetNull, with `title` copied in, as
 `OrderItem` does; null for every line until §14 step 9), `quantity`,
 `unitPriceCents`, `expectedMonth`, and `imageUrl` (null; the cover a shop's
-confirmation email shows, §9.4, until the line is linked to an offer with
-its own). The expected date is a **month**,
+confirmation email shows, §9.4, or one pasted into the form from the shop's
+product page, until the line is linked to an offer with its own). The expected date is a **month**,
 `CHAR(7)` `YYYY-MM` with a CHECK on its format: a month is all the shops
 promise ("預計2026/11出貨", "12月補貨預訂"), and a stored day would be
 invented.
@@ -708,9 +708,27 @@ Parsing rules, pinned by fixture tests:
 - **A cover** is taken from where each platform puts it beside a line, never
   from any image in the email: EasyStore's first `<img>` is the shop's logo,
   and Cosmic's "為您推薦產品" have pictures too. It is kept only from the
-  shops' CDNs (`cdn.store-assets.com`, `cdn.shopify.com`, which the web must
-  allow in `next.config.ts`), and paired with lines only when there is one
+  shops' image hosts (below), and paired with lines only when there is one
   per line.
+
+**Covers typed by hand.** Candlelight sends no confirmation, so its orders
+are typed — and had no covers. The form takes a cover's address per line,
+copied from the shop's product page ("Copy image address").
+
+- **⚖️ Decision: paste an image address,** not upload a file (storage, an
+  upload route and size limits, for one or two records a month) nor paste
+  the product page for the server to read its cover (a server fetching a
+  typed URL needs an SSRF guard; it comes with the product pages of §14 step
+  9, and an address pasted now still works then).
+- **One allowlist, shared** (`isAllowedCoverUrl` in `@vinyl-order/shared`):
+  https, no credentials or port, and a shop's image host under its product
+  path — `cdn.store-assets.com/s/` (EasyStore), `cdn.shopify.com/s/files/`
+  (Shopify), `img.cloudimg.in/uploads/shops/37376/` (WACA, narrowed to
+  Candlelight's own shop, since the host serves every WACA shop). The form,
+  the API and email import all check it, and `next.config.ts` allows the
+  same. The path is read after the URL is parsed, so `..` can't climb out.
+- **Editing keeps a cover the request leaves out**: a client that doesn't
+  send it can't wipe an imported one; null clears it.
 
 **The import token.** The script can't hold a login session (it expires),
 so each user has one long-lived token that does one thing: import into
@@ -736,7 +754,7 @@ integrity of my list. Each risk, and what answers it:
 | The token leaks                                                                                                         | 256 random bits, stored as SHA-256, shown once, revocable, `lastUsedAt` shown; sent only in a header, never in a URL, which every layer logs                                                                                                         |
 | A huge or hostile body (DoS, ReDoS)                                                                                     | The JSON body limit, Nest's default 100 KB, untouched (the largest sample is ~31 KB of HTML), and a 90 000-character cap on the body field; a real HTML parser, not regexes over the whole body; a tighter throttle on the route than the global one |
 | Email text leaks through errors or logs                                                                                 | Bodies are never stored or logged; a `422` names the reason ("no total found") and quotes nothing                                                                                                                                                    |
-| A title or image carries script                                                                                         | Titles are stored as text and rendered escaped; covers only from the two allowed CDNs, loaded by the browser, never fetched by the server (no SSRF)                                                                                                  |
+| A title or image carries script                                                                                         | Titles are stored as text and rendered escaped; covers only from the shops' image hosts (isAllowedCoverUrl), typed or imported, loaded by the browser, never fetched by the server (no SSRF)                                                         |
 | A cross-site page makes my browser replace the token                                                                    | The session cookie is `httpOnly` and `sameSite: lax`, so a cross-site POST carries no session                                                                                                                                                        |
 | The samples leak through the repo, **which is public**                                                                  | Fixtures replace names, addresses, keys and tracking links with fake values, and the diff is reviewed for them before commit; the original `.eml` files never enter the repo                                                                         |
 
