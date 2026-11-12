@@ -1,5 +1,6 @@
 import { Badge, Flex, HStack, Stack, Text } from '@chakra-ui/react';
 import type { SupplierOrder, SupplierOrderItem } from '@vinyl-order/shared';
+import type { ReactNode } from 'react';
 
 import SupplierOrderStatusBadge from '@/components/supplier-order/status-badge';
 import Cover from '@/components/ui/cover';
@@ -10,26 +11,54 @@ import { SUPPLIER_LABEL, isUnpaid, nextStepHint } from '@/lib/utils/supplier-ord
 import SupplierOrderActions from './actions';
 
 /**
- * One record in the order: its cover, title, price × quantity, and when it's
- * due if known. Every line keeps the cover's place — a blank tile when there
- * is none (typed lines, and lines from a shop whose email shows none) — so
- * titles line up whether or not a line has one.
+ * One record in the order, as the card's title: its cover, title, price ×
+ * quantity, and when it's due if known. Every line keeps the cover's place —
+ * a blank tile when there is none (typed lines, and lines from a shop whose
+ * email shows none) — so titles line up whether or not a line has one.
+ *
+ * `aside` sits at the right end of the row; the title gives way to it,
+ * cut short with an ellipsis rather than pushing it off the card.
  */
-const Line = ({ item, currency }: { item: SupplierOrderItem; currency: string }) => (
+const Line = ({
+  item,
+  currency,
+  aside,
+}: {
+  item: SupplierOrderItem;
+  currency: string;
+  aside: ReactNode;
+}) => (
   <HStack gap="3" align="start">
     <Cover src={item.imageUrl} size="12" px={48} />
-    <Stack gap="0" flex="1" minW="0">
-      <Text fontSize="sm" fontWeight="medium" truncate>
+    <Stack gap="0.5" flex="1" minW="0">
+      <Text fontWeight="semibold" truncate>
         {item.title}
       </Text>
-      <Text fontSize="xs" color="fg.muted">
+      <Text fontSize="sm" color="fg.muted">
         {formatPrice(item.unitPriceCents, currency)} × {item.quantity}
         {item.expectedMonth ? ` · expected ${formatMonth(item.expectedMonth)}` : ''}
       </Text>
     </Stack>
-    <Text fontSize="sm" fontWeight="semibold" flexShrink="0">
-      {formatPrice(item.lineTotalCents, currency)}
-    </Text>
+    {aside}
+  </HStack>
+);
+
+/** Where the order stands, whether it's paid, and its actions menu. */
+const OrderBadges = ({
+  order,
+  onFailure,
+}: {
+  order: SupplierOrder;
+  onFailure: (message: string) => void;
+}) => (
+  <HStack gap="1.5" flexShrink="0">
+    {isUnpaid(order) ? (
+      <Badge colorPalette="orange" variant="outline" borderRadius="full" px="2.5">
+        Unpaid
+      </Badge>
+    ) : null}
+    <SupplierOrderStatusBadge status={order.status} />
+    <SupplierOrderActions order={order} onFailure={onFailure} />
   </HStack>
 );
 
@@ -69,9 +98,13 @@ const NextStep = ({ order }: { order: SupplierOrder }) => {
  * each and when it's due is the point of the page, so nothing hides behind a
  * click.
  *
- * The order number is plain text for now; linking it needs each shop's order
- * page URL, which is behind their login and not yet known. Its actions —
- * status, paid, edit, delete — sit behind the "more" button.
+ * The records are the title, with the status, "Unpaid" and the menu at the
+ * right end of the first one's row; where and when they were ordered — shop,
+ * order number, day, tracking — is one quiet line under them, with the
+ * total. The order number is
+ * plain text for now; linking it needs each shop's order page URL, which is
+ * behind their login and not yet known. Its actions — status, paid, edit,
+ * delete — sit behind the "more" button.
  *
  * @param order - the order with its lines
  * @param onFailure - show why one of its actions didn't happen
@@ -83,6 +116,13 @@ export default function SupplierOrderCard({
   order: SupplierOrder;
   onFailure: (message: string) => void;
 }) {
+  const details = [
+    SUPPLIER_LABEL[order.supplier],
+    `Order ${order.orderNumber}`,
+    formatDay(order.orderedAt),
+    ...(order.trackingNumber ? [`Tracking ${order.trackingNumber}`] : []),
+  ];
+
   return (
     <Stack
       gap="4"
@@ -92,45 +132,30 @@ export default function SupplierOrderCard({
       borderRadius="card"
       bg="bg.panel"
     >
-      <Flex justify="space-between" align="start" gap="4">
-        <Stack gap="1" minW="0">
-          <Text fontWeight="semibold">{SUPPLIER_LABEL[order.supplier]}</Text>
-          <Text fontSize="sm" color="fg.muted">
-            Order {order.orderNumber} · {formatDay(order.orderedAt)}
-          </Text>
-        </Stack>
-
-        <HStack gap="1" align="start" flexShrink="0">
-          <Stack gap="1.5" align="end">
-            {/* Entered by hand and optional: a blank total is unknown, not zero. */}
-            {order.totalCents !== null ? (
-              <Text fontWeight="bold">{formatPrice(order.totalCents, order.currency)}</Text>
-            ) : null}
-            <HStack gap="1.5">
-              {isUnpaid(order) ? (
-                <Badge colorPalette="orange" variant="outline" borderRadius="full" px="2.5">
-                  Unpaid
-                </Badge>
-              ) : null}
-              <SupplierOrderStatusBadge status={order.status} />
-            </HStack>
-          </Stack>
-          <SupplierOrderActions order={order} onFailure={onFailure} />
-        </HStack>
-      </Flex>
-
-      <Stack gap="3" pt="4" borderTopWidth="1px" borderColor="border.muted">
-        {order.items.map((item) => (
-          <Line key={item.id} item={item} currency={order.currency} />
+      <Stack gap="3">
+        {order.items.map((item, index) => (
+          <Line
+            key={item.id}
+            item={item}
+            currency={order.currency}
+            // The order's badges and menu ride on its first record's row.
+            aside={index === 0 ? <OrderBadges order={order} onFailure={onFailure} /> : null}
+          />
         ))}
       </Stack>
 
-      {order.trackingNumber || order.note ? (
-        <Stack gap="1" fontSize="sm" color="fg.muted">
-          {order.trackingNumber ? <Text>Tracking {order.trackingNumber}</Text> : null}
-          {order.note ? <Text whiteSpace="pre-wrap">{order.note}</Text> : null}
-        </Stack>
-      ) : null}
+      <Stack gap="1" fontSize="sm" color="fg.muted">
+        <Flex justify="space-between" align="baseline" gap="4">
+          <Text minW="0">{details.join(' · ')}</Text>
+          {/* Entered by hand and optional: a blank total is unknown, not zero. */}
+          {order.totalCents !== null ? (
+            <Text fontSize="md" fontWeight="bold" color="fg" flexShrink="0">
+              {formatPrice(order.totalCents, order.currency)}
+            </Text>
+          ) : null}
+        </Flex>
+        {order.note ? <Text whiteSpace="pre-wrap">{order.note}</Text> : null}
+      </Stack>
 
       <NextStep order={order} />
     </Stack>

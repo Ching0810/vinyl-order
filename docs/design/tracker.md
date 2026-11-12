@@ -500,14 +500,25 @@ the form.
 
 ### 9.2 The page
 
-Grouped by status, what needs me first: ready for pickup, then the ones
-moving — shipped, preparing, ordered — then delivered and cancelled. Each
-card: shop, order number, ordered day, total, an "Unpaid" badge, tracking
-number, note, its lines with quantity, price and expected month, and the
-next step's hint (§9.5). Not paginated: one person's orders are a page's
-worth, and paging by date would split the groups. Each card's menu moves
-the status (§9.1), marks it paid, opens the edit form (§9.3) or deletes the
-order.
+In tabs by stage, each with its count: **All**, **To pick up**, **Shipped**,
+**Not shipped** (ordered and preparing: both still with the shop),
+**Delivered** and **Cancelled**. The tab is in the URL (`?tab=shipped`), so
+a reload or Back keeps it. On a phone, "Email import" and "Record an order"
+sit in a bar held at the bottom of the screen, so the list comes first. All
+is grouped by status, what needs me first:
+ready for pickup, then the ones moving — shipped, preparing, ordered — then
+delivered and cancelled; the other tabs list their orders without
+headings, sorted as a group is.
+
+Each card's title is its records — cover, title, price × quantity and
+expected month, one row each — since what I bought is what I look for; a
+long title is cut short with an ellipsis. The status, an "Unpaid" badge and
+the menu sit at the right end of the first record's row. Shop, order
+number, ordered day and tracking number share one quiet line under them,
+with the total and the note, and the next step's hint (§9.5) comes last. Not paginated: one person's orders
+are a page's worth, and paging by date would split the groups. Each card's
+menu moves the status (§9.1), marks it paid, opens the edit form (§9.3) or
+deletes the order.
 
 Entry is a form at `/supplier-orders/new`: shop, order number, day, total,
 tracking, note, and typed lines. Picking lines from my offers, and covers,
