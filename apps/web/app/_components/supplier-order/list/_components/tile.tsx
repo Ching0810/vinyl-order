@@ -40,6 +40,9 @@ export default function SupplierOrderTile({
 
   return (
     <LinkBox
+      // Its own stacking context, so what is raised above the link stays
+      // above it alone, not above the page's sticky bars.
+      isolation="isolate"
       display="flex"
       flexDirection="column"
       gap="3"

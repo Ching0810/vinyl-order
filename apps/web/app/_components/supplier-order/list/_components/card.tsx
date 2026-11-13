@@ -41,6 +41,9 @@ export default function SupplierOrderCard({
 
   return (
     <LinkBox
+      // Its own stacking context, so what is raised above the link stays
+      // above it alone, not above the page's sticky bars.
+      isolation="isolate"
       display="flex"
       gap="4"
       p="4"
