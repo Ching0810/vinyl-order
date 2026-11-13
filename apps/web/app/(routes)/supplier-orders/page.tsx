@@ -1,6 +1,6 @@
 'use client';
 
-import { Container, HStack } from '@chakra-ui/react';
+import { Box, Container } from '@chakra-ui/react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 
@@ -36,12 +36,13 @@ export default function SupplierOrdersPage() {
           eyebrow="Your account"
           title="Supplier orders"
           description="What you've ordered at each shop, and when it's due."
+          meta={<EmailImportLink />}
+          // The page's one action; a phone has it in
+          // SupplierOrderMobileActionBar instead.
           action={
-            // On a phone they sit in SupplierOrderMobileActionBar instead.
-            <HStack gap="2" display={{ base: 'none', md: 'flex' }}>
-              <EmailImportLink />
+            <Box display={{ base: 'none', md: 'block' }}>
               <RecordSupplierOrderButton />
-            </HStack>
+            </Box>
           }
         />
         <Suspense fallback={null}>

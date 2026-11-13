@@ -12,17 +12,21 @@ import type { ReactNode } from 'react';
  * @param eyebrow - short all-caps kicker above the title
  * @param title - the section or screen title
  * @param description - optional one-line explanation beneath the title
+ * @param meta - optional line under the description: page information rather
+ *   than an action, such as the state of something set up elsewhere
  * @param action - optional node pinned to the trailing edge (e.g. a link)
  */
 export default function SectionHeading({
   eyebrow,
   title,
   description,
+  meta,
   action,
 }: {
   eyebrow: string;
   title: string;
   description?: string;
+  meta?: ReactNode;
   action?: ReactNode;
 }) {
   return (
@@ -38,6 +42,7 @@ export default function SectionHeading({
               {description}
             </Text>
           ) : null}
+          {meta}
         </Stack>
         {action}
       </Flex>

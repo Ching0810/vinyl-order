@@ -521,9 +521,13 @@ are laid out as the shops' own catalogues lay theirs: on a wide screen,
 end; on a phone, one "Filter" row opening a side drawer, where each filter
 is a row leading into its choices, held as a draft until **Apply** (or
 cleared by **Remove all**). Both are
-in the URL (`?status=shipped&shop=tht`), so a reload or Back keeps them. On
-a phone, "Email import" and "Record an order" sit in a bar held at the
-bottom of the screen, so the list comes first. All statuses is grouped by
+in the URL (`?status=shipped&shop=tht`), so a reload or Back keeps them. "Record
+an order" is the page's one action: in the heading on a wide screen, in a
+bar held at the bottom of the screen on a phone, so the list comes first.
+The email import is set up once and then runs by itself, so instead of a
+button it is a status line under the page's description — "last run 3 hours ago", amber
+once two days pass without a run, "Set up email import" before it is — that
+leads to its page. All statuses is grouped by
 status, what needs me first: ready for pickup, then the ones moving —
 shipped, preparing, ordered — then delivered and cancelled; any other
 choice lists its orders without headings, sorted as a group is.
