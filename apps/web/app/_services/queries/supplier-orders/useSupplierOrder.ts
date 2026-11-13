@@ -13,8 +13,8 @@ import { supplierOrdersQueryKey } from '@/services/queries/supplier-orders/useSu
 export const supplierOrderQueryKey = (id: string) => [...supplierOrdersQueryKey, id] as const;
 
 /**
- * One of the user's supplier orders, for the edit form. A 404 is final (gone,
- * or not theirs), so it isn't retried.
+ * One of the user's supplier orders, for its page and the edit form. A 404
+ * is final (gone, or not theirs), so it isn't retried.
  */
 export const useSupplierOrder = (id: string) => {
   const { data: user } = useMe();

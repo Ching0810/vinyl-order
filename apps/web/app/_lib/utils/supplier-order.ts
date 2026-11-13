@@ -123,6 +123,30 @@ export const nextStep = (order: SupplierOrder): FlowStep | 'delivered' | null =>
 };
 
 /**
+ * The steps an order at a shop goes through, in order, for the order's page
+ * to show where it stands: placed, the shop's own steps, collected.
+ * "Preparing" isn't one — no shop says so — and neither is cancelling.
+ *
+ * @param supplier - the order's shop
+ */
+export const flowSteps = (supplier: Supplier): SupplierOrderStatus[] => [
+  'ordered',
+  ...STATUS_ORDER.filter((status) => status in SUPPLIER_FLOW[supplier]),
+  'delivered',
+];
+
+/**
+ * Whether an order has reached a step: it stands at it or beyond, in the
+ * order statuses move. An order the shop moved past a step it has no notice
+ * for (a Candlelight order marked shipped) has reached what comes before.
+ *
+ * @param order - the order, not cancelled
+ * @param step - one of flowSteps
+ */
+export const hasReached = (order: SupplierOrder, step: SupplierOrderStatus): boolean =>
+  STATUS_ORDER.indexOf(order.status) >= STATUS_ORDER.indexOf(step);
+
+/**
  * What the user does next for an order, in words, or null once there is
  * nothing left to do: what to watch for before marking the next step, or,
  * at the store, to go and collect it.
@@ -151,6 +175,23 @@ export const statusMoves = (order: SupplierOrder): { to: SupplierOrderStatus; ne
       return { to, next: to === next };
     })
     .sort((a, b) => Number(b.next) - Number(a.next));
+};
+
+/**
+ * What an order's records add up to, and what the shop charged on top of
+ * them — shipping, less any discount — when its total was entered; the
+ * extra is null without a total, since a blank total is unknown, not zero.
+ *
+ * @param order - the order with its lines
+ */
+export const orderAmounts = (
+  order: SupplierOrder,
+): { recordsCents: number; extraCents: number | null } => {
+  const recordsCents = order.items.reduce((sum, item) => sum + item.lineTotalCents, 0);
+  return {
+    recordsCents,
+    extraCents: order.totalCents === null ? null : order.totalCents - recordsCents,
+  };
 };
 
 /** Unpaid: no payment day, and not cancelled — a cancelled order is owed nothing. */

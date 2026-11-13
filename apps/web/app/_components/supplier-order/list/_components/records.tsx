@@ -1,11 +1,10 @@
 import { Accordion, HStack, Stack, Text } from '@chakra-ui/react';
 import type { SupplierOrder, SupplierOrderItem } from '@vinyl-order/shared';
 
+import ExpectedBadge from '@/components/supplier-order/expected-badge';
 import { ChevronDownIcon } from '@/components/ui/icons';
 import { formatPrice } from '@/lib/utils/currency';
 import { shownExpectedMonth } from '@/lib/utils/supplier-order';
-
-import ExpectedBadge from './expected-badge';
 
 /**
  * One record of an order: its title (one line, cut short with an ellipsis),
@@ -68,6 +67,9 @@ export const MoreRecords = ({
           gap="1"
           justifyContent="start"
           cursor="pointer"
+          // Above the card's link, which covers the rest of the card.
+          position="relative"
+          zIndex="1"
           fontSize={compact ? 'xs' : 'sm'}
           color="gray.600"
         >

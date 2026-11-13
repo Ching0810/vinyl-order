@@ -545,10 +545,36 @@ status and its menu, the total and the day. Further records fold under "N more r
 them in place. On a phone the cards are tiles two to a row, the cover alone
 on top and the menu in the bottom-right corner; on a wider screen, rows.
 The tracking number, the note and the next step's hint (§9.5) belong to the
-order's own page, still to come. Not paginated: one person's orders are a page's
+order's own page, which the whole card opens. Not paginated: one person's orders are a page's
 worth, and paging by date would split the groups. Each card's menu moves
 the status (§9.1), marks it paid, opens the edit form (§9.3) or deletes
 the order.
+
+**The order's page**, `/supplier-orders/[id]`, holds what the card leaves
+out. Its heading is the whole order number (a card cuts a long one short),
+the shop, the day, the status, "Unpaid" and the same menu. Under it:
+
+- **Progress**: the shop's steps from §9.5's table, so a Candlelight order
+  shows no "Shipped", and the steps reached filled in. Only the status is
+  stored, not when each step came, so the steps have no dates; a history
+  would need its own table, and nothing needs it yet. While the order is
+  open, the next step's hint follows. A cancelled order has no progress.
+- **Records**: every one, none folded, each with its cover, whole title,
+  price × quantity, expected month while open, and line total.
+- **Payment**: the records' sum, what the shop charged on top (the entered
+  total less that sum: shipping, less any discount) when it differs, the
+  total, and the payment day, or "Unpaid" with "Mark as paid today". The
+  extra is worked out, not stored: an imported order's lines are checked
+  against the email's subtotal (§9.4), so there it is exact, though it may
+  hold tax or points as well as shipping; a typed order can be mistyped,
+  or a line edited without its total. A negative extra is shown in amber
+  with a note to check the prices and total — a discount can explain it,
+  a typo more often does. Storing shipping and discounts as their own
+  fields, read from the emails, is left for later.
+- **Details**: the tracking number, with a button to copy it into the
+  carrier's page, and the note; left out when there is neither.
+
+Editing from it returns to it; deleting returns to the list.
 
 Entry is a form at `/supplier-orders/new`: shop, order number, day, total,
 tracking, note, and typed lines. Picking lines from my offers, and covers,
