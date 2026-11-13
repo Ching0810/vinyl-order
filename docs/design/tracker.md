@@ -521,9 +521,13 @@ are laid out as the shops' own catalogues lay theirs: on a wide screen,
 end; on a phone, one "Filter" row opening a side drawer, where each filter
 is a row leading into its choices, held as a draft until **Apply** (or
 cleared by **Remove all**). Both are
-in the URL (`?status=shipped&shop=tht`), so a reload or Back keeps them. On
-a phone, "Email import" and "Record an order" sit in a bar held at the
-bottom of the screen, so the list comes first. All statuses is grouped by
+in the URL (`?status=shipped&shop=tht`), so a reload or Back keeps them. "Record
+an order" is the page's one action: in the heading on a wide screen, in a
+bar held at the bottom of the screen on a phone, so the list comes first.
+The email import is set up once and then runs by itself, so instead of a
+button it is a status line under the page's description — "last run 3 hours ago", amber
+once two days pass without a run, "Set up email import" before it is — that
+leads to its page. All statuses is grouped by
 status, what needs me first: ready for pickup, then the ones moving —
 shipped, preparing, ordered — then delivered and cancelled; any other
 choice lists its orders without headings, sorted as a group is.
@@ -799,9 +803,17 @@ Rules for the notices, when they are read:
 - **Candlelight's pickup notice names no order**: it is matched by shop and
   total among my Candlelight orders not yet collected, and applied only
   when exactly one matches; none or several → `422`, for me to mark.
-- **The table lives in code**, read by the page to choose each card's hint.
-  It says "by hand" for every cell until the import of that notice ships,
-  so the page never promises an update that won't come.
+- **The table lives in code** (`SUPPLIER_FLOW`, web), as data rather than
+  sentences: per shop, the steps it has a notice for and how each is
+  learned. It says "by hand" for every step until the import of that notice
+  ships, so the page never promises an update that won't come.
+- **It orders the status menu, it doesn't limit it.** The shop's next step
+  comes first, in bold; every other move canChangeSupplierOrderStatus allows
+  follows, so an order that goes a way its shop doesn't usually — a parcel
+  brought to the door, a notice a shop doesn't normally send — can still be
+  recorded. Whether a parcel waits at a store depends on how it was sent,
+  not on the shop; with every move offered, a field for that isn't needed
+  yet.
 
 Each open card shows its next step:
 

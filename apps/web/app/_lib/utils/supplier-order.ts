@@ -1,8 +1,10 @@
-import type {
-  Supplier,
-  SupplierOrder,
-  SupplierOrderItem,
-  SupplierOrderStatus,
+import {
+  type Supplier,
+  type SupplierOrder,
+  type SupplierOrderItem,
+  type SupplierOrderStatus,
+  canChangeSupplierOrderStatus,
+  supplierOrderStatusSchema,
 } from '@vinyl-order/shared';
 
 /**
@@ -53,64 +55,107 @@ const GROUP_RANK: Record<SupplierOrderStatus, number> = {
   cancelled: 5,
 };
 
+/** Statuses whose orders are still to arrive, so an expected month matters. */
+const isOpen = (status: SupplierOrderStatus): boolean => GROUP_RANK[status] < GROUP_RANK.delivered;
+
 /**
- * What tells the user each shop's order has moved on (tracker.md §9.5), as
- * the end of "Mark … when …". Every step is by hand until the import reads
- * that notice; then its entry changes, so the page never promises an update
- * that won't come.
- *
- * - shipped: null where the shop sends no shipping notice, so the hint skips
- *   straight to the parcel reaching the store.
- * - arrived: what says it is at the convenience store.
+ * How the user learns an order has reached a step: by hand for every step
+ * for now, `when` saying what to watch for. A step becomes automatic once
+ * the email import reads that shop's notice (tracker.md §9.5), and its entry
+ * changes with it, so the page never promises an update that won't come.
  */
-const NEXT_SIGNAL: Record<Supplier, { shipped: string | null; arrived: string }> = {
+type StepSignal = { by: 'hand'; when: string };
+
+/** The steps a shop's notices mark between the order and the store. */
+type FlowStep = Extract<SupplierOrderStatus, 'shipped' | 'ready_for_pickup'>;
+
+/**
+ * Each shop's way from order to pickup (tracker.md §9.5): the steps it has a
+ * notice for, and what that notice is. A step a shop sends nothing for is
+ * left out — Candlelight's mail says nothing until the parcel is at the
+ * store. "Preparing" is no shop's step: none says so.
+ *
+ * It orders the status menu and words the next-step hint. It doesn't limit
+ * what can be chosen: canChangeSupplierOrderStatus decides that, so a shop
+ * that does something unusual can still be recorded.
+ */
+const SUPPLIER_FLOW: Record<Supplier, Partial<Record<FlowStep, StepSignal>>> = {
   tht: {
-    shipped: 'THT emails that it has shipped',
-    arrived: 'the convenience store texts you (THT sends no email for it)',
+    shipped: { by: 'hand', when: 'THT emails that it has shipped' },
+    ready_for_pickup: {
+      by: 'hand',
+      when: 'the convenience store texts you (THT sends no email for it)',
+    },
   },
   cosmic: {
-    shipped: 'CM ships it',
-    arrived: 'the convenience store texts you (CM sends no email for it)',
+    shipped: { by: 'hand', when: 'CM ships it' },
+    ready_for_pickup: {
+      by: 'hand',
+      when: 'the convenience store texts you (CM sends no email for it)',
+    },
   },
   rotten_blues: {
-    shipped: "Rotten Blues emails that it's on its way",
-    arrived: 'Rotten Blues emails that it has arrived (已送達)',
+    shipped: { by: 'hand', when: "Rotten Blues emails that it's on its way" },
+    ready_for_pickup: { by: 'hand', when: 'Rotten Blues emails that it has arrived (已送達)' },
   },
   candlelight: {
-    shipped: null,
-    arrived: 'PayNow emails that it has reached the store',
+    ready_for_pickup: { by: 'hand', when: 'PayNow emails that it has reached the store' },
   },
 };
 
+/** The statuses in the order an order moves through them. */
+const STATUS_ORDER = supplierOrderStatusSchema.options;
+
 /**
- * What the user does next for an order, shown on its card, or null once
- * there is nothing left to do.
+ * The step an order is waiting for: the next of its shop's steps after where
+ * it stands, else being collected; null once delivered or cancelled.
+ *
+ * @param order - the order, open or finished
+ */
+export const nextStep = (order: SupplierOrder): FlowStep | 'delivered' | null => {
+  if (!isOpen(order.status)) return null;
+  const flow = SUPPLIER_FLOW[order.supplier];
+  const after = STATUS_ORDER.indexOf(order.status);
+  const step = (Object.keys(flow) as FlowStep[])
+    .filter((candidate) => STATUS_ORDER.indexOf(candidate) > after)
+    .sort((a, b) => STATUS_ORDER.indexOf(a) - STATUS_ORDER.indexOf(b))[0];
+  return step ?? 'delivered';
+};
+
+/**
+ * What the user does next for an order, in words, or null once there is
+ * nothing left to do: what to watch for before marking the next step, or,
+ * at the store, to go and collect it.
  *
  * @param order - the order, open or finished
  */
 export const nextStepHint = (order: SupplierOrder): string | null => {
-  const signal = NEXT_SIGNAL[order.supplier];
-  switch (order.status) {
-    case 'ordered':
-    case 'preparing':
-      if (signal.shipped) return `Mark Shipped when ${signal.shipped}.`;
-      return `Mark Ready for pickup when ${signal.arrived}.`;
-    case 'shipped':
-      return `Mark Ready for pickup when ${signal.arrived}.`;
-    case 'ready_for_pickup':
-      return 'Pick it up, then mark Delivered.';
-    case 'delivered':
-    case 'cancelled':
-      return null;
-  }
+  const step = nextStep(order);
+  if (!step) return null;
+  if (step === 'delivered') return 'Pick it up, then mark Delivered.';
+  const signal = SUPPLIER_FLOW[order.supplier][step]!;
+  return `Mark ${SUPPLIER_ORDER_STATUS[step].label} when ${signal.when}.`;
+};
+
+/**
+ * The statuses an order can be moved to (canChangeSupplierOrderStatus), its
+ * next step first and marked as such, then the rest in the order an order
+ * moves, cancelling last — all of them, so the menu never hides a move.
+ *
+ * @param order - the order to move
+ */
+export const statusMoves = (order: SupplierOrder): { to: SupplierOrderStatus; next: boolean }[] => {
+  const next = nextStep(order);
+  return STATUS_ORDER.filter((to) => canChangeSupplierOrderStatus(order.status, to))
+    .map((to) => {
+      return { to, next: to === next };
+    })
+    .sort((a, b) => Number(b.next) - Number(a.next));
 };
 
 /** Unpaid: no payment day, and not cancelled — a cancelled order is owed nothing. */
 export const isUnpaid = (order: SupplierOrder): boolean =>
   order.paidAt === null && order.status !== 'cancelled';
-
-/** Statuses whose orders are still to arrive, so an expected month matters. */
-const isOpen = (status: SupplierOrderStatus): boolean => GROUP_RANK[status] < GROUP_RANK.delivered;
 
 /**
  * When the whole order is expected: the latest month among its lines, or

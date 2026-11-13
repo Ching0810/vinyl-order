@@ -5,7 +5,6 @@ import {
   type SupplierOrder,
   type SupplierOrderStatus,
   type UpdateSupplierOrderInput,
-  canChangeSupplierOrderStatus,
   supplierOrderStatusSchema,
 } from '@vinyl-order/shared';
 import NextLink from 'next/link';
@@ -15,7 +14,12 @@ import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { MoreIcon } from '@/components/ui/icons';
 import { HttpError } from '@/lib/core/http';
 import { todayInTaipei } from '@/lib/utils/date';
-import { SUPPLIER_LABEL, SUPPLIER_ORDER_STATUS, isUnpaid } from '@/lib/utils/supplier-order';
+import {
+  SUPPLIER_LABEL,
+  SUPPLIER_ORDER_STATUS,
+  isUnpaid,
+  statusMoves,
+} from '@/lib/utils/supplier-order';
 import { currentStatusOf } from '@/services/api/supplier-orders/errors';
 import { useDeleteSupplierOrder } from '@/services/queries/supplier-orders/useDeleteSupplierOrder';
 import { useUpdateSupplierOrder } from '@/services/queries/supplier-orders/useUpdateSupplierOrder';
@@ -75,8 +79,9 @@ type Open = { kind: 'confirm'; to: SupplierOrderStatus } | { kind: 'delete' };
 
 /**
  * An order's actions, behind a "more" button: move it on to any status the
- * shared rule allows from where it is (and only those), mark it paid today
- * while it is unpaid, open it in the edit form, or delete it.
+ * shared rule allows from where it is (and only those) — its shop's next
+ * step first (statusMoves) — mark it paid today while it is unpaid, open it
+ * in the edit form, or delete it.
  *
  * Moving to a final status and deleting ask first. A refusal — typically
  * another tab having moved the order already — is handed to onFailure while
@@ -128,9 +133,7 @@ export default function SupplierOrderActions({
     return finalQuestion(order, to) ? setOpen({ kind: 'confirm', to }) : move(to);
   };
 
-  const nextStatuses = supplierOrderStatusSchema.options.filter((to) =>
-    canChangeSupplierOrderStatus(order.status, to),
-  );
+  const moves = statusMoves(order);
   const final = open?.kind === 'confirm' ? finalQuestion(order, open.to) : undefined;
 
   return (
@@ -149,12 +152,13 @@ export default function SupplierOrderActions({
         <Portal>
           <Menu.Positioner>
             <Menu.Content minW="52">
-              {nextStatuses.map((to) => (
-                <Menu.Item key={to} value={to}>
+              {/* The shop's next step first, in bold; every other move after it. */}
+              {moves.map(({ to, next }) => (
+                <Menu.Item key={to} value={to} fontWeight={next ? 'semibold' : 'normal'}>
                   {moveLabel(to)}
                 </Menu.Item>
               ))}
-              {nextStatuses.length > 0 ? <Menu.Separator /> : null}
+              {moves.length > 0 ? <Menu.Separator /> : null}
               {isUnpaid(order) ? <Menu.Item value="paid">Mark as paid today</Menu.Item> : null}
               <Menu.Item value="edit" asChild>
                 <NextLink href={`/supplier-orders/${order.id}/edit`}>Edit order</NextLink>

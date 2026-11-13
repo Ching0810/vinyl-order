@@ -20,8 +20,8 @@ import UnpaidBadge from './unpaid-badge';
  * nothing laid over it. Under it, its order number with the shop as a badge
  * at the right, then its first record, and "N more records" for any others,
  * which opens them in place. Then the total with "Unpaid" and the status at
- * the end of its line, and the day. The menu sits in the bottom-right
- * corner. The tracking number, the note and the next step are left for the
+ * the end of its line, and the day with the menu at its end, in the
+ * bottom-right corner. The tracking number, the note and the next step are left for the
  * order's own page.
  *
  * @param order - the order with its lines
@@ -37,7 +37,7 @@ export default function SupplierOrderTile({
   const [first] = order.items;
 
   return (
-    <Stack position="relative" gap="3" p="3" h="full" borderRadius="1rem" bg="gray.100" minW="0">
+    <Stack gap="3" p="3" h="full" borderRadius="1rem" bg="gray.100" minW="0">
       <Box w="full" aspectRatio="1">
         <Cover src={first.imageUrl} size="full" px={180} radius="10px" />
       </Box>
@@ -53,7 +53,9 @@ export default function SupplierOrderTile({
         <MoreRecords order={order} compact />
       </Stack>
 
-      <Stack gap="1" pt="3" borderTopWidth="1px" borderColor="gray.200">
+      {/* Held at the bottom, so the menu ends up in the corner even when the
+          tile beside it is taller. */}
+      <Stack gap="1" mt="auto" pt="3" borderTopWidth="1px" borderColor="gray.200">
         <HStack justify="space-between" gap="1.5" wrap="wrap" minH="6">
           {/* Entered by hand and optional: a blank total is unknown, not zero. */}
           {order.totalCents !== null ? (
@@ -66,15 +68,20 @@ export default function SupplierOrderTile({
             <SupplierOrderStatusBadge status={order.status} />
           </HStack>
         </HStack>
-        {/* Clear of the menu in the corner. */}
-        <Text fontSize="xs" color="gray.600" pe="8" truncate>
-          {formatDay(order.orderedAt)}
-        </Text>
+        {/* The menu shares the day's line, in the bottom-right corner, laid out
+            with it rather than over it: the line takes the button's height,
+            so the button never reaches the badges above. Only sideways does
+            it reach into the tile's padding, where there is nothing to
+            cover, so its dots line up with the badges' right edge. */}
+        <HStack justify="space-between" gap="2">
+          <Text fontSize="xs" color="gray.600" truncate>
+            {formatDay(order.orderedAt)}
+          </Text>
+          <Box flexShrink="0" me="-2">
+            <SupplierOrderActions order={order} onFailure={onFailure} />
+          </Box>
+        </HStack>
       </Stack>
-
-      <Box position="absolute" bottom="1" right="1">
-        <SupplierOrderActions order={order} onFailure={onFailure} />
-      </Box>
     </Stack>
   );
 }
