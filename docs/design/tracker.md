@@ -799,9 +799,17 @@ Rules for the notices, when they are read:
 - **Candlelight's pickup notice names no order**: it is matched by shop and
   total among my Candlelight orders not yet collected, and applied only
   when exactly one matches; none or several → `422`, for me to mark.
-- **The table lives in code**, read by the page to choose each card's hint.
-  It says "by hand" for every cell until the import of that notice ships,
-  so the page never promises an update that won't come.
+- **The table lives in code** (`SUPPLIER_FLOW`, web), as data rather than
+  sentences: per shop, the steps it has a notice for and how each is
+  learned. It says "by hand" for every step until the import of that notice
+  ships, so the page never promises an update that won't come.
+- **It orders the status menu, it doesn't limit it.** The shop's next step
+  comes first, in bold; every other move canChangeSupplierOrderStatus allows
+  follows, so an order that goes a way its shop doesn't usually — a parcel
+  brought to the door, a notice a shop doesn't normally send — can still be
+  recorded. Whether a parcel waits at a store depends on how it was sent,
+  not on the shop; with every move offered, a field for that isn't needed
+  yet.
 
 Each open card shows its next step:
 
