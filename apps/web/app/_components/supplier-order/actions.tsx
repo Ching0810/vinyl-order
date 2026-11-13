@@ -86,18 +86,23 @@ type Open = { kind: 'confirm'; to: SupplierOrderStatus } | { kind: 'delete' };
  * Moving to a final status and deleting ask first. A refusal — typically
  * another tab having moved the order already — is handed to onFailure while
  * the list refreshes underneath (see useUpdateSupplierOrder). The message is
- * shown by the list, not here: the refresh can move this card to another
- * group, which remounts it and would take a dialog of its own with it.
+ * shown by the page, not here: on the list, the refresh can move this card
+ * to another group, which remounts it and would take a dialog of its own
+ * with it.
  *
  * @param order - the order the actions apply to
  * @param onFailure - show why an action didn't happen
+ * @param onDeleted - once the order is gone: the order's own page leaves
+ *   for the list; the list needs nothing, the card is already gone
  */
 export default function SupplierOrderActions({
   order,
   onFailure,
+  onDeleted,
 }: {
   order: SupplierOrder;
   onFailure: (message: string) => void;
+  onDeleted?: () => void;
 }) {
   const updateMutation = useUpdateSupplierOrder();
   const deleteMutation = useDeleteSupplierOrder();
@@ -118,9 +123,10 @@ export default function SupplierOrderActions({
 
   const remove = () =>
     deleteMutation.mutate(order.id, {
+      onSuccess: () => onDeleted?.(),
       // A 404 means it's already gone, which is what was asked for.
       onError: (error) =>
-        error instanceof HttpError && error.status === 404 ? null : report(error),
+        error instanceof HttpError && error.status === 404 ? onDeleted?.() : report(error),
       onSettled: close,
     });
 

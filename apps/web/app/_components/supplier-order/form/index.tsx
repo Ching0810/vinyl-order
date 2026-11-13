@@ -40,8 +40,8 @@ const BackToList = () => (
  * already recorded.
  *
  * The form validates its own string-shaped values (see values.ts) and turns
- * them into the API's body on submit. Saved, it goes back to the list, where
- * the order is already up to date.
+ * them into the API's body on submit. Saved, a new order goes back to the
+ * list and an edited one to its own page, where it is already up to date.
  *
  * Submitting twice can't record two orders: the button is busy while saving,
  * and if a second request got through anyway, the API's per-user unique
@@ -158,6 +158,8 @@ const Form = ({
   // refetch can hand down a newer copy without the fields changing, and
   // sending that version would let this edit overwrite the newer one.
   const [base, setBase] = useState(order);
+  // Where saving or cancelling returns to: an edit came from the order's page.
+  const back = base ? `/supplier-orders/${base.id}` : '/supplier-orders';
   const [reloading, setReloading] = useState(false);
   // Computed once, so today's date doesn't move under the user mid-entry.
   const [defaultValues] = useState(() => (order ? toFormValues(order) : blankSupplierOrderForm()));
@@ -176,7 +178,7 @@ const Form = ({
 
   const submit = handleSubmit((values) => {
     const callbacks = {
-      onSuccess: () => router.push('/supplier-orders'),
+      onSuccess: () => router.push(back),
       onError: (error: unknown) => {
         // The one refusal that belongs to a field: say so where it was typed.
         if (supplierOrderErrorCode(error) === 'SUPPLIER_ORDER_DUPLICATE') {
@@ -226,7 +228,7 @@ const Form = ({
 
         <HStack justify="end" gap="3">
           <Button asChild variant="ghost" borderRadius="full">
-            <NextLink href="/supplier-orders">Cancel</NextLink>
+            <NextLink href={back}>Cancel</NextLink>
           </Button>
           <Button
             type="submit"
