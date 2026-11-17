@@ -680,8 +680,9 @@ are §9.5.
 How it runs:
 
 1. Once a day (10:00 Taipei, inside the wake ping's hours), a time-driven
-   trigger searches `from:(the three senders) subject:已確認 newer_than:7d`,
-   and pings `/health` until the API is awake.
+   trigger searches `from:(the three senders) subject:已確認 newer_than:7d`
+   (the notices' subjects join it in §9.5), and pings `/health` until the
+   API is awake.
 2. Each email whose first `Authentication-Results` — the one Gmail adds —
    says `dkim=pass` for its sender's domain is POSTed — sender, subject,
    `Date`, and the HTML body with every link removed — to
@@ -849,6 +850,76 @@ Each open card shows its next step:
   store. Check FamilyMart's app or SMS, then mark Ready for pickup";
 - ready for pickup → "Pick it up, then mark Delivered".
 
+**Reading the notices, THT first.** One shop at a time, each with its own
+fixtures; THT's two notices come first (samples from 2026-10/11, from the
+same sender and DKIM domain as its confirmations):
+
+|              | Payment (`確認收款通知`)                     | Shipping (`更新訂單出貨通知`) |
+| ------------ | -------------------------------------------- | ----------------------------- |
+| Order number | body: `此訂單#1001的款項`, and `收據 #1001`  | body: `訂單 #1001`            |
+| What it says | `支付日期 04/11/2026, 03:40 PM`, Taipei time | `( 已出貨 )`                  |
+| Moves        | `paidAt` to that day                         | the status to `shipped`       |
+| Also carries | lines and totals, as the confirmation does   | the lines' titles             |
+
+- **⚖️ Decision: the same route, `POST /supplier-orders/import`.** The API
+  tells the kind of email by sender and subject — `已確認` a confirmation,
+  `確認收款通知` a payment, `更新訂單出貨通知` a shipping notice — and
+  anything else from a known sender is `422`. The script keeps its one URL
+  and token; _a route per kind_ would put the sorting in the script, which
+  every user has to copy again when it changes (§9.4).
+- **A notice finds its order** by the importing user, the shop its sender
+  stands for and the order number, read the way a confirmation's is: the
+  same natural key, so a notice never touches another user's order.
+- **A notice only moves an order; it never records or edits one.** Its lines
+  and totals are ignored: the order is the confirmation's, or what I typed
+  or corrected since (§9.3), and a payment notice re-reading the lines would
+  undo that.
+- **Payment sets `paidAt` only when it is empty.** A day I set by hand is
+  kept (I may know better — a transfer made the day before the shop saw
+  it). Payment isn't a status (§9.1), so the status doesn't move, and the
+  day is written on a cancelled order too: having paid is a fact, and a
+  refund is followed by hand.
+- **⚖️ Decision: the payment day is `支付日期`, not the email's `Date`.** They
+  agree for a card, but a transfer is confirmed by the shop later than it
+  was made. EasyStore writes it **day first** (`04/11/2026` came on 4
+  November), so it is read as `DD/MM/YYYY`, and a day after the email's own
+  (Taipei) is refused with `422`, rather than read the other way round —
+  which would be eight months off and look plausible.
+- **Shipping reads only `已出貨`.** The template has one place for the
+  status; any other words in it are `422`, not a guess at what they mean.
+  The move is the status change of §9.1 — `canChangeSupplierOrderStatus`
+  and its compare-and-set — so an order already shipped or beyond, or
+  cancelled, stays as it is, and losing the race to a hand-made move counts
+  as that.
+- **A notice before its order is "not yet", not an error.** The script sends
+  confirmations first; if a notice still arrives for an order the user
+  doesn't have, the answer is `200 { result: 'not_yet' }`, the email is left
+  unlabelled, and the next day's run sends it again within the week. Past
+  the week it stops, and the step is marked by hand.
+
+What the route answers, never with the order itself:
+
+| Answer                                | When                                                        | Script's label        |
+| ------------------------------------- | ----------------------------------------------------------- | --------------------- |
+| `201 { result: 'created' }`           | a confirmation, recorded                                    | `vinyl-imported`      |
+| `200 { result: 'already_recorded' }`  | a confirmation for an order already in the list             | `vinyl-imported`      |
+| `200 { result: 'updated' }`           | a notice that set `paidAt` or moved the status              | `vinyl-imported`      |
+| `200 { result: 'unchanged' }`         | a notice the order is already at or past, or a repeat       | `vinyl-imported`      |
+| `200 { result: 'not_yet' }`           | a notice for an order not recorded yet                      | none — sent again     |
+| `422 SUPPLIER_ORDER_EMAIL_UNREADABLE` | not a kind this site reads, or one it can't read (a reason) | `vinyl-import-failed` |
+
+The script's search adds the notices' subjects —
+`subject:(已確認 OR 確認收款通知 OR 更新訂單出貨通知)` — and it sends a run's
+confirmations before its notices. `SUPPLIER_FLOW` says "automatic" for THT's
+paid and shipped steps only once this ships.
+
+The token can do more now, so two rows join §9.4's table:
+
+| Risk                                                       | Answer                                                                                                                                                                                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A leaked token marks my orders paid or shipped             | Only forward and only into an empty `paidAt`: it can't delete, edit lines, or undo what I marked, and every move is one I can set back by hand. Revoking the token stops it                                               |
+| The answers tell a token holder which order numbers I have | `not_yet` against `unchanged`, like `already_recorded` before it, says whether a number is in my list — nothing else about it. A shop's order numbers are sequential and printed on its receipts, so they aren't a secret |
+
 ## 10. Freshness on free plans
 
 - **A product page shows each offer's `lastCheckedAt`** and has a refresh
@@ -867,23 +938,23 @@ Each open card shows its next step:
 All admin-only, except the reads a visitor's pages make and the supplier
 orders, which any signed-in user has for their own (§12.1).
 
-| Method and path                                 | Purpose                                              |
-| ----------------------------------------------- | ---------------------------------------------------- |
-| `GET /admin/catalog/search?supplier=&q=&used=`  | search one supplier's index                          |
-| `POST /admin/products/from-catalog`             | create a product and its first offer from an entry   |
-| `GET /admin/products/:id/candidates`            | candidates at the other suppliers                    |
-| `POST /admin/products/:id/offers`               | attach a confirmed candidate (or a pasted URL)       |
-| `DELETE /admin/offers/:id`                      | detach a wrong match                                 |
-| `POST /admin/products/:id/refresh`              | re-fetch the product's offers                        |
-| `PATCH /admin/artists/:id`                      | rename; add or remove aliases                        |
-| `GET /products/:id`                             | now includes its offers                              |
-| `GET /admin/dashboard`                          | the home page's three sections (§12.2)               |
-| `GET /products/hot`, `GET /products/slides`     | removed, with the carousel                           |
-| `POST /cart/items`                              | takes `offerId`                                      |
-| `GET/POST /supplier-orders`                     | my orders; record one (409 if already recorded)      |
-| `GET/PATCH/DELETE /supplier-orders/:id`         | read, change (§9.1, §9.3), delete; 404 if not mine   |
-| `POST /supplier-orders/import`                  | one confirmation email, with the import token (§9.4) |
-| `GET/POST/DELETE /supplier-orders/import-token` | whether I have one; create or replace it; revoke     |
+| Method and path                                 | Purpose                                                              |
+| ----------------------------------------------- | -------------------------------------------------------------------- |
+| `GET /admin/catalog/search?supplier=&q=&used=`  | search one supplier's index                                          |
+| `POST /admin/products/from-catalog`             | create a product and its first offer from an entry                   |
+| `GET /admin/products/:id/candidates`            | candidates at the other suppliers                                    |
+| `POST /admin/products/:id/offers`               | attach a confirmed candidate (or a pasted URL)                       |
+| `DELETE /admin/offers/:id`                      | detach a wrong match                                                 |
+| `POST /admin/products/:id/refresh`              | re-fetch the product's offers                                        |
+| `PATCH /admin/artists/:id`                      | rename; add or remove aliases                                        |
+| `GET /products/:id`                             | now includes its offers                                              |
+| `GET /admin/dashboard`                          | the home page's three sections (§12.2)                               |
+| `GET /products/hot`, `GET /products/slides`     | removed, with the carousel                                           |
+| `POST /cart/items`                              | takes `offerId`                                                      |
+| `GET/POST /supplier-orders`                     | my orders; record one (409 if already recorded)                      |
+| `GET/PATCH/DELETE /supplier-orders/:id`         | read, change (§9.1, §9.3), delete; 404 if not mine                   |
+| `POST /supplier-orders/import`                  | one confirmation or notice email, with the import token (§9.4, §9.5) |
+| `GET/POST/DELETE /supplier-orders/import-token` | whether I have one; create or replace it; revoke                     |
 
 Shapes go in `packages/shared` as now.
 
@@ -993,9 +1064,10 @@ Each step is its own PR.
    already waiting to ship. _(Done: per-user API #68; list and entry form
    with expected months #69; status, tracking, note and delete #70; editing
    with the version check (§9.3) #71–#72; step 13's email import pulled
-   ahead (§9.4). Next: `paidAt` and `ready_for_pickup` by hand, with the
-   next-step hints (§9.1, §9.5); then the payment, shipping and pickup
-   notices, one shop's notice at a time.)_
+   ahead (§9.4); `paidAt` and `ready_for_pickup` by hand, with the
+   next-step hints (§9.1, §9.5), #76–#78; each order's own page #83. Next:
+   the payment, shipping and pickup notices, one shop at a time, THT
+   first (§9.5).)_
 5. Checkout on offers (§8): cart and order lines, the reservation guard,
    restock on cancel and expiry. `Product`'s `priceCents`, `currency` and
    `stock` and `CartItem.productId` are dropped here.
@@ -1018,7 +1090,8 @@ Each step is its own PR.
     typing orders in had shown what it costs: confirmations from THT, Cosmic
     and Rotten Blues (§9.4). _(Done: API #74 — parsers, import token,
     import route; web and the Apps Script (`tools/gmail-import/`) #75.)_
-    Payment, shipping and pickup notices follow (§9.5).
+    Payment, shipping and pickup notices follow (§9.5), through the same
+    route, THT's payment and shipping first.
 
 Removal first so the model change starts from a schema with nothing of
 Discogs left in it. **Supplier orders come straight after the model**,
