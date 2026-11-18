@@ -824,14 +824,14 @@ can't read. So every step after the order is one of two kinds, per shop:
 shops sent me (2024-2026, all DKIM-signed). ✅ automatic, ◻️ possible but not
 built yet, ✋ by hand:
 
-| Step                  | THT                   | Cosmic                | Rotten Blues                             | Candlelight                    |
-| --------------------- | --------------------- | --------------------- | ---------------------------------------- | ------------------------------ |
-| Recorded (`ordered`)  | ✅ `您的訂單已確認。` | ✅ `您的訂單已確認。` | ✅ `訂單 #… 已確認`                      | ✋ no email names the order    |
-| Paid (`paidAt`)       | ✅ `確認收款通知`     | ✅ `確認收款通知`     | ✅ the confirmation (`本日總付款金額`)   | ✋                             |
-| Shipped               | ✅ `更新訂單出貨通知` | ◻️ `更新訂單出貨通知` | ✅ `訂單 #… 的貨件配送中`, with tracking | ✋                             |
-| Ready for pickup      | ✋ 全家 SMS only      | ✋ 7-11 SMS only      | ✅ `訂單 #… 的貨件已送達`, with tracking | ◻️ PayNow's `物流到店取貨通知` |
-| Delivered (collected) | ✋                    | ✋                    | ✋                                       | ✋                             |
-| Cancelled             | ✋                    | ◻️ its cancellation   | ✋                                       | ✋                             |
+| Step                  | THT                   | Cosmic                | Rotten Blues                             | Candlelight                   |
+| --------------------- | --------------------- | --------------------- | ---------------------------------------- | ----------------------------- |
+| Recorded (`ordered`)  | ✅ `您的訂單已確認。` | ✅ `您的訂單已確認。` | ✅ `訂單 #… 已確認`                      | ✋ no email names the order   |
+| Paid (`paidAt`)       | ✅ `確認收款通知`     | ✅ `確認收款通知`     | ✅ the confirmation (`本日總付款金額`)   | ✋                            |
+| Shipped               | ✅ `更新訂單出貨通知` | ◻️ `更新訂單出貨通知` | ✅ `訂單 #… 的貨件配送中`, with tracking | ✋                            |
+| Ready for pickup      | ✋ 全家 SMS only      | ✋ 7-11 SMS only      | ✅ `訂單 #… 的貨件已送達`, with tracking | ✋ PayNow's notice isn't read |
+| Delivered (collected) | ✋                    | ✋                    | ✋                                       | ✋                            |
+| Cancelled             | ✋                    | ◻️ its cancellation   | ✋                                       | ✋                            |
 
 **Never automatic — no email says it:**
 
@@ -841,7 +841,7 @@ built yet, ✋ by hand:
 - **THT's and Cosmic's arrival at the store.** Only the convenience store
   says so, by SMS, which the site can't read.
 - **Candlelight's orders.** Its mail all comes from PayNow and names no
-  order (§9.4), so its orders, and every step but pickup, are typed.
+  order (§9.4), so its orders and every step of them are typed.
 
 **Never read — the email exists, but can't be trusted to the order:**
 
@@ -850,17 +850,27 @@ built yet, ✋ by hand:
 - **A confirmation with a line discount** (`折扣 ( - TWD n )`): refused, as
   its lines don't add up (§9.4).
 
+**Not read, by choice — sampled, and left to the hand:**
+
+- **THT's `訂單出貨通知`** (without `更新`): sent seconds before
+  `更新訂單出貨通知`, saying the same "已出貨", which is already read. All it
+  adds is a barcode number with no label, not known to be the tracking
+  number.
+- **Candlelight's pickup**, PayNow's `物流到店取貨通知`: it names no order —
+  only the shop in its subject, the store, a pickup number and 商品金額 — so
+  it could only be matched by shop and amount, against a total typed by
+  hand. One or two orders a month don't earn a matching rule that can pick
+  the wrong one.
+- **Cosmic's old mail**, sent as 環球黑膠 from its former name and
+  domain: only CM Music's current mail is read.
+
 **Possible, not built (◻️)** — each waits for its own sample and step:
 
-- **Cosmic's shipping**, `更新訂單出貨通知`: likely THT's template, but the
-  only sample is from 2024; read only once a recent one confirms it.
-- **Candlelight's pickup**, PayNow's `物流到店取貨通知`: names no order, so
-  matched by shop and total (below) — a matching rule of its own.
+- **Cosmic's shipping**, `更新訂單出貨通知`: likely THT's template, as its
+  payment notice is, but no CM Music sample yet.
 - **Cosmic's cancellation**: a new kind of notice, moving to `cancelled`,
   which needs its own rules (a cancellation is only allowed before shipping,
   §9.1).
-- **THT's `訂單出貨通知`** (without `更新`): another shipping template, which
-  may carry a tracking number; read once sampled.
 
 Rules for the notices, when they are read:
 
@@ -871,9 +881,6 @@ Rules for the notices, when they are read:
   other notice, so a payment notice doesn't reach the API before its order;
   if it still does, the API answers "not yet" and the next day's run sends
   it again, within the week.
-- **Candlelight's pickup notice names no order**: it is matched by shop and
-  total among my Candlelight orders not yet collected, and applied only
-  when exactly one matches; none or several → `422`, for me to mark.
 - **The table lives in code** (`SUPPLIER_FLOW`, web), as data rather than
   sentences: per shop, the steps it has a notice for and how each is
   learned. It says "by hand" for every step until the import of that notice
