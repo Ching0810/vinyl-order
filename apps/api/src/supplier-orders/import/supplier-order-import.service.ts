@@ -22,7 +22,7 @@ const unreadable = (reason: string): UnprocessableEntityException =>
 
 /**
  * Records the order a shop's confirmation email describes (tracker.md §9.4),
- * and moves an order on by the shop's payment and shipping notices (§9.5).
+ * and moves an order on by the shop's payment, shipping and arrival notices (§9.5).
  *
  * The body is read and dropped: nothing of it is stored but the order or
  * the step it reports, and nothing of it is logged — it carries the buyer's

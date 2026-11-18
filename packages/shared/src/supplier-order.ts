@@ -343,7 +343,7 @@ export type CreatedSupplierOrderImportToken = z.infer<typeof createdSupplierOrde
 // ---- Email import ----
 
 /**
- * POST /supplier-orders/import body: one confirmation, payment or shipping
+ * POST /supplier-orders/import body: one confirmation or notice
  * email as the user's Apps Script sends it, with its import token in the
  * Authorization header (tracker.md §9.4, §9.5). Links are already stripped. The limits are generous for
  * the emails seen (the largest body is ~31 KB) and bound what one request
@@ -368,7 +368,7 @@ export type ImportSupplierOrderEmailInput = z.infer<typeof importSupplierOrderEm
  * - already_recorded (200): this order number at this shop is already in the
  *   user's list — the same email sent again, or the order typed in by hand.
  *
- * A payment or shipping notice, about an order already recorded (all 200):
+ * A payment, shipping or arrival notice, about an order already recorded (all 200):
  * - updated: it set the payment day, the tracking number or the status.
  * - unchanged: the order was already there or past it — a repeat, or a step
  *   marked by hand first.

@@ -3,9 +3,7 @@ import { resolve } from 'node:path';
 
 import type { ConfirmationEmail } from '../src/supplier-orders/import/confirmation';
 import { parseConfirmation } from '../src/supplier-orders/import/parse-confirmation';
-import { emailLines } from '../src/supplier-orders/import/email-text';
 import { parseNotice } from '../src/supplier-orders/import/parse-notice';
-import { readShopifyArrival } from '../src/supplier-orders/import/parsers/shopify-notices';
 
 /**
  * Reading the shops' payment and shipping notices (docs/design/tracker.md
@@ -130,22 +128,21 @@ describe('Email import: reading notices (e2e)', () => {
     });
 
     it('arrival: the order number, ready for pickup, and the 7-11 tracking number', () => {
-      expect(readShopifyArrival(emailLines(RB_ARRIVAL.html))).toEqual({
+      expect(parseNotice(RB_ARRIVAL)).toEqual({
         ok: true,
-        notice: { kind: 'ready_for_pickup', orderNumber: '3003', trackingNumber: 'H00000000002' },
+        notice: {
+          kind: 'ready_for_pickup',
+          supplier: 'rotten_blues',
+          orderNumber: '3003',
+          trackingNumber: 'H00000000002',
+        },
       });
     });
 
     it('arrival is refused without the heading that says it arrived', () => {
       // A shipping notice is not an arrival, nor the reverse.
-      expect(readShopifyArrival(emailLines(RB_SHIPPING.html))).toEqual({
-        ok: false,
-        reason: 'no shipping status found',
-      });
-      expect(parseNotice({ ...RB_SHIPPING, html: RB_ARRIVAL.html })).toEqual({
-        ok: false,
-        reason: 'no shipping status found',
-      });
+      expect(reasonOf({ ...RB_ARRIVAL, html: RB_SHIPPING.html })).toBe('no shipping status found');
+      expect(reasonOf({ ...RB_SHIPPING, html: RB_ARRIVAL.html })).toBe('no shipping status found');
     });
 
     it('its confirmations are not notices, nor the reverse', () => {

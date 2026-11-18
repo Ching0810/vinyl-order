@@ -4,7 +4,7 @@ import type { ConfirmationEmail } from './confirmation';
 import { emailLines } from './email-text';
 import type { NoticeRead, NoticeResult } from './notice';
 import { readEasyStorePayment, readEasyStoreShipping } from './parsers/easystore-notices';
-import { readShopifyShipping } from './parsers/shopify-notices';
+import { readShopifyArrival, readShopifyShipping } from './parsers/shopify-notices';
 import { sentDay, supplierOf } from './senders';
 
 type NoticeReader = (lines: string[], sentOn: string) => NoticeRead;
@@ -24,11 +24,13 @@ const NOTICES: Partial<Record<Supplier, Record<string, NoticeReader>>> = {
   rotten_blues: {
     // "訂單 #3003 的貨件配送中".
     的貨件配送中: (lines) => readShopifyShipping(lines),
+    // "訂單 #3003 的貨件已送達": at the store, not yet collected.
+    的貨件已送達: (lines) => readShopifyArrival(lines),
   },
 };
 
 /**
- * Read a shop's payment or shipping notice: which of my orders it is about,
+ * Read a shop's payment, shipping or arrival notice: which of my orders it is about,
  * and what it says happened.
  *
  * Refuses rather than guesses, as confirmations do (tracker.md §9.4): an
