@@ -850,21 +850,22 @@ Each open card shows its next step:
   store. Check FamilyMart's app or SMS, then mark Ready for pickup";
 - ready for pickup → "Pick it up, then mark Delivered".
 
-**Reading the notices, THT first.** One shop at a time, each with its own
-fixtures; THT's two notices come first (samples from 2026-10/11, from the
-same sender and DKIM domain as its confirmations):
+**Reading the notices: THT's two, then Rotten Blues' shipping.** One notice
+at a time, each with its own fixture (samples from 2026-10/11, each from the
+same sender and DKIM domain as its shop's confirmations):
 
-|              | Payment (`確認收款通知`)                     | Shipping (`更新訂單出貨通知`) |
-| ------------ | -------------------------------------------- | ----------------------------- |
-| Order number | body: `此訂單#1001的款項`, and `收據 #1001`  | body: `訂單 #1001`            |
-| What it says | `支付日期 04/11/2026, 03:40 PM`, Taipei time | `( 已出貨 )`                  |
-| Moves        | `paidAt` to that day                         | the status to `shipped`       |
-| Also carries | lines and totals, as the confirmation does   | the lines' titles             |
+|              | THT payment (`確認收款通知`)                 | THT shipping (`更新訂單出貨通知`) | Rotten Blues shipping (`訂單 #… 的貨件配送中`) |
+| ------------ | -------------------------------------------- | --------------------------------- | ---------------------------------------------- |
+| Order number | body: `此訂單#1001的款項`, and `收據 #1001`  | body: `訂單 #1001`                | subject, and body: `訂單 #3003`                |
+| What it says | `支付日期 04/11/2026, 03:40 PM`, Taipei time | `( 已出貨 )`                      | heading `您的訂單配送中`                       |
+| Moves        | `paidAt` to that day                         | the status to `shipped`           | the status to `shipped`                        |
+| Also carries | lines and totals, as the confirmation does   | the lines' titles                 | `7-11 追蹤編號: H…`; the parcel's lines        |
 
 - **⚖️ Decision: the same route, `POST /supplier-orders/import`.** The API
   tells the kind of email by sender and subject — `已確認` a confirmation,
-  `確認收款通知` a payment, `更新訂單出貨通知` a shipping notice — and
-  anything else from a known sender is `422`. The script keeps its one URL
+  `確認收款通知` a payment, `更新訂單出貨通知` or `的貨件配送中` a shipping
+  notice — and anything else from a known sender is `422`, Cosmic's notices
+  included until one is sampled. The script keeps its one URL
   and token; _a route per kind_ would put the sorting in the script, which
   every user has to copy again when it changes (§9.4).
 - **A notice finds its order** by the importing user, the shop its sender
@@ -882,15 +883,27 @@ same sender and DKIM domain as its confirmations):
 - **⚖️ Decision: the payment day is `支付日期`, not the email's `Date`.** They
   agree for a card, but a transfer is confirmed by the shop later than it
   was made. EasyStore writes it **day first** (`04/11/2026` came on 4
-  November), so it is read as `DD/MM/YYYY`, and a day after the email's own
-  (Taipei) is refused with `422`, rather than read the other way round —
-  which would be eight months off and look plausible.
-- **Shipping reads only `已出貨`.** The template has one place for the
-  status; any other words in it are `422`, not a guess at what they mean.
-  The move is the status change of §9.1 — `canChangeSupplierOrderStatus`
-  and its compare-and-set — so an order already shipped or beyond, or
-  cancelled, stays as it is, and losing the race to a hand-made move counts
-  as that.
+  November), so it is read as `DD/MM/YYYY`. A day after the email's own
+  (Taipei), or more than 31 days before it, is refused with `422`: it is far
+  likelier written the other way round than a transfer confirmed a month
+  late. The second bound matters as much as the first — 4 November written
+  `11/04` reads as 11 April, before the email, and only the month catches
+  it. What still slips through is a swap that lands within the month, both
+  numbers 12 or under (`11/10` sent on 10 November reads as 11 October); no
+  sample has shown a month-first date.
+- **Shipping reads only what says shipped**: THT's `已出貨`, Rotten Blues'
+  heading `您的訂單配送中`. THT's template has one place for the status, and
+  any other words in it are `422`, not a guess at what they mean. The move
+  is the status change of §9.1 — `canChangeSupplierOrderStatus` and its
+  compare-and-set — so an order already shipped or beyond, or cancelled,
+  stays as it is, and losing the race to a hand-made move counts as that.
+- **A tracking number fills only an empty field**, as `paidAt` does: one I
+  typed is kept. Rotten Blues' notice gives it after the carrier's name
+  (`7-11 追蹤編號:`); a notice without one still marks the order shipped.
+- **⚠️ An order shipped in parts is marked shipped by its first notice.**
+  Shopify sends one notice per parcel ("本次運送的商品"), and the parcel's
+  lines aren't compared with the order's. No sampled order has more than one
+  record, so this is left as a known limit rather than tracked per line.
 - **A notice before its order is "not yet", not an error.** The script sends
   confirmations first; if a notice still arrives for an order the user
   doesn't have, the answer is `200 { result: 'not_yet' }`, the email is left
@@ -899,25 +912,26 @@ same sender and DKIM domain as its confirmations):
 
 What the route answers, never with the order itself:
 
-| Answer                                | When                                                        | Script's label        |
-| ------------------------------------- | ----------------------------------------------------------- | --------------------- |
-| `201 { result: 'created' }`           | a confirmation, recorded                                    | `vinyl-imported`      |
-| `200 { result: 'already_recorded' }`  | a confirmation for an order already in the list             | `vinyl-imported`      |
-| `200 { result: 'updated' }`           | a notice that set `paidAt` or moved the status              | `vinyl-imported`      |
-| `200 { result: 'unchanged' }`         | a notice the order is already at or past, or a repeat       | `vinyl-imported`      |
-| `200 { result: 'not_yet' }`           | a notice for an order not recorded yet                      | none — sent again     |
-| `422 SUPPLIER_ORDER_EMAIL_UNREADABLE` | not a kind this site reads, or one it can't read (a reason) | `vinyl-import-failed` |
+| Answer                                | When                                                          | Script's label        |
+| ------------------------------------- | ------------------------------------------------------------- | --------------------- |
+| `201 { result: 'created' }`           | a confirmation, recorded                                      | `vinyl-imported`      |
+| `200 { result: 'already_recorded' }`  | a confirmation for an order already in the list               | `vinyl-imported`      |
+| `200 { result: 'updated' }`           | a notice that set `paidAt`, the tracking number or the status | `vinyl-imported`      |
+| `200 { result: 'unchanged' }`         | a notice the order is already at or past, or a repeat         | `vinyl-imported`      |
+| `200 { result: 'not_yet' }`           | a notice for an order not recorded yet                        | none — sent again     |
+| `422 SUPPLIER_ORDER_EMAIL_UNREADABLE` | not a kind this site reads, or one it can't read (a reason)   | `vinyl-import-failed` |
 
 The script's search adds the notices' subjects —
-`subject:(已確認 OR 確認收款通知 OR 更新訂單出貨通知)` — and it sends a run's
-confirmations before its notices. `SUPPLIER_FLOW` says "automatic" for THT's
-paid and shipped steps only once this ships.
+`subject:(已確認 OR 確認收款通知 OR 更新訂單出貨通知 OR 貨件配送中)` — and it
+sends a run's confirmations before its notices. `SUPPLIER_FLOW` says
+"automatic" for THT's paid and shipped steps and Rotten Blues' shipped step
+only once this ships.
 
 The token can do more now, so two rows join §9.4's table:
 
 | Risk                                                       | Answer                                                                                                                                                                                                                    |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A leaked token marks my orders paid or shipped             | Only forward and only into an empty `paidAt`: it can't delete, edit lines, or undo what I marked, and every move is one I can set back by hand. Revoking the token stops it                                               |
+| A leaked token marks my orders paid or shipped             | Only forward, and only into an empty `paidAt` or tracking number: it can't delete, edit lines, or undo what I marked, and every move is one I can set back by hand. Revoking the token stops it                           |
 | The answers tell a token holder which order numbers I have | `not_yet` against `unchanged`, like `already_recorded` before it, says whether a number is in my list — nothing else about it. A shop's order numbers are sequential and printed on its receipts, so they aren't a secret |
 
 ## 10. Freshness on free plans
@@ -1066,8 +1080,8 @@ Each step is its own PR.
    with the version check (§9.3) #71–#72; step 13's email import pulled
    ahead (§9.4); `paidAt` and `ready_for_pickup` by hand, with the
    next-step hints (§9.1, §9.5), #76–#78; each order's own page #83. Next:
-   the payment, shipping and pickup notices, one shop at a time, THT
-   first (§9.5).)_
+   the payment, shipping and pickup notices, one notice at a time: THT's
+   payment and shipping and Rotten Blues' shipping first (§9.5).)_
 5. Checkout on offers (§8): cart and order lines, the reservation guard,
    restock on cancel and expiry. `Product`'s `priceCents`, `currency` and
    `stock` and `CartItem.productId` are dropped here.
@@ -1091,7 +1105,7 @@ Each step is its own PR.
     and Rotten Blues (§9.4). _(Done: API #74 — parsers, import token,
     import route; web and the Apps Script (`tools/gmail-import/`) #75.)_
     Payment, shipping and pickup notices follow (§9.5), through the same
-    route, THT's payment and shipping first.
+    route: THT's payment and shipping and Rotten Blues' shipping first.
 
 Removal first so the model change starts from a schema with nothing of
 Discogs left in it. **Supplier orders come straight after the model**,
