@@ -820,18 +820,47 @@ can't read. So every step after the order is one of two kinds, per shop:
 - **by hand** — the card says where to look and what to mark, so a step
   that can't be automatic is never silently missing.
 
-What the emails make possible (samples from 2026-07/11, all DKIM-signed):
+**Which email moves which step** — read against every order email the four
+shops sent me (2024-2026, all DKIM-signed). ✅ automatic, ◻️ possible but not
+built yet, ✋ by hand:
 
-|                       | THT                                      | Cosmic                  | Rotten Blues                                 | Candlelight                                     |
-| --------------------- | ---------------------------------------- | ----------------------- | -------------------------------------------- | ----------------------------------------------- |
-| Paid                  | `確認收款通知`: order number, 支付日期   | the same template       | the confirmation's `本日總付款金額` (§9.1)   | by hand                                         |
-| Shipped               | `更新訂單出貨通知`: number, `( 已出貨 )` | by hand — no sample yet | `訂單 #… 的貨件配送中`, with tracking number | by hand                                         |
-| Ready for pickup      | by hand — 全家 SMS only                  | by hand — 7-11 SMS only | `訂單 #… 的貨件已送達`: arrived at the store | PayNow's `物流到店取貨通知`, with a pickup date |
-| Delivered (collected) | by hand                                  | by hand                 | by hand                                      | by hand                                         |
+| Step                  | THT                   | Cosmic                | Rotten Blues                             | Candlelight                    |
+| --------------------- | --------------------- | --------------------- | ---------------------------------------- | ------------------------------ |
+| Recorded (`ordered`)  | ✅ `您的訂單已確認。` | ✅ `您的訂單已確認。` | ✅ `訂單 #… 已確認`                      | ✋ no email names the order    |
+| Paid (`paidAt`)       | ✅ `確認收款通知`     | ✅ `確認收款通知`     | ✅ the confirmation (`本日總付款金額`)   | ✋                             |
+| Shipped               | ✅ `更新訂單出貨通知` | ◻️ `更新訂單出貨通知` | ✅ `訂單 #… 的貨件配送中`, with tracking | ✋                             |
+| Ready for pickup      | ✋ 全家 SMS only      | ✋ 7-11 SMS only      | ✅ `訂單 #… 的貨件已送達`, with tracking | ◻️ PayNow's `物流到店取貨通知` |
+| Delivered (collected) | ✋                    | ✋                    | ✋                                       | ✋                             |
+| Cancelled             | ✋                    | ◻️ its cancellation   | ✋                                       | ✋                             |
 
-No shop says when a parcel is collected — collecting it is my own act, so
-`delivered` is always by hand. Rotten Blues' "已送達" means arrived at the
-store, not collected: it is sent before pickup.
+**Never automatic — no email says it:**
+
+- **Delivered.** No shop says when a parcel is collected; collecting it is
+  my own act. Rotten Blues' "已送達" is sent before pickup: it means at the
+  store.
+- **THT's and Cosmic's arrival at the store.** Only the convenience store
+  says so, by SMS, which the site can't read.
+- **Candlelight's orders.** Its mail all comes from PayNow and names no
+  order (§9.4), so its orders, and every step but pickup, are typed.
+
+**Never read — the email exists, but can't be trusted to the order:**
+
+- **EasyStore's first-order welcome** (`感謝您的訂購！`): no order number
+  outside its link (§9.4). Once per account.
+- **A confirmation with a line discount** (`折扣 ( - TWD n )`): refused, as
+  its lines don't add up (§9.4).
+
+**Possible, not built (◻️)** — each waits for its own sample and step:
+
+- **Cosmic's shipping**, `更新訂單出貨通知`: likely THT's template, but the
+  only sample is from 2024; read only once a recent one confirms it.
+- **Candlelight's pickup**, PayNow's `物流到店取貨通知`: names no order, so
+  matched by shop and total (below) — a matching rule of its own.
+- **Cosmic's cancellation**: a new kind of notice, moving to `cancelled`,
+  which needs its own rules (a cancellation is only allowed before shipping,
+  §9.1).
+- **THT's `訂單出貨通知`** (without `更新`): another shipping template, which
+  may carry a tracking number; read once sampled.
 
 Rules for the notices, when they are read:
 
