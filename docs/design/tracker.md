@@ -391,7 +391,17 @@ longer lists are deleted.
   later only entries whose sitemap `lastmod` moved — ~890 pages once, then a
   handful a day.
 
-Sync runs as a GitHub Actions schedule against Neon (§10), not in the API.
+Sync runs outside the API: at first a command run by hand, locally and
+then against Neon, so the first runs can be watched — how many entries,
+how much space, how long; then a GitHub Actions schedule (§10, step 12).
+
+**⚖️ Decision: keep the whole catalog, flagged, and filter at search.**
+CDs, merchandise and used records are copied too, with `isVinyl` and
+`isUsed`; search shows new vinyl unless asked. Filtering at sync would save
+a few MB, but EasyStore's sitemap gives only a name to judge by, and a
+record whose name lacks "LP" or "黑膠" would never be found. A wrong flag
+at search is a toggle away; a wrong drop at sync is invisible. Each entry
+is a few hundred bytes — tens of thousands fit in tens of MB (§15).
 
 ### 7.3 Matching
 
@@ -1156,21 +1166,35 @@ Each step is its own PR.
    ahead (§9.4); `paidAt` and `ready_for_pickup` by hand, with the
    next-step hints (§9.1, §9.5), #76–#78; each order's own page #83; the
    notices (§9.5): THT's payment and shipping and Rotten Blues' shipping
-   #87–#89, hourly; then Rotten Blues' arrival and Cosmic's payment.)_
-5. Checkout on offers (§8): cart and order lines, the reservation guard,
-   restock on cancel and expiry. `Product`'s `priceCents`, `currency` and
-   `stock` and `CartItem.productId` are dropped here.
-6. EasyStore and Shopify adapters, with fixtures.
-7. `CatalogEntry` and catalog sync for THT and Rotten Blues; used and vinyl
-   flags. The table waits for this step: its columns are settled by the
-   shops' catalogs as the sync reads them (§15).
-8. API: search, create from catalog, candidates, attach, refresh. Products
-   get their `Artist` here, so `Product.artist` (the string) and `year` are
-   dropped, and `artistId` becomes required.
-9. Web: search page, product comparison, the visitors' list, the dashboard
+   #87–#89, hourly; then Rotten Blues' arrival and Cosmic's payment, #90.)_
+5. Checkout on offers (§8) — **moved after step 9** (below): cart and order
+   lines, the reservation guard, restock on cancel and expiry. `Product`'s
+   `priceCents`, `currency`, `stock`, `artist` (the string) and `year`, and
+   `CartItem.productId`, are dropped here, and `artistId` becomes required.
+6. EasyStore and Shopify adapters, with fixtures — THT, Cosmic and Rotten
+   Blues:
+   - **6a.** One fetcher for every adapter, with §6.4's guard (https, the
+     shops' hosts, redirects, timeout, size, one request at a time per host)
+     and its SSRF tests.
+   - **6b.** `EasyStoreAdapter` (configured for THT and Cosmic) and
+     `ShopifyAdapter`: `fetchOffer` and `syncCatalog`, zod-validated and
+     normalised (§6.2), against saved public pages. The shops' pages are
+     re-checked by hand first: §4's table is from 2026-10-30.
+7. `CatalogEntry` and catalog sync for THT, Cosmic and Rotten Blues; used
+   and vinyl flags. The table waits for this step: its columns are settled
+   by the shops' catalogs as the sync reads them (§15). **Run by hand** — a
+   command, locally and then against Neon — until step 12 schedules it; the
+   first runs are where the size is measured.
+8. API, in three PRs: search (8a); create from catalog and refresh (8b);
+   candidates, attach and detach, and artist aliases (8c). Products get
+   their `Artist` here; until step 5, the columns the demo store still reads
+   are filled from it (below).
+9. Web: the search page (9a), then the product page's comparison (9b) —
+   **the comparison usable**; then the visitors' list, the dashboard
    (§12.2), and the product page's "record an order" and link-a-line.
-   **The comparison usable.**
-10. Cosmic.
+10. Cosmic — folded into steps 6–7: it is on THT's platform, so it is the
+    same adapter configured twice, and the only shop that fills barcodes,
+    which matching ranks first (§7.3).
 11. Candlelight: the WACA adapter (the 1996 page as fixture), paged sync,
     `lastmod` increments.
 12. Scheduled refresh and catalog sync in GitHub Actions; alerts from
@@ -1187,9 +1211,17 @@ Removal first so the model change starts from a schema with nothing of
 Discogs left in it. **Supplier orders come straight after the model**,
 ahead of the comparison they are listed after in this document: orders
 placed before this site existed are already waiting to ship, and a typed
-line (§9.2) needs no adapter, catalog or offer. Checkout moves to offers before any adapter exists, so
-that step can be tested with offers made in the test itself, apart from
-parsing.
+line (§9.2) needs no adapter, catalog or offer.
+
+**Changed 2026-11-18: the comparison before checkout.** Checkout was to
+move to offers before any adapter existed, so it could be tested with
+offers made in the test itself. But the comparison is what the site is
+for, and the demo checkout works as it is; so steps 6–9 come first and
+step 5 follows step 9. Until then, a product created from a catalog fills
+the old columns the demo store reads — `priceCents` and `currency` from its
+first offer, `artist` from its artist's display name, `stock` 0 — so the
+store keeps working on the new products without a schema change. Step 5
+then drops them all together, with nothing left reading them.
 
 ## 15. Open questions
 
