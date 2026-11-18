@@ -11,14 +11,16 @@ type NoticeReader = (lines: string[], sentOn: string) => NoticeRead;
 
 /**
  * The notices read, per shop, by a part of the subject. One notice at a time,
- * each from its own samples. Cosmic is on THT's platform, but until one of
- * its notices is sampled, its notices are refused and marked by hand.
+ * each from its own samples: a notice no sample has shown — Cosmic's shipping,
+ * though it is on THT's platform — is refused and marked by hand.
  */
 const NOTICES: Partial<Record<Supplier, Record<string, NoticeReader>>> = {
   tht: {
     確認收款通知: readEasyStorePayment,
     更新訂單出貨通知: (lines) => readEasyStoreShipping(lines),
   },
+  // THT's template, word for word.
+  cosmic: { 確認收款通知: readEasyStorePayment },
   rotten_blues: {
     // "訂單 #3003 的貨件配送中".
     的貨件配送中: (lines) => readShopifyShipping(lines),
