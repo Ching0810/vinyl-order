@@ -999,7 +999,8 @@ sends a run's confirmations before its notices. `SUPPLIER_FLOW` says
 "automatic" for THT's paid and shipped steps and Rotten Blues' shipped step
 only once this ships. Arrival adds `貨件已送達` to the search (Cosmic's
 payment has THT's subject, already in it), and `SUPPLIER_FLOW` then says
-"automatic" for Cosmic's paid step and Rotten Blues' ready for pickup.
+"automatic" for Rotten Blues' ready for pickup. Payment isn't a status, so
+no flow step changes for Cosmic's.
 
 The token can do more now, so two rows join §9.4's table:
 

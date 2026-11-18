@@ -101,7 +101,7 @@ const SUPPLIER_FLOW: Record<Supplier, Partial<Record<FlowStep, StepSignal>>> = {
   },
   rotten_blues: {
     shipped: { by: 'email', when: "Rotten Blues emails that it's on its way" },
-    ready_for_pickup: { by: 'hand', when: 'Rotten Blues emails that it has arrived (已送達)' },
+    ready_for_pickup: { by: 'email', when: 'Rotten Blues emails that it has arrived at the store' },
   },
   candlelight: {
     ready_for_pickup: { by: 'hand', when: 'PayNow emails that it has reached the store' },

@@ -7,15 +7,16 @@ orders** without typing them in, and move on as the shops report. Design and sec
 
 What it sends:
 
-| Shop         | Confirmation (records the order) | Notices (move the order)                                   |
-| ------------ | -------------------------------- | ---------------------------------------------------------- |
-| THT          | `您的訂單已確認。`               | `確認收款通知` → paid; `更新訂單出貨通知` → shipped        |
-| Cosmic       | `您的訂單已確認。`               | not read yet                                               |
-| Rotten Blues | `訂單 #… 已確認`                 | `訂單 #… 的貨件配送中` → shipped, with its tracking number |
+| Shop         | Confirmation (records the order) | Notices (move the order)                                                                                   |
+| ------------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| THT          | `您的訂單已確認。`               | `確認收款通知` → paid; `更新訂單出貨通知` → shipped                                                        |
+| Cosmic       | `您的訂單已確認。`               | `確認收款通知` → paid                                                                                      |
+| Rotten Blues | `訂單 #… 已確認`                 | `訂單 #… 的貨件配送中` → shipped; `訂單 #… 的貨件已送達` → ready for pickup; each with its tracking number |
 
 Candlelight sends no confirmation of its own (its mail comes from PayNow and
 names no order), so its orders are still recorded by hand. Every step not
-listed is marked by hand, as the order's page says.
+listed is marked by hand, as the order's page says; `docs/design/tracker.md`
+§9.5 says which emails are left unread, and why.
 
 ## Before you start: what it can do
 
@@ -93,9 +94,8 @@ runs `importOrders` once.
   `created` and `already` are confirmations; `updated`, `unchanged` and
   `notYet` are notices; `failed` went to `vinyl-import-failed`; `ignored`
   wasn't sent (unsigned, or not a shop's); `skipped` couldn't reach the site
-  and is tried again. A Cosmic payment or shipping notice lands in `failed`
-  until the site reads them — keep one, it's the sample that teaches the
-  site.
+  and is tried again. A Cosmic shipping notice lands in `failed` until the
+  site reads it — keep one, it's the sample that teaches the site.
 - **Updating the script:** paste this folder's `Code.gs` over the old one and
   save. The properties stay. Run **`install`** once if the update changes
   when it runs (the move from daily to hourly did); otherwise the trigger

@@ -30,11 +30,12 @@ var SENDERS = [
 var CONFIRMATION = '已確認';
 
 /**
- * In the subjects of the notices the site reads: THT's payment and shipping,
- * Rotten Blues' shipping ("訂單 #3003 的貨件配送中"). The site decides what
- * each one means; this list only decides what is sent.
+ * In the subjects of the notices the site reads: THT's and Cosmic's payment,
+ * THT's shipping, Rotten Blues' shipping and arrival ("訂單 #3003 的貨件配送中",
+ * "訂單 #3003 的貨件已送達"). The site decides what each one means; this list
+ * only decides what is sent.
  */
-var NOTICES = ['確認收款通知', '更新訂單出貨通知', '貨件配送中'];
+var NOTICES = ['確認收款通知', '更新訂單出貨通知', '貨件配送中', '貨件已送達'];
 
 /**
  * How far back each run looks. The API ignores an order it already has, so
