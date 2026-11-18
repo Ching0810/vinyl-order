@@ -5,6 +5,7 @@ import { emailLines } from './email-text';
 import { expectedMonthFromTitle } from './expected-month';
 import { easyStoreCovers, parseEasyStore } from './parsers/easystore';
 import { parseShopify, shopifyCovers } from './parsers/shopify';
+import { sentDay, supplierOf } from './senders';
 
 /** How a platform reads its email, and where it puts the covers. */
 interface Platform {
@@ -16,31 +17,12 @@ interface Platform {
 const EASYSTORE: Platform = { parse: (lines) => parseEasyStore(lines), covers: easyStoreCovers };
 const SHOPIFY: Platform = { parse: parseShopify, covers: shopifyCovers };
 
-/**
- * The senders whose confirmations are read, and what they are. Must match
- * the Apps Script's search (tools/gmail-import). Candlelight has none: its
- * mail comes from its payment provider and names no order (tracker.md §9.4).
- */
-const SENDERS: Record<string, { supplier: Supplier; platform: Platform }> = {
-  'notifications+thtrecords@mail.easystore.co': { supplier: 'tht', platform: EASYSTORE },
-  'notifications+universalvinylmusic@mail.easystore.co': {
-    supplier: 'cosmic',
-    platform: EASYSTORE,
-  },
-  'store+100236001461@t.shopifyemail.com': { supplier: 'rotten_blues', platform: SHOPIFY },
+/** The platform each shop's confirmation is written by (senders.ts names the shops). */
+const PLATFORMS: Partial<Record<Supplier, Platform>> = {
+  tht: EASYSTORE,
+  cosmic: EASYSTORE,
+  rotten_blues: SHOPIFY,
 };
-
-/** The address in a From header: `Name <a@b>` or a bare `a@b`, lowercased. */
-const senderAddress = (from: string): string =>
-  (/<([^>]+)>/.exec(from)?.[1] ?? from).trim().toLowerCase();
-
-/** The Taipei day of an instant, `YYYY-MM-DD` ('en-CA' formats as ISO). */
-const taipeiDay = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Taipei',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
 
 /**
  * The cover, if it is from one of the shops' own image hosts
@@ -49,6 +31,16 @@ const taipeiDay = new Intl.DateTimeFormat('en-CA', {
  * never loads an image from wherever an email points.
  */
 const allowedCover = (src: string): string | null => (isAllowedCoverUrl(src) ? src : null);
+
+/**
+ * Whether an email is an order confirmation, by its subject: every shop's
+ * says "已確認" ("您的訂單已確認。", "訂單 #3003 已確認"), and no notice's
+ * does. Anything else is read as a notice, if at all.
+ *
+ * @param email - as the Apps Script sends it
+ */
+export const isConfirmation = (email: Pick<ConfirmationEmail, 'subject'>): boolean =>
+  email.subject.includes('已確認');
 
 /**
  * Read a shop's order confirmation into the order it confirms.
@@ -64,28 +56,29 @@ const allowedCover = (src: string): string | null => (isAllowedCoverUrl(src) ? s
  * @param email - as the Apps Script sends it
  */
 export const parseConfirmation = (email: ConfirmationEmail): ParseResult => {
-  const sender = SENDERS[senderAddress(email.from)];
-  if (!sender) return { ok: false, reason: 'not a sender whose emails are read' };
-  // Shipping notices come from the same senders; only a confirmation records.
-  if (!email.subject.includes('已確認')) return { ok: false, reason: 'not an order confirmation' };
+  const supplier = supplierOf(email.from);
+  const platform = supplier && PLATFORMS[supplier];
+  if (!supplier || !platform) return { ok: false, reason: 'not a sender whose emails are read' };
+  // Payment and shipping notices come from the same senders (parse-notice.ts);
+  // only a confirmation records.
+  if (!isConfirmation(email)) return { ok: false, reason: 'not an order confirmation' };
 
-  const sent = new Date(email.date);
-  if (Number.isNaN(sent.getTime())) return { ok: false, reason: 'no date' };
-  const orderedAt = taipeiDay.format(sent);
+  const orderedAt = sentDay(email.date);
+  if (!orderedAt) return { ok: false, reason: 'no date' };
 
-  const read = sender.platform.parse(emailLines(email.html), email.subject);
+  const read = platform.parse(emailLines(email.html), email.subject);
   if (!read.ok) return read;
 
   // Paired by position, so only when there is one per line; a disallowed host
   // still holds its line's place, and that line just gets none.
-  const covers = sender.platform.covers(email.html);
+  const covers = platform.covers(email.html);
   const coverFor = (index: number): string | null =>
     covers.length === read.lines.length ? allowedCover(covers[index]) : null;
 
   return {
     ok: true,
     order: {
-      supplier: sender.supplier,
+      supplier,
       orderNumber: read.orderNumber,
       orderedAt,
       totalCents: read.totalCents,
