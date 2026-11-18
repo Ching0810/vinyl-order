@@ -82,5 +82,6 @@ export const readEasyStoreShipping = (lines: string[]): NoticeRead => {
   if (!status) return { ok: false, reason: 'no shipping status found' };
   if (status !== SHIPPED) return { ok: false, reason: 'a shipping status this site does not read' };
 
-  return { ok: true, notice: { kind: 'shipped', orderNumber } };
+  // THT's notice carries no tracking number.
+  return { ok: true, notice: { kind: 'shipped', orderNumber, trackingNumber: null } };
 };

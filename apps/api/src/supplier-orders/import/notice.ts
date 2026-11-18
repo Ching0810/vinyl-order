@@ -8,7 +8,12 @@ export type OrderNotice =
       /** `YYYY-MM-DD`, the day the shop says it was paid. */
       paidAt: string;
     }
-  | { kind: 'shipped'; orderNumber: string };
+  | {
+      kind: 'shipped';
+      orderNumber: string;
+      /** The parcel's, when the notice gives one; it fills only an empty field. */
+      trackingNumber: string | null;
+    };
 
 /** A shop's reading of one notice, or why it couldn't be read. */
 export type NoticeRead = { ok: true; notice: OrderNotice } | { ok: false; reason: string };

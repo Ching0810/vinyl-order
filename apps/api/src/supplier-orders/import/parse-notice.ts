@@ -4,19 +4,24 @@ import type { ConfirmationEmail } from './confirmation';
 import { emailLines } from './email-text';
 import type { NoticeRead, NoticeResult } from './notice';
 import { readEasyStorePayment, readEasyStoreShipping } from './parsers/easystore-notices';
+import { readShopifyShipping } from './parsers/shopify-notices';
 import { sentDay, supplierOf } from './senders';
 
 type NoticeReader = (lines: string[], sentOn: string) => NoticeRead;
 
 /**
- * The notices read, per shop, by subject. One shop at a time, each from its
- * own samples: THT first. Cosmic is on the same platform, but until one of
+ * The notices read, per shop, by a part of the subject. One notice at a time,
+ * each from its own samples. Cosmic is on THT's platform, but until one of
  * its notices is sampled, its notices are refused and marked by hand.
  */
 const NOTICES: Partial<Record<Supplier, Record<string, NoticeReader>>> = {
   tht: {
     確認收款通知: readEasyStorePayment,
     更新訂單出貨通知: (lines) => readEasyStoreShipping(lines),
+  },
+  rotten_blues: {
+    // "訂單 #3003 的貨件配送中".
+    的貨件配送中: (lines) => readShopifyShipping(lines),
   },
 };
 

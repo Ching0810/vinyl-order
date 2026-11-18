@@ -7,7 +7,7 @@ import { parseNotice } from '../src/supplier-orders/import/parse-notice';
 
 /**
  * Reading the shops' payment and shipping notices (docs/design/tracker.md
- * §9.5), THT's first.
+ * §9.5): THT's payment and shipping, Rotten Blues' shipping.
  *
  * The fixtures are real emails with the recipient's name, pickup store, order
  * number, titles, images and tracking pixels replaced, and every link
@@ -32,6 +32,13 @@ const THT_SHIPPING: ConfirmationEmail = {
   html: fixture('tht-shipping'),
 };
 
+const RB_SHIPPING: ConfirmationEmail = {
+  from: '爛調唱片 <store+100236001461@t.shopifyemail.com>',
+  subject: '訂單 #3003 的貨件配送中',
+  date: '2026-11-17T13:45:53.000Z',
+  html: fixture('shopify-shipping'),
+};
+
 /** THT's payment notice with "支付日期" written as `written`. */
 const paidOn = (written: string): ConfirmationEmail => ({
   ...THT_PAYMENT,
@@ -53,10 +60,45 @@ describe('Email import: reading notices (e2e)', () => {
       });
     });
 
-    it('shipping: the order number, shipped', () => {
+    it('shipping: the order number, shipped, no tracking number', () => {
       expect(parseNotice(THT_SHIPPING)).toEqual({
         ok: true,
-        notice: { kind: 'shipped', supplier: 'tht', orderNumber: '1001' },
+        notice: { kind: 'shipped', supplier: 'tht', orderNumber: '1001', trackingNumber: null },
+      });
+    });
+  });
+
+  describe('Rotten Blues', () => {
+    it('shipping: the order number, shipped, and the 7-11 tracking number', () => {
+      expect(parseNotice(RB_SHIPPING)).toEqual({
+        ok: true,
+        notice: {
+          kind: 'shipped',
+          supplier: 'rotten_blues',
+          orderNumber: '3003',
+          trackingNumber: 'H00000000001',
+        },
+      });
+    });
+
+    it('shipping without a tracking number is still shipped', () => {
+      const html = RB_SHIPPING.html.replace('H00000000001', '');
+      const result = parseNotice({ ...RB_SHIPPING, html });
+      expect(result.ok && result.notice).toMatchObject({ kind: 'shipped', trackingNumber: null });
+    });
+
+    it('is refused without the heading that says it is on its way', () => {
+      const html = RB_SHIPPING.html.replaceAll('您的訂單配送中', '您的訂單');
+      expect(reasonOf({ ...RB_SHIPPING, html })).toBe('no shipping status found');
+    });
+
+    it('its confirmations are not notices, nor the reverse', () => {
+      expect(reasonOf({ ...RB_SHIPPING, subject: '訂單 #3003 已確認' })).toBe(
+        'not a notice this site reads',
+      );
+      expect(parseConfirmation(RB_SHIPPING)).toEqual({
+        ok: false,
+        reason: 'not an order confirmation',
       });
     });
   });
