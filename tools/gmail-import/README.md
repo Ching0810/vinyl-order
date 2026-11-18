@@ -1,12 +1,21 @@
 # Gmail import
 
-A Google Apps Script that sends the shops' order confirmations from your Gmail
-to vinyl-order once a day, so the orders appear in **Supplier orders** without
-typing them in. Design and security notes: `docs/design/tracker.md` §9.4.
+A Google Apps Script that sends the shops' order emails from your Gmail to
+vinyl-order once a day, so the orders appear in **Supplier orders** without
+typing them in, and move on as the shops report. Design and security notes:
+`docs/design/tracker.md` §9.4 (confirmations) and §9.5 (notices).
 
-It reads confirmations from **THT**, **Cosmic** and **Rotten Blues**.
-Candlelight sends none of its own (its mail comes from PayNow and names no
-order), so its orders are still recorded by hand.
+What it sends:
+
+| Shop         | Confirmation (records the order) | Notices (move the order)                                   |
+| ------------ | -------------------------------- | ---------------------------------------------------------- |
+| THT          | `您的訂單已確認。`               | `確認收款通知` → paid; `更新訂單出貨通知` → shipped        |
+| Cosmic       | `您的訂單已確認。`               | not read yet                                               |
+| Rotten Blues | `訂單 #… 已確認`                 | `訂單 #… 的貨件配送中` → shipped, with its tracking number |
+
+Candlelight sends no confirmation of its own (its mail comes from PayNow and
+names no order), so its orders are still recorded by hand. Every step not
+listed is marked by hand, as the order's page says.
 
 ## Before you start: what it can do
 
@@ -17,8 +26,8 @@ vinyl-order itself never gets that access.
 
 So **read `Code.gs` before you paste it.** It:
 
-- searches only for confirmations (`subject:已確認`) from three senders, from
-  the last 7 days;
+- searches only for the subjects above from three senders, from the last 7
+  days, and sends confirmations before notices;
 - skips any whose DKIM signature Gmail didn't verify for that sender's domain;
 - sends each one's sender, subject, date and HTML body to your import URL,
   **with every link removed** — one of them (Rotten Blues' "view your order")
@@ -56,7 +65,20 @@ day around 10:00 (Taipei), then runs it once.
   by hand; if it keeps happening for a shop, the parser needs that email as a
   new fixture.
 - **Orders already typed in** are left as they are: the order number decides,
-  so an email for an order you've recorded changes nothing.
+  so a confirmation for an order you've recorded changes nothing.
+- **Notices only move an order forward, and only fill what is empty.** A
+  payment day or tracking number you typed is kept, and an order you marked
+  further along, or cancelled, isn't moved back.
+- **A notice for an order the site doesn't have yet** gets no label and is
+  sent again the next day, within the week — so once its confirmation is
+  imported, or you type the order in, the notice applies.
+- **Reading the counts** (each run's log): `created` and `already` are
+  confirmations; `updated`, `unchanged` and `notYet` are notices; `failed`
+  went to `vinyl-import-failed`. A Cosmic payment or shipping notice lands
+  there too until the site reads them — keep one, it's the sample that
+  teaches the site.
+- **Updating the script:** paste this folder's `Code.gs` over the old one and
+  save. The trigger and properties stay; no need to run `install` again.
 - **New token?** Replacing or revoking it on the site stops the script at once
   (its runs fail with "The import token was refused"). Paste the new one into
   `IMPORT_TOKEN`.

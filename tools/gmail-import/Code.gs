@@ -1,12 +1,14 @@
 /**
- * Sends the shops' order confirmations from your Gmail to vinyl-order, once a
- * day, so the orders appear in your supplier orders without typing them in.
- * See README.md, and docs/design/tracker.md §9.4 for why it works this way.
+ * Sends the shops' order confirmations, and their payment and shipping
+ * notices, from your Gmail to vinyl-order, once a day: the orders appear in
+ * your supplier orders, and move on as the shops report, without typing.
+ * See README.md, and docs/design/tracker.md §9.4–9.5 for why it works this
+ * way.
  *
- * It runs in your Google account, as you. It searches for the confirmation
- * emails of three shops, and sends each one's sender, subject, date and HTML
- * body — with every link removed — to the import URL with your import token.
- * It reads nothing else, and changes nothing but two labels.
+ * It runs in your Google account, as you. It searches for those emails from
+ * three shops, and sends each one's sender, subject, date and HTML body —
+ * with every link removed — to the import URL with your import token. It
+ * reads nothing else, and changes nothing but two labels.
  *
  * Script properties (Project Settings → Script properties):
  * - IMPORT_TOKEN: your import token, from the Email import page
@@ -16,13 +18,23 @@
 /**
  * Whose emails are sent, and the domain their signature must come from.
  * Must match the API's list (apps/api/src/supplier-orders/import/
- * parse-confirmation.ts); anything else would only be refused there.
+ * senders.ts); anything else would only be refused there.
  */
 var SENDERS = [
   { address: 'notifications+thtrecords@mail.easystore.co', domain: 'mail.easystore.co' },
   { address: 'notifications+universalvinylmusic@mail.easystore.co', domain: 'mail.easystore.co' },
   { address: 'store+100236001461@t.shopifyemail.com', domain: 't.shopifyemail.com' },
 ];
+
+/** In every shop's confirmation subject ("您的訂單已確認。", "訂單 #3003 已確認"). */
+var CONFIRMATION = '已確認';
+
+/**
+ * In the subjects of the notices the site reads: THT's payment and shipping,
+ * Rotten Blues' shipping ("訂單 #3003 的貨件配送中"). The site decides what
+ * each one means; this list only decides what is sent.
+ */
+var NOTICES = ['確認收款通知', '更新訂單出貨通知', '貨件配送中'];
 
 /**
  * How far back each run looks. The API ignores an order it already has, so
@@ -67,42 +79,82 @@ function importOrders() {
     SENDERS.map(function (s) {
       return s.address;
     }).join(' OR ') +
-    ') subject:已確認 newer_than:' +
+    ') subject:(' +
+    [CONFIRMATION].concat(NOTICES).join(' OR ') +
+    ') newer_than:' +
     WINDOW;
   var threads = GmailApp.search(query);
   if (threads.length === 0) return;
 
+  // Confirmations first: a notice applies only to an order already recorded,
+  // so one sent before its order's confirmation would wait a day for nothing.
+  var confirmations = [];
+  var notices = [];
+  threads.forEach(function (thread) {
+    thread.getMessages().forEach(function (message) {
+      var kind = kindOf_(message.getSubject());
+      if (kind === 'confirmation') confirmations.push({ thread: thread, message: message });
+      if (kind === 'notice') notices.push({ thread: thread, message: message });
+    });
+  });
+
   wake_(url);
 
-  var counts = { created: 0, already: 0, failed: 0, skipped: 0 };
-  for (var t = 0; t < threads.length; t++) {
-    var messages = threads[t].getMessages();
-    for (var m = 0; m < messages.length; m++) {
-      var outcome = send_(messages[m], url, token);
-      if (outcome === 'unauthorized') {
-        throw new Error('The import token was refused. Create a new one and update IMPORT_TOKEN.');
-      }
-      counts[outcome] += 1;
-      if (outcome === 'created' || outcome === 'already') {
-        threads[t].addLabel(label_(LABEL_IMPORTED));
-      }
-      if (outcome === 'failed') threads[t].addLabel(label_(LABEL_FAILED));
+  var counts = {
+    created: 0,
+    already: 0,
+    updated: 0,
+    unchanged: 0,
+    notYet: 0,
+    failed: 0,
+    skipped: 0,
+  };
+  confirmations.concat(notices).forEach(function (item) {
+    var outcome = send_(item.message, url, token);
+    if (outcome === 'unauthorized') {
+      throw new Error('The import token was refused. Create a new one and update IMPORT_TOKEN.');
     }
-  }
+    counts[outcome] += 1;
+    if (IMPORTED_OUTCOMES.indexOf(outcome) !== -1) item.thread.addLabel(label_(LABEL_IMPORTED));
+    if (outcome === 'failed') item.thread.addLabel(label_(LABEL_FAILED));
+    // notYet: no label — the order isn't recorded yet, and tomorrow's run
+    // sends the notice again, within the week.
+  });
   // Counts only: the emails themselves are never logged.
   Logger.log(JSON.stringify(counts));
 }
 
+/** What the site did with an email, for which it is labelled imported. */
+var IMPORTED_OUTCOMES = ['created', 'already', 'updated', 'unchanged'];
+
+/** The site's 200 answers, by the outcome they are counted as. */
+var OUTCOME_OF_RESULT = {
+  already_recorded: 'already',
+  updated: 'updated',
+  unchanged: 'unchanged',
+  not_yet: 'notYet',
+};
+
+/** 'confirmation', 'notice', or null for a subject that isn't sent. */
+function kindOf_(subject) {
+  if (subject.indexOf(CONFIRMATION) !== -1) return 'confirmation';
+  for (var i = 0; i < NOTICES.length; i++) {
+    if (subject.indexOf(NOTICES[i]) !== -1) return 'notice';
+  }
+  return null;
+}
+
 /**
- * Send one message, if it is a signed confirmation from a known sender.
- * Returns 'created', 'already', 'failed' (the site couldn't read it),
- * 'skipped' (not ours, unsigned, or the site was unreachable — tried again
- * tomorrow) or 'unauthorized'.
+ * Send one message, if it is a signed confirmation or notice from a known
+ * sender. Returns 'created', 'already', 'updated', 'unchanged', 'notYet'
+ * (a notice for an order not recorded yet — sent again tomorrow), 'failed'
+ * (the site couldn't read it), 'skipped' (not ours, unsigned, or the site
+ * was unreachable — tried again tomorrow) or 'unauthorized'.
  */
 function send_(message, url, token) {
   var from = message.getFrom();
   var sender = senderOf_(from);
-  if (!sender || message.getSubject().indexOf('已確認') === -1) return 'skipped';
+  if (!sender || !kindOf_(message.getSubject())) return 'skipped';
   if (!signedBy_(message, sender.domain)) return 'skipped';
 
   var response = UrlFetchApp.fetch(url, {
@@ -120,10 +172,27 @@ function send_(message, url, token) {
 
   var status = response.getResponseCode();
   if (status === 201) return 'created';
-  if (status === 200) return 'already';
+  if (status === 200) return outcomeOf_(response);
   if (status === 422) return 'failed';
   if (status === 401) return 'unauthorized';
   Logger.log('Import answered ' + status + '; trying again tomorrow.');
+  return 'skipped';
+}
+
+/**
+ * A 200's outcome, from its `{ result }`. An answer it doesn't know is
+ * skipped, so it is sent again tomorrow rather than labelled done.
+ */
+function outcomeOf_(response) {
+  var result;
+  try {
+    result = JSON.parse(response.getContentText()).result;
+  } catch (e) {
+    result = null;
+  }
+  var outcome = OUTCOME_OF_RESULT[result];
+  if (outcome) return outcome;
+  Logger.log('Import answered 200 with an unknown result; trying again tomorrow.');
   return 'skipped';
 }
 
