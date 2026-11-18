@@ -1,8 +1,8 @@
 # Gmail import
 
 A Google Apps Script that sends the shops' order emails from your Gmail to
-vinyl-order once a day, so the orders appear in **Supplier orders** without
-typing them in, and move on as the shops report. Design and security notes:
+vinyl-order every hour in the daytime, so the orders appear in **Supplier
+orders** without typing them in, and move on as the shops report. Design and security notes:
 `docs/design/tracker.md` §9.4 (confirmations) and §9.5 (notices).
 
 What it sends:
@@ -53,8 +53,25 @@ It has no libraries. Copy it from this repository, not from anywhere else.
    access Google asks for (it will warn that the app isn't verified: it is
    your own script — **Advanced → Go to (project name)**).
 
-`install` creates the two labels and a trigger that runs `importOrders` every
-day around 10:00 (Taipei), then runs it once.
+`install` creates the two labels and an hourly trigger (`hourlyImport`), then
+runs `importOrders` once.
+
+## When it runs
+
+- **Every hour from 10:00 to 22:00 (Taipei)**; the last run falls inside the
+  21:00 hour. An email that comes during the day reaches the site within the
+  hour; one that comes at night, the next morning.
+- **The day's first run sends the whole week**, as a daily run would: that is
+  what sends again a notice whose order wasn't recorded yet.
+- **The other runs send only when an email has come since the last run.**
+  Most find nothing new and stop at the search, without waking the site — on
+  its free plan it sleeps, and its database is billed by the hours it is
+  awake. If the site couldn't be reached for an email, the next run tries
+  again.
+- **Running `importOrders` by hand** sends the whole week now, whatever the
+  hour.
+- Nights are left alone for the same reason; to change the hours, edit
+  `FIRST_HOUR` and `END_HOUR`.
 
 ## Afterwards
 
@@ -70,15 +87,19 @@ day around 10:00 (Taipei), then runs it once.
   payment day or tracking number you typed is kept, and an order you marked
   further along, or cancelled, isn't moved back.
 - **A notice for an order the site doesn't have yet** gets no label and is
-  sent again the next day, within the week — so once its confirmation is
+  sent again the next morning, within the week — so once its confirmation is
   imported, or you type the order in, the notice applies.
-- **Reading the counts** (each run's log): `created` and `already` are
-  confirmations; `updated`, `unchanged` and `notYet` are notices; `failed`
-  went to `vinyl-import-failed`. A Cosmic payment or shipping notice lands
-  there too until the site reads them — keep one, it's the sample that
-  teaches the site.
+- **Reading the counts** (the log of a run that sent anything):
+  `created` and `already` are confirmations; `updated`, `unchanged` and
+  `notYet` are notices; `failed` went to `vinyl-import-failed`; `ignored`
+  wasn't sent (unsigned, or not a shop's); `skipped` couldn't reach the site
+  and is tried again. A Cosmic payment or shipping notice lands in `failed`
+  until the site reads them — keep one, it's the sample that teaches the
+  site.
 - **Updating the script:** paste this folder's `Code.gs` over the old one and
-  save. The trigger and properties stay; no need to run `install` again.
+  save. The properties stay. Run **`install`** once if the update changes
+  when it runs (the move from daily to hourly did); otherwise the trigger
+  stays as it is.
 - **New token?** Replacing or revoking it on the site stops the script at once
   (its runs fail with "The import token was refused"). Paste the new one into
   `IMPORT_TOKEN`.

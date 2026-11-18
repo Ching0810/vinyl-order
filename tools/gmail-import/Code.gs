@@ -48,27 +48,73 @@ var WINDOW = '7d';
 var LABEL_IMPORTED = 'vinyl-imported';
 var LABEL_FAILED = 'vinyl-import-failed';
 
-/** Run once by hand: creates the labels and the daily trigger, then imports. */
+/**
+ * The hours, Taipei time, an hourly run sends in: from 10:00 until 22:00, the
+ * last run inside the 21:00 hour. The site sleeps on its free plan and its
+ * database bills by the hour awake, so nights are left alone; an email that
+ * comes at night goes the next morning.
+ */
+var FIRST_HOUR = 10;
+var END_HOUR = 22;
+
+/** Script properties the runs keep for themselves, not set by hand. */
+var LAST_RUN = 'LAST_RUN';
+var LAST_FULL_DAY = 'LAST_FULL_DAY';
+
+/** The trigger handlers this script has had: the daily one, then the hourly. */
+var HANDLERS = ['importOrders', 'hourlyImport'];
+
+/** Run once by hand: creates the labels and the hourly trigger, then imports. */
 function install() {
-  ScriptApp.getProjectTriggers().forEach(function (trigger) {
-    if (trigger.getHandlerFunction() === 'importOrders') ScriptApp.deleteTrigger(trigger);
-  });
-  // Mid-morning Taipei time, when the site is usually awake.
-  ScriptApp.newTrigger('importOrders').timeBased().everyDays(1).atHour(10).create();
+  removeTriggers_();
+  ScriptApp.newTrigger('hourlyImport').timeBased().everyHours(1).create();
   label_(LABEL_IMPORTED);
   label_(LABEL_FAILED);
   importOrders();
 }
 
-/** Run by hand to stop the daily import. */
+/** Run by hand to stop the import. */
 function uninstall() {
+  removeTriggers_();
+}
+
+/** Any trigger of this script's, the old daily one included. */
+function removeTriggers_() {
   ScriptApp.getProjectTriggers().forEach(function (trigger) {
-    if (trigger.getHandlerFunction() === 'importOrders') ScriptApp.deleteTrigger(trigger);
+    if (HANDLERS.indexOf(trigger.getHandlerFunction()) !== -1) ScriptApp.deleteTrigger(trigger);
   });
 }
 
-/** The daily run. */
+/**
+ * Run by hand: sends the whole week now, whatever the hour — running it
+ * means wanting it synced.
+ */
 function importOrders() {
+  run_(true);
+}
+
+/**
+ * The hourly trigger, inside FIRST_HOUR–END_HOUR. The day's first run sends
+ * the whole week, as the daily run did, so a notice that came before its
+ * order is sent again; later runs send only when an email has come since
+ * the last run, so most end at the search without waking the site.
+ */
+function hourlyImport() {
+  var hour = Number(Utilities.formatDate(new Date(), 'Asia/Taipei', 'H'));
+  if (hour < FIRST_HOUR || hour >= END_HOUR) return;
+  var today = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
+  var fullRunDone = PropertiesService.getScriptProperties().getProperty(LAST_FULL_DAY) === today;
+  run_(!fullRunDone);
+}
+
+/**
+ * Search, and send what was found.
+ *
+ * @param full - send the whole week; otherwise only if an email came since
+ *   the last run that reached the site
+ */
+function run_(full) {
+  var startedAt = new Date();
   var props = PropertiesService.getScriptProperties();
   var token = props.getProperty('IMPORT_TOKEN');
   var url = props.getProperty('IMPORT_URL');
@@ -84,7 +130,6 @@ function importOrders() {
     ') newer_than:' +
     WINDOW;
   var threads = GmailApp.search(query);
-  if (threads.length === 0) return;
 
   // Confirmations first: a notice applies only to an order already recorded,
   // so one sent before its order's confirmation would wait a day for nothing.
@@ -97,6 +142,13 @@ function importOrders() {
       if (kind === 'notice') notices.push({ thread: thread, message: message });
     });
   });
+  var found = confirmations.concat(notices);
+
+  var lastRun = Number(props.getProperty(LAST_RUN) || 0);
+  var anyNew = found.some(function (item) {
+    return item.message.getDate().getTime() > lastRun;
+  });
+  if (found.length === 0 || (!full && !anyNew)) return;
 
   wake_(url);
 
@@ -107,9 +159,10 @@ function importOrders() {
     unchanged: 0,
     notYet: 0,
     failed: 0,
+    ignored: 0,
     skipped: 0,
   };
-  confirmations.concat(notices).forEach(function (item) {
+  found.forEach(function (item) {
     var outcome = send_(item.message, url, token);
     if (outcome === 'unauthorized') {
       throw new Error('The import token was refused. Create a new one and update IMPORT_TOKEN.');
@@ -122,6 +175,15 @@ function importOrders() {
   });
   // Counts only: the emails themselves are never logged.
   Logger.log(JSON.stringify(counts));
+
+  // Only a run that reached the site for every email moves the mark: if the
+  // site was down for any, the next run sees them as new and tries again.
+  if (counts.skipped === 0) {
+    props.setProperty(LAST_RUN, String(startedAt.getTime()));
+    if (full) {
+      props.setProperty(LAST_FULL_DAY, Utilities.formatDate(startedAt, 'Asia/Taipei', 'yyyy-MM-dd'));
+    }
+  }
 }
 
 /** What the site did with an email, for which it is labelled imported. */
@@ -148,14 +210,15 @@ function kindOf_(subject) {
  * Send one message, if it is a signed confirmation or notice from a known
  * sender. Returns 'created', 'already', 'updated', 'unchanged', 'notYet'
  * (a notice for an order not recorded yet — sent again tomorrow), 'failed'
- * (the site couldn't read it), 'skipped' (not ours, unsigned, or the site
- * was unreachable — tried again tomorrow) or 'unauthorized'.
+ * (the site couldn't read it), 'ignored' (not ours, or unsigned — never
+ * sent), 'skipped' (the site was unreachable — tried again next run) or
+ * 'unauthorized'.
  */
 function send_(message, url, token) {
   var from = message.getFrom();
   var sender = senderOf_(from);
-  if (!sender || !kindOf_(message.getSubject())) return 'skipped';
-  if (!signedBy_(message, sender.domain)) return 'skipped';
+  if (!sender || !kindOf_(message.getSubject())) return 'ignored';
+  if (!signedBy_(message, sender.domain)) return 'ignored';
 
   var response = UrlFetchApp.fetch(url, {
     method: 'post',
