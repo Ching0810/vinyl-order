@@ -364,6 +364,34 @@ silently: a redesign can turn a price into `null` or a different number.
   time per host with a pause between, and a `User-Agent` that names the
   project. Product pages are fetched only for records I track.
 
+**One fetcher for every adapter** (`ShopFetcher`): the adapters never call
+`fetch` themselves, so these rules hold for every request, and are tested
+once.
+
+- **Each shop declares its exact hosts and allowed path prefixes.** The
+  paths are copied by hand from each shop's robots.txt (step 6b) rather
+  than read from it at run time: a fixed list is simpler, and can be tested.
+  A URL is checked after it is parsed, so `..` can't climb out of a prefix.
+- **Redirects are followed by hand** (`redirect: 'manual'`, at most 3), each
+  target checked like the first URL: an allowed host can't send the request
+  on to an internal address.
+- **⚖️ Decision: no check of the resolved address.** Blocking private and
+  link-local IPs guards against a host list anyone can extend. Here the list
+  is the shops' exact public hostnames, and a redirect to an IP is refused
+  as "not a host of this shop"; what remains is a shop's own DNS pointing
+  inward, which no adapter could defend against usefully.
+- **10 s and 5 MB per request, body included**: a declared size over the cap
+  is refused before reading, and a body that grows past it is cut off.
+- **One request at a time per host, 1 s after the last one finished**, kept
+  in memory: one fetcher per shop, in one process (the API, or the sync
+  command). A full sync is a few dozen requests per shop.
+- **The User-Agent is `vinyl-order/1.0 (personal price tracker)`**: it names
+  the project, not its owner — a repository link would carry my account
+  name to every shop.
+- **Two kinds of error**: `refused` (against the rules — nothing was sent)
+  and `failed` (network, timeout, size, an error status), each a short
+  phrase fit for `Offer.lastError` (§6.3).
+
 ## 7. Search and matching
 
 ### 7.1 ⚖️ Decision: search a local copy, not the shops
@@ -1175,7 +1203,7 @@ Each step is its own PR.
    Blues:
    - **6a.** One fetcher for every adapter, with §6.4's guard (https, the
      shops' hosts, redirects, timeout, size, one request at a time per host)
-     and its SSRF tests.
+     and its SSRF tests. _(Done: `ShopFetcher`.)_
    - **6b.** `EasyStoreAdapter` (configured for THT and Cosmic) and
      `ShopifyAdapter`: `fetchOffer` and `syncCatalog`, zod-validated and
      normalised (§6.2), against saved public pages. The shops' pages are
