@@ -7,7 +7,8 @@ import { parseNotice } from '../src/supplier-orders/import/parse-notice';
 
 /**
  * Reading the shops' payment and shipping notices (docs/design/tracker.md
- * §9.5): THT's payment and shipping, Rotten Blues' shipping.
+ * §9.5): THT's payment and shipping, Cosmic's payment, Rotten Blues' shipping
+ * and arrival.
  *
  * The fixtures are real emails with the recipient's name, pickup store, order
  * number, titles, images and tracking pixels replaced, and every link
@@ -39,6 +40,20 @@ const RB_SHIPPING: ConfirmationEmail = {
   html: fixture('shopify-shipping'),
 };
 
+const COSMIC_PAYMENT: ConfirmationEmail = {
+  from: 'CM Music <notifications+universalvinylmusic@mail.easystore.co>',
+  subject: '確認收款通知',
+  date: '2026-10-09T07:45:37.000Z',
+  html: fixture('cosmic-payment'),
+};
+
+const RB_ARRIVAL: ConfirmationEmail = {
+  from: '爛調唱片 <store+100236001461@t.shopifyemail.com>',
+  subject: '訂單 #3003 的貨件已送達',
+  date: '2026-10-03T23:32:02.000Z',
+  html: fixture('shopify-arrival'),
+};
+
 /** THT's payment notice with "支付日期" written as `written`. */
 const paidOn = (written: string): ConfirmationEmail => ({
   ...THT_PAYMENT,
@@ -68,6 +83,26 @@ describe('Email import: reading notices (e2e)', () => {
     });
   });
 
+  describe('Cosmic', () => {
+    it("payment: THT's template, read the same way", () => {
+      expect(parseNotice(COSMIC_PAYMENT)).toEqual({
+        ok: true,
+        notice: { kind: 'paid', supplier: 'cosmic', orderNumber: '1001', paidAt: '2026-10-09' },
+      });
+    });
+
+    it('payment: a day after the email is refused, as for THT', () => {
+      const html = COSMIC_PAYMENT.html.replace('09/10/2026', '09/11/2026');
+      expect(reasonOf({ ...COSMIC_PAYMENT, html })).toBe('the payment day is after the email');
+    });
+
+    it('shipping, until one is sampled', () => {
+      expect(reasonOf({ ...COSMIC_PAYMENT, subject: '更新訂單出貨通知' })).toBe(
+        'not a notice this site reads',
+      );
+    });
+  });
+
   describe('Rotten Blues', () => {
     it('shipping: the order number, shipped, and the 7-11 tracking number', () => {
       expect(parseNotice(RB_SHIPPING)).toEqual({
@@ -90,6 +125,24 @@ describe('Email import: reading notices (e2e)', () => {
     it('is refused without the heading that says it is on its way', () => {
       const html = RB_SHIPPING.html.replaceAll('您的訂單配送中', '您的訂單');
       expect(reasonOf({ ...RB_SHIPPING, html })).toBe('no shipping status found');
+    });
+
+    it('arrival: the order number, ready for pickup, and the 7-11 tracking number', () => {
+      expect(parseNotice(RB_ARRIVAL)).toEqual({
+        ok: true,
+        notice: {
+          kind: 'ready_for_pickup',
+          supplier: 'rotten_blues',
+          orderNumber: '3003',
+          trackingNumber: 'H00000000002',
+        },
+      });
+    });
+
+    it('arrival is refused without the heading that says it arrived', () => {
+      // A shipping notice is not an arrival, nor the reverse.
+      expect(reasonOf({ ...RB_ARRIVAL, html: RB_SHIPPING.html })).toBe('no shipping status found');
+      expect(reasonOf({ ...RB_SHIPPING, html: RB_ARRIVAL.html })).toBe('no shipping status found');
     });
 
     it('its confirmations are not notices, nor the reverse', () => {
@@ -167,11 +220,6 @@ describe('Email import: reading notices (e2e)', () => {
       );
     });
 
-    it("Cosmic's notices, until one is sampled", () => {
-      const from = 'CM Music <notifications+universalvinylmusic@mail.easystore.co>';
-      expect(reasonOf({ ...THT_PAYMENT, from })).toBe('not a notice this site reads');
-    });
-
     it('an unknown sender', () => {
       expect(reasonOf({ ...THT_PAYMENT, from: 'THT <notifications@example.com>' })).toBe(
         'not a sender whose emails are read',
@@ -184,7 +232,7 @@ describe('Email import: reading notices (e2e)', () => {
   });
 
   it('a notice is never read as a confirmation', () => {
-    for (const notice of [THT_PAYMENT, THT_SHIPPING]) {
+    for (const notice of [THT_PAYMENT, THT_SHIPPING, COSMIC_PAYMENT, RB_ARRIVAL]) {
       expect(parseConfirmation(notice)).toEqual({ ok: false, reason: 'not an order confirmation' });
     }
   });

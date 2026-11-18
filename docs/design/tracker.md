@@ -662,6 +662,11 @@ receipt, an e-invoice notice (invoice number, day and total — no order
 number, no lines; the lines are behind a link to the invoice page) and a
 pickup notice. Without an order number there is nothing to deduplicate on,
 and without lines nothing to record, so **Candlelight stays typed by hand**.
+
+EasyStore's welcome for an account's first order (`感謝您的訂購！`, "成功下了
+第一單") lists the lines but shows the order number only in its "查看訂單"
+link, which the script removes. With nothing to deduplicate on it isn't
+read: it comes once per account, so that one order is typed by hand.
 Payment, shipping and pickup notices move orders already recorded; they
 are §9.5.
 
@@ -733,6 +738,12 @@ Parsing rules, pinned by fixture tests:
   and wrong; against the subtotal it doesn't add up, and the email is
   refused. A discount shown inside the list is caught the same way. The
   total isn't used for this: shipping, tax and points make it differ.
+- **⚠️ A line discount is refused, not read.** EasyStore writes one inside
+  the line — `折扣 ( - TWD 100 )`, then the price before (`TWD 380`) and
+  after (`TWD 280`) — and the parser takes the first price as the line
+  total, so the lines don't add up and the email is `422`, never imported at
+  the wrong price. Sampled once (2026-10, THT); such an order is typed by
+  hand until reading discounts earns a step of its own.
 - **Expected month from the title**: `12月` and `10/23` give the month; the
   year is the order's if that month is not before the order's month, else
   the next year's (ordered November, "1月" → January next year). The text
@@ -809,18 +820,57 @@ can't read. So every step after the order is one of two kinds, per shop:
 - **by hand** — the card says where to look and what to mark, so a step
   that can't be automatic is never silently missing.
 
-What the emails make possible (samples from 2026-07/11, all DKIM-signed):
+**Which email moves which step** — read against every order email the four
+shops sent me (2024-2026, all DKIM-signed). ✅ automatic, ◻️ possible but not
+built yet, ✋ by hand:
 
-|                       | THT                                      | Cosmic                        | Rotten Blues                                 | Candlelight                                     |
-| --------------------- | ---------------------------------------- | ----------------------------- | -------------------------------------------- | ----------------------------------------------- |
-| Paid                  | `確認收款通知`: order number, 支付日期   | the same template (or `收據`) | the confirmation's `本日總付款金額` (§9.1)   | by hand                                         |
-| Shipped               | `更新訂單出貨通知`: number, `( 已出貨 )` | by hand — no sample yet       | `訂單 #… 的貨件配送中`, with tracking number | by hand                                         |
-| Ready for pickup      | by hand — 全家 SMS only                  | by hand — 7-11 SMS only       | `訂單 #… 的貨件已送達`: arrived at the store | PayNow's `物流到店取貨通知`, with a pickup date |
-| Delivered (collected) | by hand                                  | by hand                       | by hand                                      | by hand                                         |
+| Step                  | THT                   | Cosmic                | Rotten Blues                             | Candlelight                   |
+| --------------------- | --------------------- | --------------------- | ---------------------------------------- | ----------------------------- |
+| Recorded (`ordered`)  | ✅ `您的訂單已確認。` | ✅ `您的訂單已確認。` | ✅ `訂單 #… 已確認`                      | ✋ no email names the order   |
+| Paid (`paidAt`)       | ✅ `確認收款通知`     | ✅ `確認收款通知`     | ✅ the confirmation (`本日總付款金額`)   | ✋                            |
+| Shipped               | ✅ `更新訂單出貨通知` | ◻️ `更新訂單出貨通知` | ✅ `訂單 #… 的貨件配送中`, with tracking | ✋                            |
+| Ready for pickup      | ✋ 全家 SMS only      | ✋ 7-11 SMS only      | ✅ `訂單 #… 的貨件已送達`, with tracking | ✋ PayNow's notice isn't read |
+| Delivered (collected) | ✋                    | ✋                    | ✋                                       | ✋                            |
+| Cancelled             | ✋                    | ◻️ its cancellation   | ✋                                       | ✋                            |
 
-No shop says when a parcel is collected — collecting it is my own act, so
-`delivered` is always by hand. Rotten Blues' "已送達" means arrived at the
-store, not collected: it is sent before pickup.
+**Never automatic — no email says it:**
+
+- **Delivered.** No shop says when a parcel is collected; collecting it is
+  my own act. Rotten Blues' "已送達" is sent before pickup: it means at the
+  store.
+- **THT's and Cosmic's arrival at the store.** Only the convenience store
+  says so, by SMS, which the site can't read.
+- **Candlelight's orders.** Its mail all comes from PayNow and names no
+  order (§9.4), so its orders and every step of them are typed.
+
+**Never read — the email exists, but can't be trusted to the order:**
+
+- **EasyStore's first-order welcome** (`感謝您的訂購！`): no order number
+  outside its link (§9.4). Once per account.
+- **A confirmation with a line discount** (`折扣 ( - TWD n )`): refused, as
+  its lines don't add up (§9.4).
+
+**Not read, by choice — sampled, and left to the hand:**
+
+- **THT's `訂單出貨通知`** (without `更新`): sent seconds before
+  `更新訂單出貨通知`, saying the same "已出貨", which is already read. All it
+  adds is a barcode number with no label, not known to be the tracking
+  number.
+- **Candlelight's pickup**, PayNow's `物流到店取貨通知`: it names no order —
+  only the shop in its subject, the store, a pickup number and 商品金額 — so
+  it could only be matched by shop and amount, against a total typed by
+  hand. One or two orders a month don't earn a matching rule that can pick
+  the wrong one.
+- **Cosmic's old mail**, sent as 環球黑膠 from its former name and
+  domain: only CM Music's current mail is read.
+
+**Possible, not built (◻️)** — each waits for its own sample and step:
+
+- **Cosmic's shipping**, `更新訂單出貨通知`: likely THT's template, as its
+  payment notice is, but no CM Music sample yet.
+- **Cosmic's cancellation**: a new kind of notice, moving to `cancelled`,
+  which needs its own rules (a cancellation is only allowed before shipping,
+  §9.1).
 
 Rules for the notices, when they are read:
 
@@ -831,9 +881,6 @@ Rules for the notices, when they are read:
   other notice, so a payment notice doesn't reach the API before its order;
   if it still does, the API answers "not yet" and the next day's run sends
   it again, within the week.
-- **Candlelight's pickup notice names no order**: it is matched by shop and
-  total among my Candlelight orders not yet collected, and applied only
-  when exactly one matches; none or several → `422`, for me to mark.
 - **The table lives in code** (`SUPPLIER_FLOW`, web), as data rather than
   sentences: per shop, the steps it has a notice for and how each is
   learned. It says "by hand" for every step until the import of that notice
@@ -868,8 +915,8 @@ same sender and DKIM domain as its shop's confirmations):
 - **⚖️ Decision: the same route, `POST /supplier-orders/import`.** The API
   tells the kind of email by sender and subject — `已確認` a confirmation,
   `確認收款通知` a payment, `更新訂單出貨通知` or `的貨件配送中` a shipping
-  notice — and anything else from a known sender is `422`, Cosmic's notices
-  included until one is sampled. The script keeps its one URL
+  notice — and anything else from a known sender is `422`, Cosmic's shipping
+  notice included until one is sampled. The script keeps its one URL
   and token; _a route per kind_ would put the sorting in the script, which
   every user has to copy again when it changes (§9.4).
 - **A notice finds its order** by the importing user, the shop its sender
@@ -914,6 +961,27 @@ same sender and DKIM domain as its shop's confirmations):
   unlabelled, and the next day's run sends it again within the week. Past
   the week it stops, and the step is marked by hand.
 
+**Then Rotten Blues' arrival and Cosmic's payment** (samples from 2026-10,
+same senders and DKIM domains as the shops' confirmations):
+
+|              | Cosmic payment (`確認收款通知`)            | Rotten Blues arrival (`訂單 #… 的貨件已送達`) |
+| ------------ | ------------------------------------------ | --------------------------------------------- |
+| Order number | body: `此訂單#1001的款項`, as THT's        | subject, and body: `訂單 #3003`               |
+| What it says | `支付日期 09/10/2026, 03:45 PM`, day first | heading `您的訂單已送達`                      |
+| Moves        | `paidAt` to that day                       | the status to `ready_for_pickup`              |
+| Also carries | lines and totals; then "為您推薦產品"      | `7-11 追蹤編號: H…`; the parcel's lines       |
+
+- **Cosmic's payment is THT's template**, word for word: the same reader,
+  with the same day-first date and bounds. Nothing new is decided; it was
+  `422` only until a sample showed it.
+- **Arrival reads only the heading `您的訂單已送達`**, as shipping reads only
+  `您的訂單配送中`. It is the same move — `canChangeSupplierOrderStatus` and
+  its compare-and-set — to `ready_for_pickup`, so an order still `ordered`
+  or `preparing` (its shipping notice missed, or past the week) goes
+  straight there, and one marked `delivered` or `cancelled` stays.
+- **Its tracking number fills an empty field too**, the same rule as
+  shipping: arrival may be the first notice the site reads for that parcel.
+
 What the route answers, never with the order itself:
 
 | Answer                                | When                                                          | Script's label        |
@@ -929,13 +997,16 @@ The script's search adds the notices' subjects —
 `subject:(已確認 OR 確認收款通知 OR 更新訂單出貨通知 OR 貨件配送中)` — and it
 sends a run's confirmations before its notices. `SUPPLIER_FLOW` says
 "automatic" for THT's paid and shipped steps and Rotten Blues' shipped step
-only once this ships.
+only once this ships. Arrival adds `貨件已送達` to the search (Cosmic's
+payment has THT's subject, already in it), and `SUPPLIER_FLOW` then says
+"automatic" for Rotten Blues' ready for pickup. Payment isn't a status, so
+no flow step changes for Cosmic's.
 
 The token can do more now, so two rows join §9.4's table:
 
 | Risk                                                       | Answer                                                                                                                                                                                                                    |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A leaked token marks my orders paid or shipped             | Only forward, and only into an empty `paidAt` or tracking number: it can't delete, edit lines, or undo what I marked, and every move is one I can set back by hand. Revoking the token stops it                           |
+| A leaked token marks my orders paid, shipped or arrived    | Only forward, and only into an empty `paidAt` or tracking number: it can't delete, edit lines, or undo what I marked, and every move is one I can set back by hand. Revoking the token stops it                           |
 | The answers tell a token holder which order numbers I have | `not_yet` against `unchanged`, like `already_recorded` before it, says whether a number is in my list — nothing else about it. A shop's order numbers are sequential and printed on its receipts, so they aren't a secret |
 
 ## 10. Freshness on free plans
@@ -1083,9 +1154,9 @@ Each step is its own PR.
    with expected months #69; status, tracking, note and delete #70; editing
    with the version check (§9.3) #71–#72; step 13's email import pulled
    ahead (§9.4); `paidAt` and `ready_for_pickup` by hand, with the
-   next-step hints (§9.1, §9.5), #76–#78; each order's own page #83. Next:
-   the payment, shipping and pickup notices, one notice at a time: THT's
-   payment and shipping and Rotten Blues' shipping first (§9.5).)_
+   next-step hints (§9.1, §9.5), #76–#78; each order's own page #83; the
+   notices (§9.5): THT's payment and shipping and Rotten Blues' shipping
+   #87–#89, hourly; then Rotten Blues' arrival and Cosmic's payment.)_
 5. Checkout on offers (§8): cart and order lines, the reservation guard,
    restock on cancel and expiry. `Product`'s `priceCents`, `currency` and
    `stock` and `CartItem.productId` are dropped here.
@@ -1109,7 +1180,8 @@ Each step is its own PR.
     and Rotten Blues (§9.4). _(Done: API #74 — parsers, import token,
     import route; web and the Apps Script (`tools/gmail-import/`) #75.)_
     Payment, shipping and pickup notices follow (§9.5), through the same
-    route: THT's payment and shipping and Rotten Blues' shipping first.
+    route: THT's payment and shipping and Rotten Blues' shipping first
+    (#87–#89), then Rotten Blues' arrival and Cosmic's payment.
 
 Removal first so the model change starts from a schema with nothing of
 Discogs left in it. **Supplier orders come straight after the model**,

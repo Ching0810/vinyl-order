@@ -19,7 +19,7 @@ import type { JwtPayload } from '../src/auth/jwt.strategy';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 /**
- * Payment and shipping notices through POST /supplier-orders/import, end to
+ * Payment, shipping and arrival notices through POST /supplier-orders/import, end to
  * end (docs/design/tracker.md §9.5): a notice moves the order it names
  * forward, fills only what is empty, never undoes what was marked by hand,
  * and answers "not yet" for an order not recorded.
@@ -79,6 +79,22 @@ describe('Supplier order notices (e2e)', () => {
     subject: '訂單 #3003 的貨件配送中',
     date: '2026-11-17T13:45:53.000Z',
     html: fixture('shopify-shipping'),
+  };
+
+  /** Cosmic's order 1001 paid on 2026-10-09 (支付日期 09/10/2026): THT's template. */
+  const COSMIC_PAYMENT: ImportSupplierOrderEmailInput = {
+    from: 'CM Music <notifications+universalvinylmusic@mail.easystore.co>',
+    subject: '確認收款通知',
+    date: '2026-10-09T07:45:37.000Z',
+    html: fixture('cosmic-payment'),
+  };
+
+  /** Order 3003 at the store, 7-11 tracking number H00000000002. */
+  const RB_ARRIVAL: ImportSupplierOrderEmailInput = {
+    from: '爛調唱片 <store+100236001461@t.shopifyemail.com>',
+    subject: '訂單 #3003 的貨件已送達',
+    date: '2026-10-03T23:32:02.000Z',
+    html: fixture('shopify-arrival'),
   };
 
   const server = () => request(app.getHttpServer());
@@ -177,6 +193,7 @@ describe('Supplier order notices (e2e)', () => {
 
       await expectResult(token, THT_PAYMENT, 'not_yet');
       await expectResult(token, RB_SHIPPING, 'not_yet');
+      await expectResult(token, RB_ARRIVAL, 'not_yet');
 
       expect(await listOf(session)).toHaveLength(0);
     });
@@ -218,6 +235,17 @@ describe('Supplier order notices (e2e)', () => {
       await expectResult(token, THT_PAYMENT, 'unchanged');
 
       expect((await orderOf(session, typed.id)).paidAt).toBe('2026-11-03');
+    });
+
+    it("reads Cosmic's, and fills only Cosmic's order", async () => {
+      const { session, token } = await createImporter();
+      const atCosmic = await typeOrder(session, { supplier: 'cosmic', orderNumber: '1001' });
+      const atTht = await typeOrder(session, { supplier: 'tht', orderNumber: '1001' });
+
+      await expectResult(token, COSMIC_PAYMENT, 'updated');
+
+      expect((await orderOf(session, atCosmic.id)).paidAt).toBe('2026-10-09');
+      expect((await orderOf(session, atTht.id)).paidAt).toBeNull();
     });
 
     it('is recorded on a cancelled order too: having paid is a fact', async () => {
@@ -310,6 +338,67 @@ describe('Supplier order notices (e2e)', () => {
       });
 
       await expectResult(token, RB_SHIPPING, 'unchanged');
+
+      expect(await orderOf(session, typed.id)).toMatchObject({
+        status: 'cancelled',
+        trackingNumber: null,
+      });
+    });
+  });
+
+  describe('arrival at the store', () => {
+    it('follows shipping to ready for pickup, keeping the first tracking number', async () => {
+      const { session, token } = await createImporter();
+      const typed = await typeOrder(session, { supplier: 'rotten_blues', orderNumber: '3003' });
+
+      await expectResult(token, RB_SHIPPING, 'updated');
+      await expectResult(token, RB_ARRIVAL, 'updated');
+      await expectResult(token, RB_ARRIVAL, 'unchanged');
+
+      expect(await orderOf(session, typed.id)).toMatchObject({
+        status: 'ready_for_pickup',
+        trackingNumber: 'H00000000001',
+      });
+    });
+
+    it('moves an order straight there when its shipping notice was missed', async () => {
+      const { session, token } = await createImporter();
+      const typed = await typeOrder(session, { supplier: 'rotten_blues', orderNumber: '3003' });
+
+      await expectResult(token, RB_ARRIVAL, 'updated');
+
+      expect(await orderOf(session, typed.id)).toMatchObject({
+        status: 'ready_for_pickup',
+        trackingNumber: 'H00000000002',
+      });
+    });
+
+    it('never moves back an order marked delivered', async () => {
+      const { session, token } = await createImporter();
+      const typed = await typeOrder(session, {
+        supplier: 'rotten_blues',
+        orderNumber: '3003',
+        trackingNumber: 'TYPED-1',
+        status: 'delivered',
+      });
+
+      await expectResult(token, RB_ARRIVAL, 'unchanged');
+
+      expect(await orderOf(session, typed.id)).toMatchObject({
+        status: 'delivered',
+        trackingNumber: 'TYPED-1',
+      });
+    });
+
+    it('leaves a cancelled order alone', async () => {
+      const { session, token } = await createImporter();
+      const typed = await typeOrder(session, {
+        supplier: 'rotten_blues',
+        orderNumber: '3003',
+        status: 'cancelled',
+      });
+
+      await expectResult(token, RB_ARRIVAL, 'unchanged');
 
       expect(await orderOf(session, typed.id)).toMatchObject({
         status: 'cancelled',

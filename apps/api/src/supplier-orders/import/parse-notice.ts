@@ -4,29 +4,33 @@ import type { ConfirmationEmail } from './confirmation';
 import { emailLines } from './email-text';
 import type { NoticeRead, NoticeResult } from './notice';
 import { readEasyStorePayment, readEasyStoreShipping } from './parsers/easystore-notices';
-import { readShopifyShipping } from './parsers/shopify-notices';
+import { readShopifyArrival, readShopifyShipping } from './parsers/shopify-notices';
 import { sentDay, supplierOf } from './senders';
 
 type NoticeReader = (lines: string[], sentOn: string) => NoticeRead;
 
 /**
  * The notices read, per shop, by a part of the subject. One notice at a time,
- * each from its own samples. Cosmic is on THT's platform, but until one of
- * its notices is sampled, its notices are refused and marked by hand.
+ * each from its own samples: a notice no sample has shown — Cosmic's shipping,
+ * though it is on THT's platform — is refused and marked by hand.
  */
 const NOTICES: Partial<Record<Supplier, Record<string, NoticeReader>>> = {
   tht: {
     確認收款通知: readEasyStorePayment,
     更新訂單出貨通知: (lines) => readEasyStoreShipping(lines),
   },
+  // THT's template, word for word.
+  cosmic: { 確認收款通知: readEasyStorePayment },
   rotten_blues: {
     // "訂單 #3003 的貨件配送中".
     的貨件配送中: (lines) => readShopifyShipping(lines),
+    // "訂單 #3003 的貨件已送達": at the store, not yet collected.
+    的貨件已送達: (lines) => readShopifyArrival(lines),
   },
 };
 
 /**
- * Read a shop's payment or shipping notice: which of my orders it is about,
+ * Read a shop's payment, shipping or arrival notice: which of my orders it is about,
  * and what it says happened.
  *
  * Refuses rather than guesses, as confirmations do (tracker.md §9.4): an

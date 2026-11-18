@@ -9,7 +9,8 @@ export type OrderNotice =
       paidAt: string;
     }
   | {
-      kind: 'shipped';
+      /** The status the notice moves the order to, when that is forward. */
+      kind: 'shipped' | 'ready_for_pickup';
       orderNumber: string;
       /** The parcel's, when the notice gives one; it fills only an empty field. */
       trackingNumber: string | null;

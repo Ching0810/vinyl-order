@@ -68,7 +68,7 @@ export class SupplierOrderImportController {
   }
 
   /**
-   * POST /supplier-orders/import — one confirmation, payment or shipping
+   * POST /supplier-orders/import — one confirmation or notice
    * email, from the Apps Script. 201 `created`; 200 `already_recorded`, or
    * for a notice `updated`, `unchanged` or `not_yet`; 422 if it can't be
    * read; 401 without a current import token. Never returns the order.

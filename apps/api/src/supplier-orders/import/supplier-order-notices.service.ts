@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { canChangeSupplierOrderStatus } from '@vinyl-order/shared';
+import { canChangeSupplierOrderStatus, type SupplierOrderStatus } from '@vinyl-order/shared';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { fromDay } from '../supplier-order.mapper';
@@ -9,7 +9,7 @@ import type { ParsedNotice } from './notice';
 export type NoticeOutcome = 'updated' | 'unchanged' | 'not_yet';
 
 /**
- * Applies a shop's payment or shipping notice to the order it names.
+ * Applies a shop's payment, shipping or arrival notice to the order it names.
  *
  * A notice only moves an order forward; it never records or edits one, and
  * never undoes what the user marked by hand. So every write is conditional,
@@ -32,7 +32,7 @@ export class SupplierOrderNoticesService {
     const where = { userId, supplier: notice.supplier, orderNumber: notice.orderNumber };
     return notice.kind === 'paid'
       ? this.markPaid(where, notice.paidAt)
-      : this.markShipped(where, notice.trackingNumber);
+      : this.moveTo(where, notice.kind, notice.trackingNumber);
   }
 
   /**
@@ -51,8 +51,10 @@ export class SupplierOrderNoticesService {
   }
 
   /**
-   * Move the order to shipped if that is a move forward, and fill its
-   * tracking number if it is empty.
+   * Move the order to the notice's status — shipped, or ready for pickup —
+   * if that is a move forward, and fill its tracking number if it is empty.
+   * Arrival may skip shipped: its shipping notice can be missed, or past the
+   * week.
    *
    * The status write is the compare-and-set of a hand-made change (§9.1): it
    * matches only while the order still has the status it was checked
@@ -60,8 +62,9 @@ export class SupplierOrderNoticesService {
    * One transaction, so the two land together. A cancelled order gets
    * neither: it won't arrive, and a number on it would only mislead.
    */
-  private async markShipped(
+  private async moveTo(
     where: OrderKey,
+    status: SupplierOrderStatus,
     trackingNumber: string | null,
   ): Promise<NoticeOutcome> {
     return this.prisma.$transaction(async (transaction) => {
@@ -73,10 +76,10 @@ export class SupplierOrderNoticesService {
       if (order.status === 'cancelled') return 'unchanged';
 
       let changed = false;
-      if (canChangeSupplierOrderStatus(order.status, 'shipped')) {
+      if (canChangeSupplierOrderStatus(order.status, status)) {
         const moved = await transaction.supplierOrder.updateMany({
           where: { id: order.id, status: order.status },
-          data: { status: 'shipped' },
+          data: { status },
         });
         changed = moved.count > 0;
       }
