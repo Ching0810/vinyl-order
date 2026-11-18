@@ -679,10 +679,14 @@ are §9.5.
 
 How it runs:
 
-1. Once a day (10:00 Taipei, inside the wake ping's hours), a time-driven
-   trigger searches `from:(the three senders) subject:已確認 newer_than:7d`
-   (the notices' subjects join it in §9.5), and pings `/health` until the
-   API is awake.
+1. Every hour from 10:00 to 22:00 Taipei, a time-driven trigger searches
+   `from:(the three senders) subject:已確認 newer_than:7d` (the notices'
+   subjects join it in §9.5). The day's first run sends the whole week; a
+   later one sends only if an email came since the last run that reached
+   the API, so most stop at the search and never wake the site. A run that
+   sends pings `/health` until the API is awake first. _(It began once a
+   day at 10:00; a notice then took up to a day to show, so it moved to
+   hourly, with the day's first run keeping the daily one's full resend.)_
 2. Each email whose first `Authentication-Results` — the one Gmail adds —
    says `dkim=pass` for its sender's domain is POSTed — sender, subject,
    `Date`, and the HTML body with every link removed — to
