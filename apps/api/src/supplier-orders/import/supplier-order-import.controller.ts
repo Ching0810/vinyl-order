@@ -68,9 +68,10 @@ export class SupplierOrderImportController {
   }
 
   /**
-   * POST /supplier-orders/import — one confirmation email, from the Apps
-   * Script. 201 `created`, 200 `already_recorded`, 422 if it can't be read,
-   * 401 without a current import token. Never returns the order.
+   * POST /supplier-orders/import — one confirmation, payment or shipping
+   * email, from the Apps Script. 201 `created`; 200 `already_recorded`, or
+   * for a notice `updated`, `unchanged` or `not_yet`; 422 if it can't be
+   * read; 401 without a current import token. Never returns the order.
    *
    * Its own, tighter limit: the script sends a few emails once a day, so
    * more than this is something else hammering a token.

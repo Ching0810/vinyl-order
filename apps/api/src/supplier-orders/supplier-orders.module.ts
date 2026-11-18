@@ -4,6 +4,7 @@ import { SupplierOrderImportTokenGuard } from './import/import-token.guard';
 import { SupplierOrderImportTokensService } from './import/import-token.service';
 import { SupplierOrderImportController } from './import/supplier-order-import.controller';
 import { SupplierOrderImportService } from './import/supplier-order-import.service';
+import { SupplierOrderNoticesService } from './import/supplier-order-notices.service';
 import { SupplierOrdersController } from './supplier-orders.controller';
 import { SupplierOrdersService } from './supplier-orders.service';
 
@@ -17,6 +18,7 @@ import { SupplierOrdersService } from './supplier-orders.service';
     SupplierOrderImportTokensService,
     SupplierOrderImportTokenGuard,
     SupplierOrderImportService,
+    SupplierOrderNoticesService,
   ],
 })
 export class SupplierOrdersModule {}

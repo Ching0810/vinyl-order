@@ -206,11 +206,12 @@ describe('Supplier order import (e2e)', () => {
     it('is a 422 with a reason that quotes nothing from the email, and records nothing', async () => {
       const { session, token } = await createImporter();
 
-      const res = await send(token, { ...THT, subject: '更新訂單出貨通知' }).expect(422);
+      // Neither a confirmation nor a notice any reader is written for.
+      const res = await send(token, { ...THT, subject: '訂單取消通知' }).expect(422);
 
       expect(res.body).toMatchObject({
         code: 'SUPPLIER_ORDER_EMAIL_UNREADABLE',
-        reason: 'not an order confirmation',
+        reason: 'not a notice this site reads',
       });
       expect(JSON.stringify(res.body)).not.toContain('王小明');
       expect(await listOf(session)).toHaveLength(0);

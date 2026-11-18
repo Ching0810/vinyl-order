@@ -33,6 +33,16 @@ const PLATFORMS: Partial<Record<Supplier, Platform>> = {
 const allowedCover = (src: string): string | null => (isAllowedCoverUrl(src) ? src : null);
 
 /**
+ * Whether an email is an order confirmation, by its subject: every shop's
+ * says "已確認" ("您的訂單已確認。", "訂單 #3003 已確認"), and no notice's
+ * does. Anything else is read as a notice, if at all.
+ *
+ * @param email - as the Apps Script sends it
+ */
+export const isConfirmation = (email: Pick<ConfirmationEmail, 'subject'>): boolean =>
+  email.subject.includes('已確認');
+
+/**
  * Read a shop's order confirmation into the order it confirms.
  *
  * Refuses rather than guesses (tracker.md §9.4): an unknown sender, an email
@@ -51,7 +61,7 @@ export const parseConfirmation = (email: ConfirmationEmail): ParseResult => {
   if (!supplier || !platform) return { ok: false, reason: 'not a sender whose emails are read' };
   // Payment and shipping notices come from the same senders (parse-notice.ts);
   // only a confirmation records.
-  if (!email.subject.includes('已確認')) return { ok: false, reason: 'not an order confirmation' };
+  if (!isConfirmation(email)) return { ok: false, reason: 'not an order confirmation' };
 
   const orderedAt = sentDay(email.date);
   if (!orderedAt) return { ok: false, reason: 'no date' };

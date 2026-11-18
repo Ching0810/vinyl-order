@@ -343,9 +343,9 @@ export type CreatedSupplierOrderImportToken = z.infer<typeof createdSupplierOrde
 // ---- Email import ----
 
 /**
- * POST /supplier-orders/import body: one confirmation email as the user's
- * Apps Script sends it, with its import token in the Authorization header
- * (tracker.md §9.4). Links are already stripped. The limits are generous for
+ * POST /supplier-orders/import body: one confirmation, payment or shipping
+ * email as the user's Apps Script sends it, with its import token in the
+ * Authorization header (tracker.md §9.4, §9.5). Links are already stripped. The limits are generous for
  * the emails seen (the largest body is ~31 KB) and bound what one request
  * can make the parser read.
  */
@@ -363,12 +363,20 @@ export type ImportSupplierOrderEmailInput = z.infer<typeof importSupplierOrderEm
  * What an import came to. Never the order itself: the route only writes, so
  * a leaked token can't be used to read anyone's orders by guessing numbers.
  *
+ * A confirmation:
  * - created (201): recorded now.
  * - already_recorded (200): this order number at this shop is already in the
  *   user's list — the same email sent again, or the order typed in by hand.
+ *
+ * A payment or shipping notice, about an order already recorded (all 200):
+ * - updated: it set the payment day, the tracking number or the status.
+ * - unchanged: the order was already there or past it — a repeat, or a step
+ *   marked by hand first.
+ * - not_yet: no such order in the user's list yet; the script sends it again
+ *   the next day.
  */
 export const importSupplierOrderResultSchema = z.object({
-  result: z.enum(['created', 'already_recorded']),
+  result: z.enum(['created', 'already_recorded', 'updated', 'unchanged', 'not_yet']),
 });
 export type ImportSupplierOrderResult = z.infer<typeof importSupplierOrderResultSchema>;
 
