@@ -59,12 +59,17 @@ const GROUP_RANK: Record<SupplierOrderStatus, number> = {
 const isOpen = (status: SupplierOrderStatus): boolean => GROUP_RANK[status] < GROUP_RANK.delivered;
 
 /**
- * How the user learns an order has reached a step: by hand for every step
- * for now, `when` saying what to watch for. A step becomes automatic once
- * the email import reads that shop's notice (tracker.md §9.5), and its entry
- * changes with it, so the page never promises an update that won't come.
+ * How an order comes to a step, `when` saying what happens first:
+ *
+ * - `email`: the email import reads the shop's notice and moves it (tracker.md
+ *   §9.5), so the page says it updates by itself;
+ * - `hand`: nothing the site can read says so, so the page says what to watch
+ *   for and what to mark.
+ *
+ * A step is `email` only once the import reads that shop's notice, so the
+ * page never promises an update that won't come.
  */
-type StepSignal = { by: 'hand'; when: string };
+type StepSignal = { by: 'email' | 'hand'; when: string };
 
 /** The steps a shop's notices mark between the order and the store. */
 type FlowStep = Extract<SupplierOrderStatus, 'shipped' | 'ready_for_pickup'>;
@@ -81,7 +86,7 @@ type FlowStep = Extract<SupplierOrderStatus, 'shipped' | 'ready_for_pickup'>;
  */
 const SUPPLIER_FLOW: Record<Supplier, Partial<Record<FlowStep, StepSignal>>> = {
   tht: {
-    shipped: { by: 'hand', when: 'THT emails that it has shipped' },
+    shipped: { by: 'email', when: 'THT emails that it has shipped' },
     ready_for_pickup: {
       by: 'hand',
       when: 'the convenience store texts you (THT sends no email for it)',
@@ -95,7 +100,7 @@ const SUPPLIER_FLOW: Record<Supplier, Partial<Record<FlowStep, StepSignal>>> = {
     },
   },
   rotten_blues: {
-    shipped: { by: 'hand', when: "Rotten Blues emails that it's on its way" },
+    shipped: { by: 'email', when: "Rotten Blues emails that it's on its way" },
     ready_for_pickup: { by: 'hand', when: 'Rotten Blues emails that it has arrived (已送達)' },
   },
   candlelight: {
@@ -147,9 +152,9 @@ export const hasReached = (order: SupplierOrder, step: SupplierOrderStatus): boo
   STATUS_ORDER.indexOf(order.status) >= STATUS_ORDER.indexOf(step);
 
 /**
- * What the user does next for an order, in words, or null once there is
- * nothing left to do: what to watch for before marking the next step, or,
- * at the store, to go and collect it.
+ * What comes next for an order, in words, or null once there is nothing left
+ * to do: that it updates by itself when the shop emails, what to watch for
+ * before marking the next step, or, at the store, to go and collect it.
  *
  * @param order - the order, open or finished
  */
@@ -158,7 +163,10 @@ export const nextStepHint = (order: SupplierOrder): string | null => {
   if (!step) return null;
   if (step === 'delivered') return 'Pick it up, then mark Delivered.';
   const signal = SUPPLIER_FLOW[order.supplier][step]!;
-  return `Mark ${SUPPLIER_ORDER_STATUS[step].label} when ${signal.when}.`;
+  const label = SUPPLIER_ORDER_STATUS[step].label;
+  return signal.by === 'email'
+    ? `Updates to ${label} when ${signal.when}.`
+    : `Mark ${label} when ${signal.when}.`;
 };
 
 /**
