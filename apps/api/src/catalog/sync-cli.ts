@@ -40,12 +40,15 @@ class CatalogSyncCliModule {}
 
 const logger = new Logger('catalog:sync');
 
-const describe = (report: CatalogSyncReport): string =>
+const summaryOf = (report: CatalogSyncReport): string =>
   [
     `${report.supplier}: ${report.files} files, ${report.listed} listed`,
     `(${report.vinyl} vinyl, ${report.used} used)`,
-    `— ${report.added} added, ${report.rewritten} rewritten, ${report.deleted} deleted`,
-    report.deletionSkipped ? `— NOT deleted: listed under half of the ${report.before} copied` : '',
+    `— ${report.added} added, ${report.changed} changed, ${report.unchanged} unchanged, ${report.deleted} deleted`,
+    report.deletionSkipped === 'under_half'
+      ? `— NOT deleted: listed under half of the ${report.before} copied`
+      : '',
+    report.deletionSkipped === 'no_index' ? "— NOT deleted: read without the shop's index" : '',
     `in ${(report.ms / 1000).toFixed(1)} s`,
   ]
     .filter(Boolean)
@@ -68,13 +71,13 @@ const main = async (): Promise<number> => {
     const sync = app.get(CatalogSyncService);
     for (const supplier of suppliers) {
       try {
-        logger.log(describe(await sync.sync(ADAPTERS[supplier]!())));
+        logger.log(summaryOf(await sync.sync(ADAPTERS[supplier]!())));
       } catch (error) {
         failed = true;
         if (!(error instanceof CatalogSyncFailed)) throw error;
         const reason = error.reason instanceof Error ? error.reason.message : String(error.reason);
         // Only the reason's phrase: a fetch or page error names no listing.
-        logger.error(`${describe(error.report)} — stopped: ${reason}; nothing deleted`);
+        logger.error(`${summaryOf(error.report)} — stopped: ${reason}; nothing deleted`);
       }
     }
     const [{ size }] = await app.get(PrismaService).$queryRaw<{ size: string }[]>`

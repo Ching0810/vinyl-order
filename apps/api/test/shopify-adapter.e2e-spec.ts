@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 import { ShopFetcher } from '../src/catalog/shop-fetcher';
 import { ROTTEN_BLUES, ShopifyAdapter } from '../src/catalog/shopify-adapter';
-import type { ParsedCatalogEntry } from '../src/catalog/supplier-adapter';
+import type { CatalogBatch, ParsedCatalogEntry } from '../src/catalog/supplier-adapter';
 import { ShopPageUnreadable } from '../src/catalog/supplier-adapter';
 
 /**
@@ -48,10 +48,17 @@ const rottenBlues = (pages: Record<string, string>) => {
   };
 };
 
-const collect = async (entries: AsyncIterable<ParsedCatalogEntry[]>) => {
-  const batches: ParsedCatalogEntry[][] = [];
-  for await (const batch of entries) batches.push(batch);
-  return batches;
+/** Each batch's entries, and whether every batch came from the index. */
+const collect = async (batches: AsyncIterable<CatalogBatch>) => {
+  const entries: ParsedCatalogEntry[][] = [];
+  for await (const batch of batches) entries.push(batch.entries);
+  return entries;
+};
+
+const listedByIndex = async (batches: AsyncIterable<CatalogBatch>) => {
+  const flags: boolean[] = [];
+  for await (const batch of batches) flags.push(batch.listedByIndex);
+  return flags;
 };
 
 describe('Shopify adapter (e2e)', () => {
@@ -184,6 +191,16 @@ describe('Shopify adapter (e2e)', () => {
         priceCents: null,
         sourceUpdatedAt: new Date('2026-11-19T09:16:10+08:00'),
       });
+    });
+
+    it('every batch is listed by the index', async () => {
+      const { adapter } = rottenBlues({
+        [`${ORIGIN}/sitemap.xml`]: fixture('shopify-sitemap-index.xml'),
+        [SITEMAP_1]: fixture('shopify-sitemap.xml'),
+        [SITEMAP_2]: fixture('shopify-sitemap.xml'),
+      });
+
+      expect(await listedByIndex(adapter.syncCatalog())).toEqual([true, true]);
     });
 
     it("an entry's id is its offer's", async () => {

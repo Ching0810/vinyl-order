@@ -14,15 +14,19 @@ export interface CatalogSyncReport {
   /** Entries the shop listed, each counted once. */
   listed: number;
   added: number;
-  /** Already copied, written again with what the shop lists now. */
-  rewritten: number;
+  /** Already copied, and different now: written again. */
+  changed: number;
+  /** Already copied, and the same: not written. */
+  unchanged: number;
   /** The shop's entries it no longer lists, deleted. */
   deleted: number;
   /**
-   * The run listed under half of what was copied, so nothing was deleted:
-   * more likely the shop's sitemap failing than half its catalog gone.
+   * Why nothing was deleted, if so. `under_half`: the run listed under half
+   * of what was copied — more likely the shop's sitemap failing than half
+   * its catalog gone. `no_index`: the shop's sitemap index failed and its
+   * files were read in turn, so the run can't know it saw them all.
    */
-  deletionSkipped: boolean;
+  deletionSkipped: 'under_half' | 'no_index' | null;
   /** Entries in the table before the run. */
   before: number;
   vinyl: number;
@@ -52,10 +56,12 @@ const KEEP_BELOW = 0.5;
  *
  * Each batch — one sitemap file — is one statement, `INSERT … ON CONFLICT
  * DO UPDATE`: Prisma has no bulk upsert, and 30 000 single upserts against
- * a remote database would take most of an hour. Every entry a run writes is
- * stamped with the run's start, so once the whole catalog is read, what
- * still has an older stamp is what the shop took down. A run that stops
- * partway deletes nothing; the next one finishes the job.
+ * a remote database would take most of an hour. **A listing that hasn't
+ * changed isn't written at all**: Postgres keeps the old version of every
+ * row it rewrites until a vacuum, so rewriting unchanged rows only grows
+ * the table. Once the whole catalog is
+ * read, the shop's entries the run didn't list are what it took down. A run
+ * that stops partway deletes nothing; the next one finishes the job.
  */
 @Injectable()
 export class CatalogSyncService {
@@ -72,9 +78,10 @@ export class CatalogSyncService {
       files: 0,
       listed: 0,
       added: 0,
-      rewritten: 0,
+      changed: 0,
+      unchanged: 0,
       deleted: 0,
-      deletionSkipped: false,
+      deletionSkipped: null,
       before: await this.prisma.catalogEntry.count({ where: { supplier } }),
       vinyl: 0,
       used: 0,
@@ -82,20 +89,23 @@ export class CatalogSyncService {
     };
     // A listing can appear in two files; it is counted, and written, once.
     const seen = new Set<string>();
+    let listedByIndex = true;
 
     try {
       for await (const batch of adapter.syncCatalog()) {
         report.files += 1;
-        const fresh = batch.filter((entry) => {
+        listedByIndex &&= batch.listedByIndex;
+        const fresh = batch.entries.filter((entry) => {
           if (seen.has(entry.externalId)) return false;
           seen.add(entry.externalId);
           return true;
         });
         if (fresh.length === 0) continue;
-        const added = await this.write(supplier, fresh, startedAt);
+        const written = await this.write(supplier, fresh, startedAt);
         report.listed += fresh.length;
-        report.added += added;
-        report.rewritten += fresh.length - added;
+        report.added += written.added;
+        report.changed += written.changed;
+        report.unchanged += fresh.length - written.added - written.changed;
         report.vinyl += fresh.filter((entry) => entry.isVinyl).length;
         report.used += fresh.filter((entry) => entry.isUsed).length;
       }
@@ -104,24 +114,32 @@ export class CatalogSyncService {
       throw new CatalogSyncFailed(report, reason);
     }
 
-    if (report.listed < report.before * KEEP_BELOW) {
-      report.deletionSkipped = true;
+    if (!listedByIndex) {
+      report.deletionSkipped = 'no_index';
+    } else if (report.listed < report.before * KEEP_BELOW) {
+      report.deletionSkipped = 'under_half';
     } else {
-      const { count } = await this.prisma.catalogEntry.deleteMany({
-        where: { supplier, syncedAt: { lt: startedAt } },
-      });
-      report.deleted = count;
+      // One array parameter, not one per listing: a catalog runs to tens of
+      // thousands, past what a statement's parameters allow.
+      report.deleted = await this.prisma.$executeRaw`
+        DELETE FROM "CatalogEntry"
+        WHERE "supplier" = ${supplier}::"Supplier"
+          AND NOT ("externalId" = ANY(${[...seen]}::text[]))
+      `;
     }
     report.ms = Date.now() - startedAt.getTime();
     return report;
   }
 
-  /** One batch, upserted in one statement. Returns how many were new. */
+  /**
+   * One batch, upserted in one statement: new listings inserted, changed
+   * ones updated, the same ones left alone.
+   */
   private async write(
     supplier: Supplier,
     entries: ParsedCatalogEntry[],
     syncedAt: Date,
-  ): Promise<number> {
+  ): Promise<{ added: number; changed: number }> {
     const rows = entries.map(
       (entry) => Prisma.sql`(
         gen_random_uuid(), ${supplier}::"Supplier", ${entry.externalId}, ${entry.url},
@@ -146,8 +164,19 @@ export class CatalogSyncService {
         "isUsed" = EXCLUDED."isUsed",
         "sourceUpdatedAt" = EXCLUDED."sourceUpdatedAt",
         "syncedAt" = EXCLUDED."syncedAt"
+      -- What search shows and filters on. sourceUpdatedAt is left out: the
+      -- shops move it for a stock change, and Rotten Blues' are all today's.
+      WHERE ("CatalogEntry"."url", "CatalogEntry"."title", "CatalogEntry"."searchTitle",
+             "CatalogEntry"."imageUrl", "CatalogEntry"."priceCents",
+             "CatalogEntry"."isVinyl", "CatalogEntry"."isUsed")
+        IS DISTINCT FROM
+            (EXCLUDED."url", EXCLUDED."title", EXCLUDED."searchTitle",
+             EXCLUDED."imageUrl", EXCLUDED."priceCents",
+             EXCLUDED."isVinyl", EXCLUDED."isUsed")
       RETURNING (xmax = 0) AS inserted
     `;
-    return written.filter((row) => row.inserted).length;
+    // A row left alone by the WHERE isn't returned at all.
+    const added = written.filter((row) => row.inserted).length;
+    return { added, changed: written.length - added };
   }
 }

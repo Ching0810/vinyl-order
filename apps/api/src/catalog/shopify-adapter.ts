@@ -6,9 +6,10 @@ import { readListingTitle, splitArtistNames } from './listing-title';
 import { ShopFetcher, type ShopRules } from './shop-fetcher';
 import { sitemapIndexLocs, sitemapProducts } from './sitemap';
 import {
+  type CatalogBatch,
   catalogEntries,
   handleFromUrl,
-  type ParsedCatalogEntry,
+  parseJson,
   type ParsedOffer,
   type SupplierAdapter,
   ShopPageUnreadable,
@@ -143,7 +144,7 @@ export class ShopifyAdapter implements SupplierAdapter {
     };
   }
 
-  async *syncCatalog(): AsyncIterable<ParsedCatalogEntry[]> {
+  async *syncCatalog(): AsyncIterable<CatalogBatch> {
     const index = await this.fetcher.fetchText(`${this.shop.origin}/sitemap.xml`);
     const files = sitemapIndexLocs(index).filter((loc) => PRODUCT_SITEMAP.test(loc));
     if (files.length === 0) throw new ShopPageUnreadable('no product sitemaps listed');
@@ -154,20 +155,15 @@ export class ShopifyAdapter implements SupplierAdapter {
       // not an empty shop: stop rather than let sync delete the catalog.
       if (products.length === 0) throw new ShopPageUnreadable('a product sitemap lists nothing');
 
-      yield catalogEntries(products, this.today(), (loc) =>
-        handleFromUrl(loc, this.shop.hosts, PRODUCT_PATH),
-      );
+      yield {
+        entries: catalogEntries(products, this.today(), (loc) =>
+          handleFromUrl(loc, this.shop.hosts, PRODUCT_PATH),
+        ),
+        listedByIndex: true,
+      };
     }
   }
 }
 
 /** Shopify writes image URLs without a scheme: `//cdn.shopify.com/…`. */
 const absolute = (url: string): string => (url.startsWith('//') ? `https:${url}` : url);
-
-const parseJson = (text: string): unknown => {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-};
