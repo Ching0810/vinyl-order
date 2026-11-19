@@ -188,7 +188,10 @@ Alerts (step 12) read these; nothing else does yet.
 
 ### 5.4 `CatalogEntry`: the search index
 
-`supplier`, `externalId`, `url`, `title`, `imageUrl`, `priceCents` (when the
+`supplier`, `externalId`, `url`, `title`, `searchTitle` (the title in search
+form, which the trigram index is on — how it is normalised is settled by
+step 8's search, and a sync rewrites every row, so it can change without a
+migration), `imageUrl`, `priceCents` (when the
 catalog source has it — none of the first three shops' does), `isUsed`, `isVinyl`, `sourceUpdatedAt` (`lastmod`),
 `syncedAt`. Unique on `(supplier, externalId)`; a GIN trigram index on
 `title`. It is a copy of each shop's catalog, not of my records: thousands
@@ -436,6 +439,19 @@ there.
 
 Per supplier, upsert by `(supplier, externalId)`; entries the catalog no
 longer lists are deleted.
+
+- **A statement per sitemap file**: `INSERT … ON CONFLICT DO UPDATE` with
+  the file's few hundred entries. Prisma has no bulk upsert, and some 30 000
+  single upserts against Neon would take most of an hour.
+- **Every entry a run writes is stamped with the run's start** (`syncedAt`).
+  Once the whole catalog is read, the shop's entries with an older stamp are
+  the ones it took down, and are deleted.
+- **A run that stops partway deletes nothing** — a fetch that failed, a
+  sitemap that can't be read. What it wrote stays; the next run finishes.
+- **A run that lists under half of what was copied deletes nothing** either,
+  and says so: a shop takes a few dozen listings down between syncs, and a
+  sitemap failing is likelier than half a catalog gone.
+- **A listing listed twice** — in one file or two — is written once.
 
 - **EasyStore:** the product sitemaps, each entry's `<image:title>` the name.
 - **Shopify:** the product sitemaps too. `/products.json` would bring
@@ -1244,7 +1260,9 @@ Each step is its own PR.
    and vinyl flags. The table waits for this step: its columns are settled
    by the shops' catalogs as the sync reads them (§15). **Run by hand** — a
    command, locally and then against Neon — until step 12 schedules it; the
-   first runs are where the size is measured.
+   first runs are where the size is measured. 7a: the table,
+   `CatalogSyncService` and `pnpm --filter api catalog:sync <shop | all>`;
+   7b: the first runs, locally and on Neon, and their numbers here.
 8. API, in three PRs: search (8a); create from catalog and refresh (8b);
    candidates, attach and detach, and artist aliases (8c). Products get
    their `Artist` here; until step 5, the columns the demo store still reads

@@ -447,6 +447,39 @@ model OfferSnapshot {
   @@index([offerId, takenAt(sort: Desc)])
 }
 
+/// A listing in a shop's catalog, copied by sync for search (tracker.md
+/// §5.4, §7.2). Not my records — Product and Offer are those: every listing
+/// the shops have, rewritten by each sync and never edited by hand. A
+/// product is created from one, and its candidates found among them.
+model CatalogEntry {
+  id              String    @id @default(uuid())
+  supplier        Supplier
+  /// The listing's handle, the last part of its URL: the same id its offer
+  /// gets, so the two are known as one listing (§6.1).
+  externalId      String
+  url             String
+  /// The shop's own name for it, as written.
+  title           String
+  /// `title` in search form: what search compares, and the trigram index is
+  /// on. How it is normalised can change: the next sync rewrites every row.
+  searchTitle     String
+  imageUrl        String?
+  /// Null when the catalog source gives no price — none of the sitemaps do.
+  priceCents      Int?
+  isVinyl         Boolean
+  isUsed          Boolean
+  /// The sitemap's lastmod.
+  sourceUpdatedAt DateTime?
+  /// The start of the last sync that listed it. A finished sync deletes its
+  /// shop's entries it didn't list: the shop took them down.
+  syncedAt        DateTime
+
+  /// A listing is copied once per shop; sync upserts on it.
+  @@unique([supplier, externalId])
+  /// Trigram index for search (§7.3). pg_trgm is already installed.
+  @@index([searchTitle(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
 /// An order a user placed at one of the shops: their own note of something
 /// bought elsewhere, seen only by them. Kept apart from Order, which is the
 /// demo store's own, with a payment lifecycle (tracker.md §5.5).

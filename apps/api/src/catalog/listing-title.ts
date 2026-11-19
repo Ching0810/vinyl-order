@@ -262,3 +262,12 @@ export const normalizeName = (name: string): string =>
     .normalize('NFKC')
     .toLowerCase()
     .replace(/[\p{P}\p{S}\s]/gu, '');
+
+/**
+ * A listing's title in search form, as `CatalogEntry.searchTitle` stores it:
+ * NFKC and lower case, its spaces kept to one so trigrams still see words.
+ * Step 8's search settles the rest; a sync rewrites every row, so this can
+ * change without a migration.
+ */
+export const searchTitleOf = (title: string): string =>
+  title.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
