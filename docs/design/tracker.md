@@ -304,7 +304,12 @@ How aliases are gathered:
 - **Attaching an offer** proposes the names in that shop's title as new
   aliases, which I keep or drop. The more shops a record has been matched at,
   the more names its artist has for the next search.
-- **By hand** on the product page: rename, add, remove.
+- **By hand** on the product page (`PATCH /admin/artists/:id`): rename,
+  add — a proposed name kept — and remove, in one transaction, removals
+  first so one request can swap a spelling. The name is always one of the
+  aliases: renaming adds it, and its alias can't be removed until the
+  artist is renamed (422 `ARTIST_NAME_ALIAS`). A rename also rewrites the
+  demo store's `artist` string on the artist's records, until step 5.
 
 Not handled yet: **collaborations** are one artist named "A & B". If they turn
 out common, `Product`–`Artist` becomes many-to-many.
@@ -1370,7 +1375,7 @@ Each step is its own PR.
    their `Artist` here; until step 5, the columns the demo store still reads
    are filled from it (below). _(8a: `GET /admin/catalog/search`. 8b: `POST /admin/products/from-catalog`
    and `POST /admin/products/:id/refresh`. 8c-1: candidates, attach and
-   detach.)_
+   detach. 8c-2: `PATCH /admin/artists/:id`.)_
 9. Web: the search page (9a), then the product page's comparison (9b) —
    **the comparison usable**; then the visitors' list, the dashboard
    (§12.2), and the product page's "record an order" and link-a-line.

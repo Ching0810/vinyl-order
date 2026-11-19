@@ -4,6 +4,8 @@ import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import {
+  type Artist,
+  artistSchema,
   type AttachOfferResult,
   attachOfferResultSchema,
   type CatalogSearchHit,
@@ -173,6 +175,7 @@ describe('Records from the catalog (e2e)', () => {
           create: aliases.map((alias) => ({ name: alias, normalized: normalizeName(alias) })),
         },
       },
+      include: { aliases: true },
     });
 
   describe('who may', () => {
@@ -258,7 +261,7 @@ describe('Records from the catalog (e2e)', () => {
 
       const product = await created({ catalogEntryId: entryId });
 
-      expect(product.artist).toEqual({ id: known.id, name: '坂本龍一' });
+      expect(product.artist).toMatchObject({ id: known.id, name: '坂本龍一' });
       expect(await aliasesOf(known.id)).toEqual(['坂本龍一', 'Ryuichi Sakamoto']);
       expect(await prisma.artist.count({ where: { id: { not: known.id } } })).toBe(0);
     });
@@ -642,6 +645,112 @@ describe('Records from the catalog (e2e)', () => {
         code: 'LAST_OFFER',
       });
       await detach(randomUUID()).expect(404);
+    });
+  });
+
+  describe("editing an artist's names", () => {
+    const update = (artistId: string, body: object, token = admin) =>
+      server().patch(`/admin/artists/${artistId}`).set(auth(token)).send(body);
+
+    const updated = async (artistId: string, body: object) =>
+      (await update(artistId, body).expect(200)).body as Artist;
+
+    /** Names created together share a timestamp: compared in any order. */
+    const namesOf = (artist: Artist) => artist.aliases.map((alias) => alias.name).sort();
+    const sorted = (names: string[]) => [...names].sort();
+
+    it('a record’s artist comes with every name, the shared shape', async () => {
+      const { entryId } = await listing('tht');
+
+      const product = await created({ catalogEntryId: entryId });
+
+      expect(artistSchema.parse(product.artist)).toEqual(product.artist);
+      expect(namesOf(product.artist)).toEqual(sorted(['坂本龍一', 'Ryuichi Sakamoto']));
+    });
+
+    it('keeps a proposed name, once however it is written', async () => {
+      const artist = await artistNamed('坂本龍一');
+
+      const result = await updated(artist.id, {
+        addAliases: ['RYUICHI SAKAMOTO', 'Ryuichi Sakamoto', '坂本龍一'],
+      });
+
+      expect(namesOf(result)).toEqual(sorted(['坂本龍一', 'RYUICHI SAKAMOTO']));
+    });
+
+    it('renames: the new name becomes an alias, and its records follow', async () => {
+      const { entryId } = await listing('tht', { artistNames: ['坂本龍一'] });
+      const product = await created({ catalogEntryId: entryId });
+
+      const result = await updated(product.artist.id, { name: 'Ryuichi Sakamoto' });
+
+      expect(result.name).toBe('Ryuichi Sakamoto');
+      expect(namesOf(result)).toEqual(sorted(['坂本龍一', 'Ryuichi Sakamoto']));
+      expect((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).artist).toBe(
+        'Ryuichi Sakamoto',
+      );
+    });
+
+    it('removes a wrong name', async () => {
+      const artist = await artistNamed('坂本龍一', ['坂本龍一', 'Somebody Else']);
+      const wrong = artist.aliases.find((alias) => alias.name === 'Somebody Else');
+
+      const result = await updated(artist.id, { removeAliasIds: [wrong!.id] });
+
+      expect(namesOf(result)).toEqual(sorted(['坂本龍一']));
+    });
+
+    it('swaps a spelling in one request: the removal goes first', async () => {
+      const artist = await artistNamed('坂本龍一', ['坂本龍一', 'ryuichi sakamoto']);
+      const lower = artist.aliases.find((alias) => alias.name === 'ryuichi sakamoto');
+
+      const result = await updated(artist.id, {
+        removeAliasIds: [lower!.id],
+        addAliases: ['Ryuichi Sakamoto'],
+      });
+
+      expect(namesOf(result)).toEqual(sorted(['坂本龍一', 'Ryuichi Sakamoto']));
+    });
+
+    it('won’t remove the name’s own alias, but will once renamed', async () => {
+      const artist = await artistNamed('坂本龍一', ['坂本龍一', 'Ryuichi Sakamoto']);
+      const own = artist.aliases.find((alias) => alias.name === '坂本龍一');
+
+      expect(
+        (await update(artist.id, { removeAliasIds: [own!.id] }).expect(422)).body,
+      ).toMatchObject({ code: 'ARTIST_NAME_ALIAS' });
+      expect(
+        namesOf(await updated(artist.id, { name: 'Ryuichi Sakamoto', removeAliasIds: [own!.id] })),
+      ).toEqual(sorted(['Ryuichi Sakamoto']));
+    });
+
+    it('404s another artist’s alias, and an artist that isn’t there; changes nothing', async () => {
+      const artist = await artistNamed('坂本龍一');
+      const other = await artistNamed('細野晴臣');
+
+      await update(artist.id, {
+        removeAliasIds: [other.aliases[0].id],
+        addAliases: ['Ryuichi Sakamoto'],
+      }).expect(404);
+      expect(await aliasesOf(artist.id)).toEqual(['坂本龍一']);
+      await update(randomUUID(), { name: 'Anyone' }).expect(404);
+    });
+
+    it('refuses a body with nothing to change, or a name with no letters', async () => {
+      const artist = await artistNamed('坂本龍一');
+
+      await update(artist.id, {}).expect(400);
+      await update(artist.id, { addAliases: [] }).expect(400);
+      await update(artist.id, { name: '  ' }).expect(400);
+      await update(artist.id, { addAliases: ['！！'] }).expect(400);
+    });
+
+    it('refuses anyone not an admin', async () => {
+      const artist = await artistNamed('坂本龍一');
+      const customer = await createUser('customer');
+
+      await server().patch(`/admin/artists/${artist.id}`).send({ name: 'X' }).expect(401);
+      await update(artist.id, { name: 'X' }, customer).expect(403);
     });
   });
 });

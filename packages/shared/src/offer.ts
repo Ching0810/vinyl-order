@@ -35,6 +35,47 @@ export const offerSchema = z.object({
 });
 export type Offer = z.infer<typeof offerSchema>;
 
+/**
+ * Who made a record, under every name the shops write them by (§5.7): the
+ * name the site shows, and the aliases search and matching use, oldest
+ * first. The name is always one of them.
+ */
+export const artistSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  aliases: z.array(z.object({ id: z.uuid(), name: z.string() })),
+});
+export type Artist = z.infer<typeof artistSchema>;
+
+/** A name with a letter or digit in it: one of only punctuation matches nothing. */
+const artistNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/[\p{L}\p{N}]/u, 'A name needs a letter or a digit');
+
+/**
+ * PATCH /admin/artists/:id — rename, add names, remove names, any together.
+ * Renaming adds the new name as an alias; the alias that is the name can't
+ * be removed (422 ARTIST_NAME_ALIAS). Removals go first, so one request can
+ * swap a spelling.
+ */
+export const updateArtistSchema = z
+  .object({
+    name: artistNameSchema.optional(),
+    addAliases: z.array(artistNameSchema).max(20).optional(),
+    removeAliasIds: z.array(z.uuid()).max(50).optional(),
+  })
+  .refine(
+    (body) =>
+      body.name !== undefined ||
+      (body.addAliases?.length ?? 0) > 0 ||
+      (body.removeAliasIds?.length ?? 0) > 0,
+    { message: 'Nothing to change' },
+  );
+export type UpdateArtistInput = z.infer<typeof updateArtistSchema>;
+
 /** A record, its artist and every shop's offer, oldest offer first. */
 export const productWithOffersSchema = z.object({
   id: z.uuid(),
@@ -42,7 +83,7 @@ export const productWithOffersSchema = z.object({
   imageUrl: z.url().nullable(),
   format: z.array(z.string()),
   edition: z.string().nullable(),
-  artist: z.object({ id: z.uuid(), name: z.string() }),
+  artist: artistSchema,
   offers: z.array(offerSchema),
 });
 export type ProductWithOffers = z.infer<typeof productWithOffersSchema>;
@@ -99,6 +140,8 @@ export type AttachOfferResult = z.infer<typeof attachOfferResultSchema>;
  * - `SHOP_PAGE_UNREADABLE` (502): the shop's page couldn't be fetched or read.
  * - `LAST_OFFER` (409): a record keeps at least one offer; delete the record
  *   instead.
+ * - `ARTIST_NAME_ALIAS` (422): the alias that is the artist's name can't be
+ *   removed; rename the artist first.
  */
 export const offerErrorCodeSchema = z.enum([
   'OFFER_ALREADY_TRACKED',
@@ -107,5 +150,6 @@ export const offerErrorCodeSchema = z.enum([
   'SHOP_NOT_SUPPORTED',
   'SHOP_PAGE_UNREADABLE',
   'LAST_OFFER',
+  'ARTIST_NAME_ALIAS',
 ]);
 export type OfferErrorCode = z.infer<typeof offerErrorCodeSchema>;
