@@ -1,0 +1,72 @@
+{
+  "id": 10373394956469,
+  "title": "【日版黑膠】宋冬野《安和橋北》高音質45轉雙片膠 ※追加生產預購中",
+  "handle": "40802646704",
+  "description": "<p><iframe data-testid=\"embed-iframe\" style=\"border-radius: 12px;\" src=\"https://open.spotify.com/embed/album/4MTEs0gR5jeInhPAu5aZkD?utm_source=generator&amp;si=84e4de2c39ec4525\" width=\"100%\" height=\"352\" loading=\"lazy\"></iframe></p>\n<p><strong>預購中，預計2027年1月到貨後陸續出貨</strong><br><strong>下單需先付款不可取消</strong></p>\n<p>董小姐 你嘴角向下的時候很美<br>就像安和橋下 清澈的水<br><br>今天的「安省橋」原為「安和橋」，取「安瀾、平和」之意，原本一個看到名字就想生活一輩子的世外桃源活生生的改成了一架沒靈魂的鋼筋水泥橋。</p>\n<p><br>宋冬野在安和橋下學會彈吉他，在安和橋下走過肆無忌憚的童年和亂七八糟的青春，在安和橋下遇見刻骨銘心的愛情，在安和橋下吃奶奶做的飯，也在安和橋下歷經成長。</p>\n<p><br>環境變遷使他將所有美好的記憶深藏心底，流於指間，彈於心弦。那些過往的人、事、物轉化成了更真實深刻的情感，也成就了宋冬野的音樂理念。然而宋冬野從不把自己的音樂歸於哪一類，只知道他的歌詞裡有他的全部情感與靈魂。</p>\n<p><br>傾聽之餘，讓我們在面對現在這個無可奈何的居住著的愈發冷漠的城市中，也更深刻的體會著宋冬野的歌曲中帶來的簡單，真誠，隨意流淌著的超越平實的詩意表達，也很容易隨之陷入一種情緒裡。六扇門裡太齷齪，不如六根弦上取磊落所有有價值的夢想一開始都會被認為是不切實際的、叛逆的，但最終總會被認可。實現的過程總是飽富激情，新鮮和挑戰的。</p>\n<p><br>曲目：<br>1 給抱著盒子的姑娘<br>2 莉莉安<br>3 鴿子<br>4 董小姐<br>5 斑馬，斑馬<br>6 夢遺少年<br>7 六層樓<br>8 關憶北<br>9 卡比巴拉的海<br>10 連衣裙<br>11 安和橋<br>12 Intro</p>",
+  "published_at": "2026-07-27T15:34:42+08:00",
+  "created_at": "2026-03-03T09:55:15+08:00",
+  "vendor": "爛調唱片",
+  "type": "黑膠",
+  "tags": ["Vinyl", "宋冬野", "黑膠"],
+  "price": 178000,
+  "price_min": 178000,
+  "price_max": 178000,
+  "available": true,
+  "price_varies": false,
+  "compare_at_price": null,
+  "compare_at_price_min": 0,
+  "compare_at_price_max": 0,
+  "compare_at_price_varies": false,
+  "variants": [
+    {
+      "id": 52300768116917,
+      "title": "Default Title",
+      "option1": "Default Title",
+      "option2": null,
+      "option3": null,
+      "sku": "40802646704.0",
+      "requires_shipping": true,
+      "taxable": false,
+      "featured_image": null,
+      "available": true,
+      "name": "【日版黑膠】宋冬野《安和橋北》高音質45轉雙片膠 ※追加生產預購中",
+      "public_title": null,
+      "options": ["Default Title"],
+      "price": 178000,
+      "weight": 0,
+      "compare_at_price": null,
+      "inventory_management": "shopify",
+      "barcode": null,
+      "quantity_rule": { "min": 1, "max": null, "increment": 1 },
+      "quantity_price_breaks": [],
+      "requires_selling_plan": false,
+      "selling_plan_allocations": []
+    }
+  ],
+  "images": [
+    "//cdn.shopify.com/s/files/1/1002/3600/1461/files/tw-11134207-7rbk8-madou3ovojue7f.jpg?v=1772502919"
+  ],
+  "featured_image": "//cdn.shopify.com/s/files/1/1002/3600/1461/files/tw-11134207-7rbk8-madou3ovojue7f.jpg?v=1772502919",
+  "options": [{ "name": "Title", "position": 1, "values": ["Default Title"] }],
+  "url": "/products/40802646704",
+  "media": [
+    {
+      "alt": "【日版黑膠】宋冬野《安和橋北》高音質45轉雙片膠有日文側標 現貨",
+      "id": 63504529785013,
+      "position": 1,
+      "preview_image": {
+        "aspect_ratio": 1.0,
+        "height": 800,
+        "width": 800,
+        "src": "https://cdn.shopify.com/s/files/1/1002/3600/1461/files/tw-11134207-7rbk8-madou3ovojue7f.jpg?v=1772502919"
+      },
+      "aspect_ratio": 1.0,
+      "height": 800,
+      "media_type": "image",
+      "src": "https://cdn.shopify.com/s/files/1/1002/3600/1461/files/tw-11134207-7rbk8-madou3ovojue7f.jpg?v=1772502919",
+      "width": 800
+    }
+  ],
+  "requires_selling_plan": false,
+  "selling_plan_groups": []
+}

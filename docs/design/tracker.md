@@ -349,7 +349,8 @@ Each adapter maps its shop's facts onto the shared columns:
 - **Artist and title.** Shops write "Artist - Title edition"; split on the
   first spaced hyphen, strip format words ("黑膠", "2LP", "Vinyl") into
   `format`, and version words ("歐美版", "限量彩膠") into `edition`. Rotten
-  Blues writes "【黑膠】Artist《Title》" instead; its adapter knows that shape.
+  Blues writes "【黑膠】Artist《Title》" instead, sometimes with the pressing
+  after it ("限量7吋透明彩膠EP") or a translated name, which is left out.
   A prefill only: the add form shows it for correction.
 - **Artist names.** The artist part is split where the script changes
   between CJK and Latin, and at "/" — "坂本龍一 Ryuichi Sakamoto" gives
@@ -1237,7 +1238,8 @@ Each step is its own PR.
      (6b-1, _done: `readListingTitle`, `splitArtistNames`,
      `normalizeName`, `availabilityOf`_), the EasyStore adapter (6b-2,
      _done: `EasyStoreAdapter` for THT and Cosmic, checked live 2026-11-19_),
-     the Shopify adapter (6b-3).
+     the Shopify adapter (6b-3, _done: `ShopifyAdapter` for Rotten Blues —
+     sitemaps and `/products/{handle}.js`, checked live 2026-11-19_).
 7. `CatalogEntry` and catalog sync for THT, Cosmic and Rotten Blues; used
    and vinyl flags. The table waits for this step: its columns are settled
    by the shops' catalogs as the sync reads them (§15). **Run by hand** — a

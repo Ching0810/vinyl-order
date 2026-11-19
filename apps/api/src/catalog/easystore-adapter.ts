@@ -6,6 +6,8 @@ import { readListingTitle, splitArtistNames } from './listing-title';
 import { ShopFetcher, type ShopRules } from './shop-fetcher';
 import { sitemapIndexLocs, sitemapProducts } from './sitemap';
 import {
+  catalogEntries,
+  handleFromUrl,
   type ParsedCatalogEntry,
   type ParsedOffer,
   type SupplierAdapter,
@@ -158,44 +160,12 @@ export class EasyStoreAdapter implements SupplierAdapter {
       // not an empty shop: stop rather than let sync delete the catalog.
       if (products.length === 0) throw new ShopPageUnreadable('a product sitemap lists nothing');
 
-      const today = this.today();
-      yield products.flatMap((product) => {
-        const handle = this.handleOf(product.loc);
-        if (handle === null || !product.imageTitle) return [];
-        const read = readListingTitle(product.imageTitle, today);
-        const updated = product.lastmod ? new Date(product.lastmod) : null;
-        return [
-          {
-            externalId: handle,
-            url: product.loc,
-            title: product.imageTitle,
-            imageUrl: product.imageLoc,
-            priceCents: null,
-            isVinyl: read.isVinyl,
-            isUsed: read.isUsed,
-            sourceUpdatedAt: updated && !Number.isNaN(updated.getTime()) ? updated : null,
-          },
-        ];
-      });
+      yield catalogEntries(products, this.today(), (loc) => this.handleOf(loc));
     }
   }
 
-  /** The handle a URL of this shop names, decoded; null for anything else. */
   private handleOf(url: string): string | null {
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return null;
-    }
-    if (!this.shop.hosts.includes(parsed.hostname)) return null;
-    const match = PRODUCT_PATH.exec(parsed.pathname);
-    if (!match) return null;
-    try {
-      return decodeURIComponent(match[1]);
-    } catch {
-      return null;
-    }
+    return handleFromUrl(url, this.shop.hosts, PRODUCT_PATH);
   }
 }
 

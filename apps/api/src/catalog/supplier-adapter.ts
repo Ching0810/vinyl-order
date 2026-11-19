@@ -1,7 +1,9 @@
 import type { Supplier } from '@vinyl-order/shared';
 
 import type { Availability } from '../generated/prisma/enums';
+import { readListingTitle } from './listing-title';
 import type { ShopRules } from './shop-fetcher';
+import type { SitemapProduct } from './sitemap';
 
 /**
  * One shop's listing, read from its product page: §5.2's offer columns, and
@@ -69,6 +71,65 @@ export class ShopPageUnreadable extends Error {
     this.name = 'ShopPageUnreadable';
   }
 }
+
+/**
+ * The handle a product URL of a shop names, decoded; null for any other URL.
+ *
+ * @param url - as pasted, or as a sitemap lists it
+ * @param hosts - the shop's hosts
+ * @param path - the shop's product path, the handle its first group
+ */
+export const handleFromUrl = (
+  url: string,
+  hosts: readonly string[],
+  path: RegExp,
+): string | null => {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!hosts.includes(parsed.hostname)) return null;
+  const match = path.exec(parsed.pathname);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * A product sitemap's listings as catalog entries: the shop's name for each,
+ * flagged from it. A listing that isn't one of the shop's product pages, or
+ * has no name, is left out.
+ *
+ * @param handleOf - the shop's handle for a URL, or null
+ */
+export const catalogEntries = (
+  products: SitemapProduct[],
+  today: string,
+  handleOf: (url: string) => string | null,
+): ParsedCatalogEntry[] =>
+  products.flatMap((product) => {
+    const handle = handleOf(product.loc);
+    if (handle === null || !product.imageTitle) return [];
+    const read = readListingTitle(product.imageTitle, today);
+    const updated = product.lastmod ? new Date(product.lastmod) : null;
+    return [
+      {
+        externalId: handle,
+        url: product.loc,
+        title: product.imageTitle,
+        imageUrl: product.imageLoc,
+        priceCents: null,
+        isVinyl: read.isVinyl,
+        isUsed: read.isUsed,
+        sourceUpdatedAt: updated && !Number.isNaN(updated.getTime()) ? updated : null,
+      },
+    ];
+  });
 
 /** Today in Taipei, `YYYY-MM-DD`: what a title's "12月" is read against. */
 export const taipeiToday = (now: Date = new Date()): string =>

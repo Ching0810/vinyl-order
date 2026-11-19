@@ -154,6 +154,22 @@ describe('Reading listing titles (e2e)', () => {
       });
     });
 
+    it('the pressing after the title, a note after ※ left out', () => {
+      expect(read('【黑膠】Oasis《Some Might Say》限量7吋透明彩膠EP')).toMatchObject({
+        artist: 'Oasis',
+        title: 'Some Might Say',
+        format: 'EP',
+        edition: '限量7吋透明彩膠EP',
+        isVinyl: true,
+      });
+      expect(read('【日版黑膠】宋冬野《安和橋北》高音質45轉雙片膠 ※追加生產預購中')).toMatchObject({
+        title: '安和橋北',
+        format: 'LP',
+        edition: '日版 高音質45轉雙片膠',
+        isPreOrder: true,
+      });
+    });
+
     it('a record', () => {
       expect(read('【黑膠】Test Artist《Sample Album》')).toMatchObject({
         artist: 'Test Artist',
