@@ -16,21 +16,12 @@ import type { Supplier } from '@vinyl-order/shared';
 
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
+import { createSupplierAdapters } from './adapters';
 import {
   CatalogSyncFailed,
   type CatalogSyncReport,
   CatalogSyncService,
 } from './catalog-sync.service';
-import { COSMIC, EasyStoreAdapter, THT } from './easystore-adapter';
-import { ROTTEN_BLUES, ShopifyAdapter } from './shopify-adapter';
-import type { SupplierAdapter } from './supplier-adapter';
-
-/** The shops whose catalogs are read; Candlelight comes with step 11. */
-const ADAPTERS: Partial<Record<Supplier, () => SupplierAdapter>> = {
-  tht: () => new EasyStoreAdapter(THT),
-  cosmic: () => new EasyStoreAdapter(COSMIC),
-  rotten_blues: () => new ShopifyAdapter(ROTTEN_BLUES),
-};
 
 @Module({
   imports: [PrismaModule],
@@ -56,7 +47,8 @@ const summaryOf = (report: CatalogSyncReport): string =>
 
 const main = async (): Promise<number> => {
   const arg = process.argv[2];
-  const known = Object.keys(ADAPTERS) as Supplier[];
+  const adapters = createSupplierAdapters();
+  const known = Object.keys(adapters) as Supplier[];
   const suppliers = arg === 'all' ? known : known.filter((supplier) => supplier === arg);
   if (suppliers.length === 0) {
     logger.error(`Usage: catalog:sync <${known.join(' | ')} | all>`);
@@ -71,7 +63,7 @@ const main = async (): Promise<number> => {
     const sync = app.get(CatalogSyncService);
     for (const supplier of suppliers) {
       try {
-        logger.log(summaryOf(await sync.sync(ADAPTERS[supplier]!())));
+        logger.log(summaryOf(await sync.sync(adapters[supplier]!)));
       } catch (error) {
         failed = true;
         if (!(error instanceof CatalogSyncFailed)) throw error;

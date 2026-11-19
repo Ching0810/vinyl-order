@@ -189,7 +189,9 @@ One row per refresh that **changed** something: `offerId`, `priceCents`,
 `availability`, `stockQty`, `expectedAt`, `takenAt`. Writing only changes
 keeps the table small (most refreshes find nothing new) and makes each row
 an event: "dropped to 1300", "back in stock", "date moved to January".
-Alerts (step 12) read these; nothing else does yet.
+Alerts (step 12) read these; nothing else does yet. **The first is written
+when the offer is**, so history starts at the first price known and the
+first change has something to be a change from.
 
 ### 5.4 `CatalogEntry`: the search index
 
@@ -551,7 +553,19 @@ Adding a record:
 
 1. Search one supplier — the "primary" — and pick an entry.
 2. Its page is fetched (`fetchOffer`); the product is created from it, with
-   its offer.
+   its offer, its artist (§5.7) and the offer's first snapshot, in one
+   transaction. A listing already tracked is refused with its product's id
+   (409 `OFFER_ALREADY_TRACKED`), before the shop is asked. Names owned by
+   two artists are a 409 `ARTIST_AMBIGUOUS` listing them, and the request
+   is sent again with the one meant (`artistId`); a title with no artist is
+   a 422 `ARTIST_UNREAD`, sent again with `artistName`. A page that can't
+   be fetched or read is a 502 and creates nothing.
+
+   **Refreshing** reads each offer's page again, one after another inside
+   the request — a product has at most four. A shop that fails keeps its
+   last good values and records why (`lastErrorAt`, `lastError`); the
+   others still refresh, and the next good read clears the error.
+
 3. The other suppliers' entries are searched with **every name the product
    is known by**: each of its artist's aliases (§5.7) combined with the
    product's title and each attached offer's `sourceTitle`. An entry's score
@@ -1334,7 +1348,8 @@ Each step is its own PR.
 8. API, in three PRs: search (8a); create from catalog and refresh (8b);
    candidates, attach and detach, and artist aliases (8c). Products get
    their `Artist` here; until step 5, the columns the demo store still reads
-   are filled from it (below). _(8a: `GET /admin/catalog/search`.)_
+   are filled from it (below). _(8a: `GET /admin/catalog/search`. 8b: `POST /admin/products/from-catalog`
+   and `POST /admin/products/:id/refresh`.)_
 9. Web: the search page (9a), then the product page's comparison (9b) —
    **the comparison usable**; then the visitors' list, the dashboard
    (§12.2), and the product page's "record an order" and link-a-line.
