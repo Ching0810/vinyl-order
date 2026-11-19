@@ -7,6 +7,7 @@ import { MockPayModule } from '@vinyl-order/mockpay';
 
 import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
+import { CatalogModule } from './catalog/catalog.module';
 import { CategoriesModule } from './categories/categories.module';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
@@ -63,6 +64,7 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
     ),
     CategoriesModule,
     SupplierOrdersModule,
+    CatalogModule,
     StorageModule,
     HealthModule,
   ],

@@ -3,6 +3,7 @@
 
 export * from './auth';
 export * from './cart';
+export * from './catalog';
 export * from './category';
 export * from './order';
 export * from './pagination';

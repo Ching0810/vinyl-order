@@ -266,8 +266,9 @@ export const normalizeName = (name: string): string =>
 /**
  * A listing's title in search form, as `CatalogEntry.searchTitle` stores it:
  * NFKC and lower case, its spaces kept to one so trigrams still see words.
- * Step 8's search settles the rest; a sync rewrites every row, so this can
- * change without a migration.
+ * Punctuation stays: trigrams split words on it already. A search query goes
+ * through the same, so `ＬＰ` finds `lp`. If this changes, the next sync
+ * rewrites every row, since `searchTitle` then differs: no migration.
  */
 export const searchTitleOf = (title: string): string =>
   title.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
