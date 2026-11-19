@@ -23,6 +23,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json --runInBand",
     "typecheck": "tsc --noEmit",
+    "catalog:sync": "nest build && node dist/catalog/sync-cli.js",
     "postinstall": "prisma generate"
   },
   "dependencies": {
