@@ -327,6 +327,14 @@ swap in a fake.
 `ParsedOffer` is §5.2's columns plus what the product prefill needs (`title`,
 `artistNames`, `imageUrl`, `format`, `edition`, `barcode`).
 
+**⚖️ Decision: a listing's `externalId` is its handle** — the last part of
+its product URL (`山本剛-daahoud-lp`, Rotten Blues' `44471187690`) — not the
+shop's numeric product id. The sitemaps give only the URL, and the offer
+must carry the same id as the catalog entry it was created from, or the
+two can't be told apart as one listing. A shop that renames a product
+changes its handle: the old offer's refresh then fails, labelled (§6.3),
+and the next sync lists the new entry to attach.
+
 ### 6.2 Normalising
 
 Each adapter maps its shop's facts onto the shared columns:
@@ -1227,8 +1235,9 @@ Each step is its own PR.
      normalised (§6.2), against saved public pages. The shops were
      re-checked by hand first (§4, 2026-11-19). Three PRs: reading titles
      (6b-1, _done: `readListingTitle`, `splitArtistNames`,
-     `normalizeName`, `availabilityOf`_), the EasyStore adapter (6b-2), the
-     Shopify adapter (6b-3).
+     `normalizeName`, `availabilityOf`_), the EasyStore adapter (6b-2,
+     _done: `EasyStoreAdapter` for THT and Cosmic, checked live 2026-11-19_),
+     the Shopify adapter (6b-3).
 7. `CatalogEntry` and catalog sync for THT, Cosmic and Rotten Blues; used
    and vinyl flags. The table waits for this step: its columns are settled
    by the shops' catalogs as the sync reads them (§15). **Run by hand** — a
