@@ -272,3 +272,9 @@ export const normalizeName = (name: string): string =>
  */
 export const searchTitleOf = (title: string): string =>
   title.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * A `LIKE` pattern finding `text` anywhere in a search title. A `%` or `_` in
+ * it is meant as itself, not as a wildcard.
+ */
+export const containsPattern = (text: string): string => `%${text.replace(/[\\%_]/g, '\\$&')}%`;

@@ -4,6 +4,7 @@ import type { ProductWithOffers } from '@vinyl-order/shared';
 import type { Offer } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SUPPLIER_ADAPTERS, type SupplierAdapters } from './adapters';
+import { syncDemoPrice } from './demo-price';
 import { findProductWithOffers, offerValuesOf, snapshotOf } from './product-with-offers.mapper';
 import { ShopFetchError } from './shop-fetcher';
 import { ShopPageUnreadable } from './supplier-adapter';
@@ -30,17 +31,10 @@ export class OfferRefreshService {
     if (!product?.artistId) throw new NotFoundException('Product not found');
 
     for (const offer of product.offers) await this.refreshOffer(offer);
+    await syncDemoPrice(this.prisma, productId);
 
     const refreshed = await findProductWithOffers(this.prisma, productId);
     if (!refreshed) throw new NotFoundException('Product not found');
-    const [first] = refreshed.offers;
-    if (first) {
-      // The demo store's price, read until step 5 drops it (§14).
-      await this.prisma.product.update({
-        where: { id: productId },
-        data: { priceCents: first.priceCents, currency: first.currency },
-      });
-    }
     return refreshed;
   }
 

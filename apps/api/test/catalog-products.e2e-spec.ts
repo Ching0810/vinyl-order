@@ -4,6 +4,9 @@ import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import {
+  type AttachOfferResult,
+  attachOfferResultSchema,
+  type CatalogSearchHit,
   type ProductWithOffers,
   productWithOffersSchema,
   type Supplier,
@@ -39,9 +42,12 @@ describe('Records from the catalog (e2e)', () => {
   const pages = new Map<string, ParsedOffer | Error>();
   const fetched: string[] = [];
 
+  /** Each fake shop's host, as a pasted link names it. */
+  const hostOf = (supplier: Supplier) => `www.${supplier.replace('_', '-')}.test`;
+
   const fakeAdapter = (supplier: Supplier): SupplierAdapter => ({
     supplier,
-    rules: { hosts: [], paths: [] },
+    rules: { hosts: [hostOf(supplier)], paths: [] },
     fetchOffer: (url: string) => {
       fetched.push(url);
       const page = pages.get(url);
@@ -100,7 +106,7 @@ describe('Records from the catalog (e2e)', () => {
     overrides: Partial<ParsedOffer> = {},
   ): Promise<{ entryId: string; url: string; offer: ParsedOffer }> => {
     const externalId = `handle-${randomUUID()}`;
-    const url = `https://www.example-shop.test/products/${externalId}`;
+    const url = `https://${hostOf(supplier)}/products/${externalId}`;
     const offer: ParsedOffer = {
       externalId,
       url,
@@ -442,6 +448,200 @@ describe('Records from the catalog (e2e)', () => {
 
       await refresh(demo.id).expect(404);
       await refresh(randomUUID()).expect(404);
+    });
+  });
+
+  describe('candidates at the other shops', () => {
+    const candidatesOf = async (productId: string) =>
+      (await server().get(`/admin/products/${productId}/candidates`).set(auth(admin)).expect(200))
+        .body as CatalogSearchHit[];
+
+    /** A catalog listing only: a candidate, not yet anything's offer. */
+    const listed = (supplier: Supplier, sourceTitle: string, flags: Partial<ParsedOffer> = {}) =>
+      listing(supplier, { sourceTitle, ...flags });
+
+    it('finds the record by the artist, best album title first, at the shops it isn’t at', async () => {
+      const { entryId } = await listing('tht', {
+        sourceTitle: '坂本龍一 Ryuichi Sakamoto - async 2LP',
+        title: 'async',
+      });
+      const product = await created({ catalogEntryId: entryId });
+      await listed('cosmic', '坂本龍一 RYUICHI SAKAMOTO - Async（黑膠唱片 2LP）');
+      await listed('cosmic', '坂本龍一 Ryuichi Sakamoto - To the Moon and Back（黑膠唱片 LP）');
+      await listed('rotten_blues', '【日版黑膠】坂本龍一《async》雙片黑膠唱片 180克重量盤');
+      // Another artist's record, with the same album title.
+      await listed('cosmic', 'Somebody Else - Async LP');
+      // At THT, which has the record already.
+      await listed('tht', '坂本龍一 Ryuichi Sakamoto - async (Remodels) 2LP');
+
+      const candidates = await candidatesOf(product.id);
+
+      expect(candidates.map((hit) => [hit.supplier, hit.title])).toEqual([
+        ['cosmic', '坂本龍一 RYUICHI SAKAMOTO - Async（黑膠唱片 2LP）'],
+        ['cosmic', '坂本龍一 Ryuichi Sakamoto - To the Moon and Back（黑膠唱片 LP）'],
+        ['rotten_blues', '【日版黑膠】坂本龍一《async》雙片黑膠唱片 180克重量盤'],
+      ]);
+      expect(candidates[0].score).toBe(1);
+      expect(candidates[1].score).toBeLessThan(0.5);
+    });
+
+    it('finds a listing that names the artist only in another script, by an alias', async () => {
+      const { entryId } = await listing('rotten_blues', {
+        sourceTitle: '【日版黑膠】坂本龍一《1996》',
+        title: '1996',
+        artistNames: ['坂本龍一'],
+      });
+      const product = await created({ catalogEntryId: entryId });
+      await prisma.artistAlias.create({
+        data: {
+          artistId: product.artist.id,
+          name: 'Ryuichi Sakamoto',
+          normalized: normalizeName('Ryuichi Sakamoto'),
+        },
+      });
+      await listed('cosmic', 'Ryuichi Sakamoto - 1996 (黑膠唱片LP)');
+
+      expect((await candidatesOf(product.id)).map((hit) => hit.title)).toEqual([
+        'Ryuichi Sakamoto - 1996 (黑膠唱片LP)',
+      ]);
+    });
+
+    it('leaves out listings tracked under another record, used records and other goods', async () => {
+      const { entryId } = await listing('tht', { title: '1996' });
+      const product = await created({ catalogEntryId: entryId });
+      // The same record at Cosmic, but tracked under a record of its own.
+      const elsewhere = await listing('cosmic', { title: '1996' });
+      await created({ catalogEntryId: elsewhere.entryId });
+      const used = await listed('cosmic', '坂本龍一 - 1996 LP (二手)');
+      await prisma.catalogEntry.update({ where: { id: used.entryId }, data: { isUsed: true } });
+      const cd = await listed('rotten_blues', '坂本龍一 - 1996 CD');
+      await prisma.catalogEntry.update({ where: { id: cd.entryId }, data: { isVinyl: false } });
+
+      expect(await candidatesOf(product.id)).toEqual([]);
+    });
+
+    it('takes up to five a shop', async () => {
+      const { entryId } = await listing('tht', { title: '1996' });
+      const product = await created({ catalogEntryId: entryId });
+      for (let index = 0; index < 7; index += 1) {
+        await listed('cosmic', `坂本龍一 - Record ${index} LP`);
+      }
+
+      expect(await candidatesOf(product.id)).toHaveLength(5);
+    });
+
+    it('404 for a record that isn’t tracked', async () => {
+      await server().get(`/admin/products/${randomUUID()}/candidates`).set(auth(admin)).expect(404);
+    });
+  });
+
+  describe('attaching and detaching offers', () => {
+    const attach = (productId: string, body: object) =>
+      server().post(`/admin/products/${productId}/offers`).set(auth(admin)).send(body);
+
+    const detach = (offerId: string) =>
+      server().delete(`/admin/offers/${offerId}`).set(auth(admin));
+
+    it('attaches a confirmed candidate, and proposes the names its shop wrote', async () => {
+      const { entryId } = await listing('tht', { artistNames: ['坂本龍一'] });
+      const product = await created({ catalogEntryId: entryId });
+      const cosmic = await listing('cosmic', {
+        priceCents: 140_000,
+        artistNames: ['坂本龍一', 'RYUICHI SAKAMOTO'],
+      });
+
+      const response = await attach(product.id, { catalogEntryId: cosmic.entryId }).expect(201);
+      const result = response.body as AttachOfferResult;
+
+      expect(attachOfferResultSchema.parse(result)).toEqual(result);
+      expect(result.product.offers.map((offer) => [offer.supplier, offer.priceCents])).toEqual([
+        ['tht', 150_000],
+        ['cosmic', 140_000],
+      ]);
+      expect(result.proposedAliases).toEqual(['RYUICHI SAKAMOTO']);
+      // Proposed, not added.
+      expect(await aliasesOf(product.artist.id)).toEqual(['坂本龍一']);
+      expect(await snapshotsOf(result.product.offers[1].id)).toHaveLength(1);
+    });
+
+    it('attaches a pasted link, the shop known by its host', async () => {
+      const { entryId } = await listing('tht');
+      const product = await created({ catalogEntryId: entryId });
+      // A listing the catalog hasn't copied yet: only the shop's page has it.
+      const url = `https://${hostOf('rotten_blues')}/products/new-arrival`;
+      pages.set(url, { ...(await listing('rotten_blues')).offer, externalId: 'new-arrival', url });
+
+      const result = (await attach(product.id, { url }).expect(201)).body as AttachOfferResult;
+
+      expect(result.product.offers.map((offer) => offer.externalId)).toContain('new-arrival');
+    });
+
+    it('refuses a link to no shop it reads, and a body with both or neither', async () => {
+      const { entryId } = await listing('tht');
+      const product = await created({ catalogEntryId: entryId });
+
+      expect(
+        (await attach(product.id, { url: 'https://www.elsewhere.test/products/x' }).expect(422))
+          .body,
+      ).toMatchObject({ code: 'SHOP_NOT_SUPPORTED' });
+      await attach(product.id, {}).expect(400);
+      await attach(product.id, {
+        catalogEntryId: randomUUID(),
+        url: `https://${hostOf('tht')}/products/x`,
+      }).expect(400);
+      await attach(product.id, { url: `http://${hostOf('tht')}/products/x` }).expect(400);
+    });
+
+    it('refuses a listing tracked already, by this record or another', async () => {
+      const first = await listing('tht');
+      const product = await created({ catalogEntryId: first.entryId });
+
+      expect(
+        (await attach(product.id, { catalogEntryId: first.entryId }).expect(409)).body,
+      ).toMatchObject({ code: 'OFFER_ALREADY_TRACKED', productId: product.id });
+      expect((await attach(product.id, { url: first.url }).expect(409)).body).toMatchObject({
+        code: 'OFFER_ALREADY_TRACKED',
+      });
+    });
+
+    it('says why when the page can’t be read, and attaches nothing', async () => {
+      const { entryId } = await listing('tht');
+      const product = await created({ catalogEntryId: entryId });
+      const cosmic = await listing('cosmic');
+      pages.set(cosmic.url, new ShopFetchError('failed', 'answered 503', true));
+
+      await attach(product.id, { catalogEntryId: cosmic.entryId }).expect(502);
+      expect(await prisma.offer.count({ where: { productId: product.id } })).toBe(1);
+    });
+
+    it('detaches a wrong match, its history with it, and the demo price follows', async () => {
+      const { entryId } = await listing('tht');
+      const product = await created({ catalogEntryId: entryId });
+      const cosmic = await listing('cosmic', { priceCents: 140_000 });
+      const attached = (await attach(product.id, { catalogEntryId: cosmic.entryId }).expect(201))
+        .body as AttachOfferResult;
+      const [thtOffer, cosmicOffer] = attached.product.offers;
+
+      await detach(cosmicOffer.id).expect(204);
+      expect(await prisma.offer.findUnique({ where: { id: cosmicOffer.id } })).toBeNull();
+      expect(await snapshotsOf(cosmicOffer.id)).toEqual([]);
+
+      // With the first one gone, the demo store's price is the next one's.
+      await attach(product.id, { catalogEntryId: cosmic.entryId }).expect(201);
+      await detach(thtOffer.id).expect(204);
+      expect(
+        (await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).priceCents,
+      ).toBe(140_000);
+    });
+
+    it('keeps a record’s last offer, and 404s an offer that isn’t there', async () => {
+      const { entryId } = await listing('tht');
+      const product = await created({ catalogEntryId: entryId });
+
+      expect((await detach(product.offers[0].id).expect(409)).body).toMatchObject({
+        code: 'LAST_OFFER',
+      });
+      await detach(randomUUID()).expect(404);
     });
   });
 });

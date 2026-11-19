@@ -1,21 +1,10 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type {
-  CreateProductFromCatalogInput,
-  ProductWithOffers,
-  Supplier,
-} from '@vinyl-order/shared';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import type { CreateProductFromCatalogInput, ProductWithOffers } from '@vinyl-order/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { violatesUniqueIndex } from '../prisma/unique-violation';
-import { SUPPLIER_ADAPTERS, type SupplierAdapters } from './adapters';
 import { resolveArtist } from './artist-resolver';
-import { offerConflict, offerUnprocessable, shopPageUnreadable } from './offer.errors';
-import { findProductWithOffers, offerValuesOf, snapshotOf } from './product-with-offers.mapper';
-import { ShopFetchError } from './shop-fetcher';
-import { type ParsedOffer, ShopPageUnreadable } from './supplier-adapter';
-
-/** The index that keeps a shop's listing under one record. */
-const OFFER_LISTING_INDEX = 'Offer_supplier_externalId_key';
+import { ListingReader, offerCreateOf } from './listing-reader';
+import { findProductWithOffers } from './product-with-offers.mapper';
 
 /**
  * Creates a record from a catalog listing (tracker.md §7.3, step 2): the
@@ -25,7 +14,7 @@ const OFFER_LISTING_INDEX = 'Offer_supplier_externalId_key';
 export class ProductFromCatalogService {
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(SUPPLIER_ADAPTERS) private readonly adapters: SupplierAdapters,
+    private readonly listings: ListingReader,
   ) {}
 
   /**
@@ -39,19 +28,14 @@ export class ProductFromCatalogService {
     });
     if (!entry) throw new NotFoundException('Catalog entry not found');
 
-    const adapter = this.adapters[entry.supplier];
-    if (!adapter) {
-      throw offerUnprocessable('SHOP_NOT_SUPPORTED', 'This shop can’t be read yet.');
-    }
+    const adapter = this.listings.adapterFor(entry.supplier);
     // Before fetching: a listing already tracked needs no request to the shop.
-    await this.refuseIfTracked(entry.supplier, entry.externalId);
+    await this.listings.refuseIfTracked(entry.supplier, entry.externalId);
+    const parsed = await this.listings.read(adapter, entry.url);
+    const offer = offerCreateOf(entry.supplier, parsed, new Date());
 
-    const parsed = await readOffer(() => adapter.fetchOffer(entry.url));
-    const offer = offerValuesOf(parsed);
-    const now = new Date();
-
-    try {
-      const id = await this.prisma.$transaction(async (tx) => {
+    const id = await this.prisma
+      .$transaction(async (tx) => {
         const artist = await resolveArtist(tx, parsed.artistNames, input);
         const product = await tx.product.create({
           data: {
@@ -65,54 +49,18 @@ export class ProductFromCatalogService {
             priceCents: offer.priceCents,
             currency: offer.currency,
             stock: 0,
-            offers: {
-              create: {
-                supplier: entry.supplier,
-                externalId: parsed.externalId,
-                ...offer,
-                lastCheckedAt: now,
-                // History starts at the first price known (§5.3).
-                snapshots: { create: { ...snapshotOf(offer), takenAt: now } },
-              },
-            },
+            offers: { create: offer },
           },
           select: { id: true },
         });
         return product.id;
-      });
-      const created = await findProductWithOffers(this.prisma, id);
-      if (!created) throw new Error(`Product ${id} vanished after it was created`);
-      return created;
-    } catch (error) {
-      // Another request tracked it while this one read the shop.
-      if (violatesUniqueIndex(error, OFFER_LISTING_INDEX)) {
-        await this.refuseIfTracked(entry.supplier, parsed.externalId);
-      }
-      throw error;
-    }
-  }
+      })
+      .catch((error: unknown) =>
+        this.listings.rethrowIfTracked(error, entry.supplier, parsed.externalId),
+      );
 
-  private async refuseIfTracked(supplier: Supplier, externalId: string): Promise<void> {
-    const tracked = await this.prisma.offer.findUnique({
-      where: { supplier_externalId: { supplier, externalId } },
-      select: { productId: true },
-    });
-    if (tracked) {
-      throw offerConflict('OFFER_ALREADY_TRACKED', 'This listing is already tracked.', {
-        productId: tracked.productId,
-      });
-    }
+    const created = await findProductWithOffers(this.prisma, id);
+    if (!created) throw new Error(`Product ${id} vanished after it was created`);
+    return created;
   }
 }
-
-/** A shop's page read, or a 502 saying why it couldn't be. */
-const readOffer = async (fetch: () => Promise<ParsedOffer>): Promise<ParsedOffer> => {
-  try {
-    return await fetch();
-  } catch (error) {
-    if (error instanceof ShopFetchError || error instanceof ShopPageUnreadable) {
-      throw shopPageUnreadable(error.message);
-    }
-    throw error;
-  }
-};
