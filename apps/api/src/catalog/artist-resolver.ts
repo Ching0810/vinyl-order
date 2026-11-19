@@ -68,10 +68,10 @@ const ownerOf = async (tx: Prisma.TransactionClient, names: AliasName[]) => {
   return owners[0] ?? null;
 };
 
-type AliasName = { name: string; normalized: string };
+export type AliasName = { name: string; normalized: string };
 
 /** Each name once by its search form, in the order written; empty ones out. */
-const uniqueByNormalized = (names: string[]): AliasName[] => {
+export const uniqueByNormalized = (names: string[]): AliasName[] => {
   const seen = new Set<string>();
   const result: AliasName[] = [];
   for (const raw of names) {

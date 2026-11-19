@@ -3,7 +3,7 @@ import type { CatalogSearchHit, CatalogSearchQuery } from '@vinyl-order/shared';
 
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { searchTitleOf } from './listing-title';
+import { containsPattern, searchTitleOf } from './listing-title';
 
 /**
  * Hits returned, best first. No paging: hits ranked by score don't page by
@@ -32,13 +32,11 @@ export class CatalogSearchService {
 
   async search({ q, supplier, used, nonVinyl }: CatalogSearchQuery): Promise<CatalogSearchHit[]> {
     const query = searchTitleOf(q);
-    // A `%` or `_` typed is meant as itself, not as LIKE's wildcard.
-    const substring = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
     return this.prisma.$queryRaw<CatalogSearchHit[]>`
       SELECT "id", "supplier", "url", "title", "imageUrl", "isVinyl", "isUsed",
              word_similarity(${query}, "searchTitle") AS "score"
       FROM "CatalogEntry"
-      WHERE (${query} <% "searchTitle" OR "searchTitle" LIKE ${substring})
+      WHERE (${query} <% "searchTitle" OR "searchTitle" LIKE ${containsPattern(query)})
         ${supplier ? Prisma.sql`AND "supplier" = ${supplier}::"Supplier"` : Prisma.empty}
         ${used ? Prisma.empty : Prisma.sql`AND NOT "isUsed"`}
         ${nonVinyl ? Prisma.empty : Prisma.sql`AND "isVinyl"`}

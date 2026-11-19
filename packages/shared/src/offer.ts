@@ -61,7 +61,32 @@ export const createProductFromCatalogSchema = z.object({
 export type CreateProductFromCatalogInput = z.infer<typeof createProductFromCatalogSchema>;
 
 /**
- * Why creating a record from a listing, or refreshing one, was refused — a
+ * POST /admin/products/:id/offers: the listing to attach — a candidate
+ * picked (`catalogEntryId`) or a link pasted (`url`), exactly one.
+ */
+export const attachOfferSchema = z
+  .object({
+    catalogEntryId: z.uuid().optional(),
+    url: z.url({ protocol: /^https$/ }).optional(),
+  })
+  .refine((body) => (body.catalogEntryId === undefined) !== (body.url === undefined), {
+    message: 'Send a catalogEntryId or a url, not both',
+  });
+export type AttachOfferInput = z.infer<typeof attachOfferSchema>;
+
+/**
+ * The record with the offer attached, and the artist names that shop wrote
+ * which the artist doesn't have yet: proposed, not added — kept or dropped
+ * on the product page (§5.7).
+ */
+export const attachOfferResultSchema = z.object({
+  product: productWithOffersSchema,
+  proposedAliases: z.array(z.string()),
+});
+export type AttachOfferResult = z.infer<typeof attachOfferResultSchema>;
+
+/**
+ * Why creating a record, or attaching or detaching an offer, was refused — a
  * code so the page can branch without matching on text.
  *
  * - `OFFER_ALREADY_TRACKED` (409): the listing is already an offer; the body
@@ -72,6 +97,8 @@ export type CreateProductFromCatalogInput = z.infer<typeof createProductFromCata
  *   `artistName`.
  * - `SHOP_NOT_SUPPORTED` (422): no adapter reads this shop yet.
  * - `SHOP_PAGE_UNREADABLE` (502): the shop's page couldn't be fetched or read.
+ * - `LAST_OFFER` (409): a record keeps at least one offer; delete the record
+ *   instead.
  */
 export const offerErrorCodeSchema = z.enum([
   'OFFER_ALREADY_TRACKED',
@@ -79,5 +106,6 @@ export const offerErrorCodeSchema = z.enum([
   'ARTIST_UNREAD',
   'SHOP_NOT_SUPPORTED',
   'SHOP_PAGE_UNREADABLE',
+  'LAST_OFFER',
 ]);
 export type OfferErrorCode = z.infer<typeof offerErrorCodeSchema>;

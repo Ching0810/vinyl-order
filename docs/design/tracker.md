@@ -567,15 +567,35 @@ Adding a record:
    others still refresh, and the next good read clears the error.
 
 3. The other suppliers' entries are searched with **every name the product
-   is known by**: each of its artist's aliases (§5.7) combined with the
-   product's title and each attached offer's `sourceTitle`. An entry's score
-   is its best similarity over those combinations, so "坂本龍一 1996" at one
-   shop and "Ryuichi Sakamoto – 1996" at another both find it. **A barcode
-   match**, when both sides have one, ranks first.
+   is known by**, artist and album apart: **a listing must name the artist
+   by one of its aliases** (§5.7; word similarity at 0.6, or the alias as a
+   substring, as search does for CJK), and **among those, the closer album
+   title ranks higher** — the product's title, and each attached offer's
+   title read from its `sourceTitle`, the best of them. So "坂本龍一 1996"
+   at one shop and "Ryuichi Sakamoto – 1996" at another both find it. Only
+   the shops it has no offer at, only listings no record tracks, new vinyl
+   only; five a shop.
+
+   Measured on the copied catalogs first (2026-11-19): artist and title as
+   one query let common words carry it — "30th Anniversary Edition" put
+   other artists' reissues at 0.7 and buried the same record under a
+   shorter name. Split, the same record ranks first at each shop and the
+   artist's other records trail at 0.17 or less; there is no title cut-off,
+   so a different pressing under a shorter name still shows. 20 ms locally.
+
+   **Not by barcode yet.** The catalogs carry none — a barcode comes only
+   with a listing's page — and reading every candidate's page for one would
+   be dozens of requests a lookup. Once offers are attached, their pages
+   have been read; ranking or checking by barcode can start there.
+
 4. The top candidates per supplier are listed with their own names and
-   covers, and **I confirm each one**. A confirmed candidate's page is
-   fetched into an offer, and the artist names in its title are proposed as
-   new aliases (§5.7).
+   covers, and **I confirm each one**. A confirmed candidate's page — or a
+   pasted link's, the shop known by its host — is fetched into an offer
+   with its first snapshot, and the artist names in its title the artist
+   lacks are **proposed** as new aliases (§5.7), not added: a wrong match
+   would otherwise teach the artist a stranger's name. A wrong match is
+   detached, its history with it; **a record keeps at least one offer**
+   (409 `LAST_OFFER`) — the record itself is what's deleted then.
 
 **⚖️ Decision: confirm, don't auto-attach.** The cases that matter are the
 hard ones: "歐美版" against "日版", a colour variant, a reissue. Similar
@@ -1349,7 +1369,8 @@ Each step is its own PR.
    candidates, attach and detach, and artist aliases (8c). Products get
    their `Artist` here; until step 5, the columns the demo store still reads
    are filled from it (below). _(8a: `GET /admin/catalog/search`. 8b: `POST /admin/products/from-catalog`
-   and `POST /admin/products/:id/refresh`.)_
+   and `POST /admin/products/:id/refresh`. 8c-1: candidates, attach and
+   detach.)_
 9. Web: the search page (9a), then the product page's comparison (9b) —
    **the comparison usable**; then the visitors' list, the dashboard
    (§12.2), and the product page's "record an order" and link-a-line.
