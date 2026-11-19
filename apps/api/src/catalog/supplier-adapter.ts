@@ -49,6 +49,17 @@ export interface ParsedCatalogEntry {
   sourceUpdatedAt: Date | null;
 }
 
+/** One sitemap file's listings. */
+export interface CatalogBatch {
+  entries: ParsedCatalogEntry[];
+  /**
+   * Read from a file the shop's sitemap index listed. Only a catalog read
+   * wholly from its index is known to be complete, so only then does a sync
+   * delete what it didn't list (§7.2).
+   */
+  listedByIndex: boolean;
+}
+
 /** A shop's pages, read into the shared shapes (tracker.md §6.1). */
 export interface SupplierAdapter {
   supplier: Supplier;
@@ -57,7 +68,7 @@ export interface SupplierAdapter {
   /** Read one product page into an offer. */
   fetchOffer(url: string): Promise<ParsedOffer>;
   /** Walk the shop's public catalog, a sitemap file at a time. */
-  syncCatalog(): AsyncIterable<ParsedCatalogEntry[]>;
+  syncCatalog(): AsyncIterable<CatalogBatch>;
 }
 
 /**
@@ -130,6 +141,18 @@ export const catalogEntries = (
       },
     ];
   });
+
+/**
+ * A page's JSON, or null when it isn't JSON — for the caller's schema to
+ * refuse, so a broken page is unreadable rather than a crash.
+ */
+export const parseJson = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
 
 /** Today in Taipei, `YYYY-MM-DD`: what a title's "12月" is read against. */
 export const taipeiToday = (now: Date = new Date()): string =>

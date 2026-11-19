@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { COSMIC, EasyStoreAdapter, THT } from '../src/catalog/easystore-adapter';
-import { ShopFetcher } from '../src/catalog/shop-fetcher';
-import type { ParsedCatalogEntry } from '../src/catalog/supplier-adapter';
+import { ShopFetcher, ShopFetchError } from '../src/catalog/shop-fetcher';
+import type { CatalogBatch, ParsedCatalogEntry } from '../src/catalog/supplier-adapter';
 import { ShopPageUnreadable } from '../src/catalog/supplier-adapter';
 
 /**
@@ -27,8 +27,11 @@ const THT_PRE_ORDER =
 const COSMIC_PAGE =
   'https://www.cosmicmusicrecord.com/products/-wham-last-christmas-代購-黑膠唱片-lp';
 
-/** A fetcher that answers from fixtures, keyed by the URL as fetched. */
-const fakeFetcher = (pages: Record<string, string>) => {
+/**
+ * A fetcher that answers from fixtures, keyed by the URL as fetched; an
+ * Error stands for a fetch that failed.
+ */
+const fakeFetcher = (pages: Record<string, string | Error>) => {
   const byHref = Object.fromEntries(
     Object.entries(pages).map(([url, body]) => [new URL(url).href, body]),
   );
@@ -38,6 +41,7 @@ const fakeFetcher = (pages: Record<string, string>) => {
     fetchText: (url: string) => {
       asked.push(url);
       const body = byHref[url];
+      if (body instanceof Error) return Promise.reject(body);
       return body === undefined
         ? Promise.reject(new Error(`no fixture for ${url}`))
         : Promise.resolve(body);
@@ -45,15 +49,22 @@ const fakeFetcher = (pages: Record<string, string>) => {
   };
 };
 
-const tht = (pages: Record<string, string>) => {
+const tht = (pages: Record<string, string | Error>) => {
   const fetcher = fakeFetcher(pages);
   return { adapter: new EasyStoreAdapter(THT, { fetcher, today: () => TODAY }), fetcher };
 };
 
-const collect = async (entries: AsyncIterable<ParsedCatalogEntry[]>) => {
-  const batches: ParsedCatalogEntry[][] = [];
-  for await (const batch of entries) batches.push(batch);
-  return batches;
+/** Each batch's entries, and whether every batch came from the index. */
+const collect = async (batches: AsyncIterable<CatalogBatch>) => {
+  const entries: ParsedCatalogEntry[][] = [];
+  for await (const batch of batches) entries.push(batch.entries);
+  return entries;
+};
+
+const listedByIndex = async (batches: AsyncIterable<CatalogBatch>) => {
+  const flags: boolean[] = [];
+  for await (const batch of batches) flags.push(batch.listedByIndex);
+  return flags;
 };
 
 describe('EasyStore adapter (e2e)', () => {
@@ -283,6 +294,84 @@ describe('EasyStore adapter (e2e)', () => {
       await expect(collect(adapter.syncCatalog())).rejects.toThrow(
         new ShopPageUnreadable('a product sitemap lists nothing'),
       );
+    });
+
+    describe('when the index fails: the files in turn, listed by no index', () => {
+      const INDEX = 'https://www.thtrecords.com/sitemap_products.xml';
+      const file = (n: number) => `https://www.thtrecords.com/sitemap_products_${n}.xml`;
+      const timedOut = new ShopFetchError('failed', 'timed out', true);
+
+      /** A sitemap file of `count` products, numbered from `from`. */
+      const sitemapOf = (from: number, count: number) =>
+        `<urlset>${Array.from(
+          { length: count },
+          (_, i) =>
+            `<url><loc>https://www.thtrecords.com/products/record-${from + i}</loc>` +
+            `<image:image><image:title>Test Artist - Record ${from + i} LP</image:title></image:image></url>`,
+        ).join('')}</urlset>`;
+
+      it('reads 1, 2, … and ends at the file with fewer than 300', async () => {
+        const { adapter, fetcher } = tht({
+          [INDEX]: timedOut,
+          [file(1)]: sitemapOf(1, 300),
+          [file(2)]: sitemapOf(301, 300),
+          [file(3)]: sitemapOf(601, 246),
+        });
+
+        const batches = await collect(adapter.syncCatalog());
+
+        expect(batches.map((batch) => batch.length)).toEqual([300, 300, 246]);
+        expect(fetcher.asked).toEqual([INDEX, file(1), file(2), file(3)]);
+      });
+
+      it('ends at a file the same as the one before: past the last, EasyStore answers the last again', async () => {
+        const { adapter, fetcher } = tht({
+          [INDEX]: timedOut,
+          [file(1)]: sitemapOf(1, 300),
+          [file(2)]: sitemapOf(1, 300),
+        });
+
+        expect((await collect(adapter.syncCatalog())).map((batch) => batch.length)).toEqual([300]);
+        expect(fetcher.asked).toEqual([INDEX, file(1), file(2)]);
+      });
+
+      it('stops at 200 files whatever happens', async () => {
+        const pages: Record<string, string | Error> = { [INDEX]: timedOut };
+        for (let n = 1; n <= 201; n += 1) pages[file(n)] = sitemapOf(n * 1000, 300);
+        const { adapter } = tht(pages);
+
+        expect(await collect(adapter.syncCatalog())).toHaveLength(200);
+      });
+
+      it('says no batch was listed by the index, so nothing is deleted', async () => {
+        const { adapter } = tht({ [INDEX]: timedOut, [file(1)]: sitemapOf(1, 12) });
+
+        expect(await listedByIndex(adapter.syncCatalog())).toEqual([false]);
+      });
+
+      it('an empty first file is unreadable, not an empty shop', async () => {
+        const { adapter } = tht({ [INDEX]: timedOut, [file(1)]: '<urlset></urlset>' });
+
+        await expect(collect(adapter.syncCatalog())).rejects.toThrow(
+          new ShopPageUnreadable('a product sitemap lists nothing'),
+        );
+      });
+
+      it('a fetch the rules refuse is not a failed index: it stops', async () => {
+        const { adapter } = tht({ [INDEX]: new ShopFetchError('refused', 'not https') });
+
+        await expect(collect(adapter.syncCatalog())).rejects.toMatchObject({ kind: 'refused' });
+      });
+    });
+
+    it('a catalog read from its index says so', async () => {
+      const { adapter } = tht({
+        'https://www.thtrecords.com/sitemap_products.xml': index,
+        [SITEMAP_1]: fixture('easystore-sitemap-tht.xml'),
+        [SITEMAP_2]: fixture('easystore-sitemap-tht.xml'),
+      });
+
+      expect(await listedByIndex(adapter.syncCatalog())).toEqual([true, true]);
     });
 
     it('stops at an index that lists no sitemaps', async () => {

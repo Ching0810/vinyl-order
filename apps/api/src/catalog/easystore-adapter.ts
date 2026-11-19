@@ -3,11 +3,13 @@ import { z } from 'zod';
 
 import { availabilityOf } from './availability';
 import { readListingTitle, splitArtistNames } from './listing-title';
-import { ShopFetcher, type ShopRules } from './shop-fetcher';
-import { sitemapIndexLocs, sitemapProducts } from './sitemap';
+import { ShopFetcher, ShopFetchError, type ShopRules } from './shop-fetcher';
+import { sitemapIndexLocs, type SitemapProduct, sitemapProducts } from './sitemap';
 import {
+  type CatalogBatch,
   catalogEntries,
   handleFromUrl,
+  parseJson,
   type ParsedCatalogEntry,
   type ParsedOffer,
   type SupplierAdapter,
@@ -43,6 +45,12 @@ const PATHS = ['/products/', '/sitemap_products'];
 const PRODUCT_PATH = /^\/products\/([^/]+)\/?$/;
 
 const SCHEMA_ORG = 'https://schema.org/';
+
+/** Products per sitemap file; the last file holds fewer (§4). */
+const PER_FILE = 300;
+
+/** Where a walk without the index stops whatever happens: ~60 000 products. */
+const MAX_FILES = 200;
 
 /** The page's JSON-LD Product: name, price and availability. */
 const productLd = z.object({
@@ -149,8 +157,25 @@ export class EasyStoreAdapter implements SupplierAdapter {
     };
   }
 
-  async *syncCatalog(): AsyncIterable<ParsedCatalogEntry[]> {
-    const index = await this.fetcher.fetchText(`${this.shop.origin}/sitemap_products.xml`);
+  /**
+   * The catalog, a sitemap file at a time: the files the index lists, or —
+   * when the index can't be fetched — the files in turn.
+   *
+   * An index built on request can take over a minute, or end in a 504,
+   * while the files it lists answer at once (§4). So a failed index falls
+   * back to reading `sitemap_products_1.xml`, `_2`, …
+   * Those batches aren't listed by the index: the sync then adds and
+   * updates, but deletes nothing (§7.2).
+   */
+  async *syncCatalog(): AsyncIterable<CatalogBatch> {
+    let index: string;
+    try {
+      index = await this.fetcher.fetchText(`${this.shop.origin}/sitemap_products.xml`);
+    } catch (error) {
+      if (!(error instanceof ShopFetchError) || error.kind !== 'failed') throw error;
+      yield* this.filesInTurn();
+      return;
+    }
     const files = sitemapIndexLocs(index);
     if (files.length === 0) throw new ShopPageUnreadable('no product sitemaps listed');
 
@@ -160,8 +185,38 @@ export class EasyStoreAdapter implements SupplierAdapter {
       // not an empty shop: stop rather than let sync delete the catalog.
       if (products.length === 0) throw new ShopPageUnreadable('a product sitemap lists nothing');
 
-      yield catalogEntries(products, this.today(), (loc) => this.handleOf(loc));
+      yield { entries: this.entriesOf(products), listedByIndex: true };
     }
+  }
+
+  /**
+   * `sitemap_products_1.xml`, `_2`, … until the last. Each file holds
+   * PER_FILE products and the last fewer; a number past the last is
+   * answered with the last file again, not a 404. So the walk ends at a file
+   * with fewer, or one the same as the file before, and at MAX_FILES
+   * whatever happens.
+   */
+  private async *filesInTurn(): AsyncIterable<CatalogBatch> {
+    let previous: string | null = null;
+    for (let n = 1; n <= MAX_FILES; n += 1) {
+      const products = sitemapProducts(
+        await this.fetcher.fetchText(`${this.shop.origin}/sitemap_products_${n}.xml`),
+      );
+      if (products.length === 0) {
+        if (n === 1) throw new ShopPageUnreadable('a product sitemap lists nothing');
+        return;
+      }
+      const listing = products.map((product) => product.loc).join('\n');
+      if (listing === previous) return;
+      previous = listing;
+
+      yield { entries: this.entriesOf(products), listedByIndex: false };
+      if (products.length < PER_FILE) return;
+    }
+  }
+
+  private entriesOf(products: SitemapProduct[]): ParsedCatalogEntry[] {
+    return catalogEntries(products, this.today(), (loc) => this.handleOf(loc));
   }
 
   private handleOf(url: string): string | null {
@@ -185,14 +240,6 @@ const readVariants = (html: string): z.infer<typeof variants> => {
   const parsed = variants.safeParse(parseJson(jsonArrayAt(html, start + 'variants = '.length)));
   if (!parsed.success) throw new ShopPageUnreadable('variants not as expected');
   return parsed.data;
-};
-
-const parseJson = (text: string): unknown => {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 };
 
 /**

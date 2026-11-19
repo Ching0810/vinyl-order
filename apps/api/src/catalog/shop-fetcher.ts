@@ -22,6 +22,8 @@ export class ShopFetchError extends Error {
   constructor(
     readonly kind: 'refused' | 'failed',
     message: string,
+    /** Worth one more try: a timeout, a dropped connection, a 5xx. */
+    readonly transient = false,
   ) {
     super(message);
     this.name = 'ShopFetchError';
@@ -40,6 +42,8 @@ export interface ShopFetcherOptions {
   timeoutMs?: number;
   maxBytes?: number;
   maxRedirects?: number;
+  /** The wait before the one retry a timeout or a 5xx gets. */
+  retryPauseMs?: number;
   /** Clock and timer, replaceable so tests needn't wait. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -55,6 +59,7 @@ const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 
 const refused = (message: string) => new ShopFetchError('refused', message);
 const failed = (message: string) => new ShopFetchError('failed', message);
+const transient = (message: string) => new ShopFetchError('failed', message, true);
 
 /**
  * Fetches a shop's pages within its rules.
@@ -64,7 +69,8 @@ const failed = (message: string) => new ShopFetchError('failed', message);
  *   resolved addresses aren't checked: that guard is for open host lists.
  * - **Redirects are followed by hand**, each one checked like the first URL,
  *   so an allowed host can't send the request anywhere else.
- * - **Each request is capped** in time and size, the body included.
+ * - **Each request is capped** in time and size, the body included, and
+ *   tried once more after a pause if it timed out or got a 5xx.
  * - **One request at a time per host**, the next starting a pause after the
  *   last one finished. Kept in memory: one fetcher per shop, in one process —
  *   the API or the sync command.
@@ -75,6 +81,7 @@ export class ShopFetcher {
   private readonly timeoutMs: number;
   private readonly maxBytes: number;
   private readonly maxRedirects: number;
+  private readonly retryPauseMs: number;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
 
@@ -91,6 +98,7 @@ export class ShopFetcher {
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxBytes = options.maxBytes ?? 5 * 1024 * 1024;
     this.maxRedirects = options.maxRedirects ?? 3;
+    this.retryPauseMs = options.retryPauseMs ?? 5_000;
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
@@ -105,10 +113,26 @@ export class ShopFetcher {
     for (let redirects = 0; ; redirects += 1) {
       const host = current.hostname;
       const target = current;
-      const answer = await this.inLane(host, () => this.request(target));
+      const answer = await this.requestOnceMore(host, target);
       if ('body' in answer) return answer.body;
       if (redirects === this.maxRedirects) throw failed('too many redirects');
       current = this.allowed(new URL(answer.location, current).href);
+    }
+  }
+
+  /**
+   * One request, and one more after a pause if it failed in passing — a
+   * timeout, a dropped connection, a 5xx: a shop's server can be slow one
+   * minute and quick the next. A 429 is the shop asking to slow down, and a
+   * 404 won't change: neither is tried again.
+   */
+  private async requestOnceMore(host: string, target: URL) {
+    try {
+      return await this.inLane(host, () => this.request(target));
+    } catch (error) {
+      if (!(error instanceof ShopFetchError) || !error.transient) throw error;
+      await this.sleep(this.retryPauseMs);
+      return this.inLane(host, () => this.request(target));
     }
   }
 
@@ -169,7 +193,7 @@ export class ShopFetcher {
         signal,
       });
     } catch {
-      throw failed(signal.aborted ? 'timed out' : 'unreachable');
+      throw transient(signal.aborted ? 'timed out' : 'unreachable');
     }
 
     if (REDIRECTS.has(response.status)) {
@@ -180,7 +204,8 @@ export class ShopFetcher {
     }
     if (!response.ok) {
       await response.body?.cancel();
-      throw failed(`answered ${response.status}`);
+      const message = `answered ${response.status}`;
+      throw response.status >= 500 ? transient(message) : failed(message);
     }
 
     const declared = Number(response.headers.get('content-length'));
@@ -210,7 +235,7 @@ export class ShopFetcher {
       }
     } catch (error) {
       if (error instanceof ShopFetchError) throw error;
-      throw failed(signal.aborted ? 'timed out' : 'unreachable');
+      throw transient(signal.aborted ? 'timed out' : 'unreachable');
     }
     return new TextDecoder().decode(Buffer.concat(chunks));
   }

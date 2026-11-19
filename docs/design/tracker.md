@@ -111,6 +111,11 @@ gives a price: it comes from the product page. Rotten Blues'
 its catalog is read from the sitemap like the others, and a product from
 `/products/{handle}.js` (~3 KB of JSON: price, `available`, `type`, tags).
 Cosmic's sitemap index took ~15 s, and its product pages are ~950 KB.
+Later the same day the index took over a minute or ended in `504` time
+after time, while each of its files answered in 1–3 s: the index is built
+on request. And an EasyStore file number past the last is answered with
+the last file again, not a 404 — Cosmic's `sitemap_products_200.xml` is its
+`_49`, 246 products.
 
 The worked example is Candlelight's
 [坂本龍一 Ryuichi Sakamoto – 1996](https://www.candlelightrecords.tw/product/detail/2696454):
@@ -416,6 +421,10 @@ once.
 - **The User-Agent is `vinyl-order/1.0 (personal price tracker)`**: it names
   the project, not its owner — a repository link would carry my account
   name to every shop.
+- **One more try after a pause** (5 s) for a timeout, a dropped connection
+  or a 5xx. Cosmic's sitemap index answered in 5 s, then not in 60, then in
+  6 — the same request, minutes apart (2026-11-19). A 429 (the shop asking
+  to slow down), a 404 or a refusal is never tried again.
 - **Two kinds of error**: `refused` (against the rules — nothing was sent)
   and `failed` (network, timeout, size, an error status), each a short
   phrase fit for `Offer.lastError` (§6.3).
@@ -443,15 +452,28 @@ longer lists are deleted.
 - **A statement per sitemap file**: `INSERT … ON CONFLICT DO UPDATE` with
   the file's few hundred entries. Prisma has no bulk upsert, and some 30 000
   single upserts against Neon would take most of an hour.
-- **Every entry a run writes is stamped with the run's start** (`syncedAt`).
-  Once the whole catalog is read, the shop's entries with an older stamp are
-  the ones it took down, and are deleted.
+- **A listing that hasn't changed isn't written.** The first local runs
+  rewrote all ~16 600 rows the second time with nothing new, and the table
+  grew from 16 to 22 MB: Postgres keeps every rewritten row's old version
+  until a vacuum. Now a row is written only if what search uses — URL,
+  title, cover, flags — differs; `lastmod` alone doesn't count (the shops
+  move it for a stock change, and Rotten Blues' are all today's).
+- **Once the whole catalog is read, the shop's entries the run didn't list
+  are deleted**: it took them down. The listed ids go as one array
+  parameter, not one each — a catalog runs to tens of thousands.
 - **A run that stops partway deletes nothing** — a fetch that failed, a
   sitemap that can't be read. What it wrote stays; the next run finishes.
 - **A run that lists under half of what was copied deletes nothing** either,
   and says so: a shop takes a few dozen listings down between syncs, and a
   sitemap failing is likelier than half a catalog gone.
 - **A listing listed twice** — in one file or two — is written once.
+- **When an EasyStore index fails, its files are read in turn** —
+  `sitemap_products_1.xml`, `_2`, … — ending at a file with fewer than 300
+  products, or one the same as the file before (past the last, EasyStore
+  answers the last again), and at 200 files whatever happens. **Such a run
+  adds and changes, but deletes nothing**: without the index it can't know
+  it saw every file, and deleting on a short walk would drop live listings.
+  Taken-down listings wait for a run whose index answers.
 
 - **EasyStore:** the product sitemaps, each entry's `<image:title>` the name.
 - **Shopify:** the product sitemaps too. `/products.json` would bring

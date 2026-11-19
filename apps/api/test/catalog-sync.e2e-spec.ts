@@ -53,7 +53,7 @@ describe('Catalog sync (e2e)', () => {
   /** An adapter whose catalog is these batches, then perhaps a failure. */
   const adapter = (
     batches: ParsedCatalogEntry[][],
-    options: { supplier?: Supplier; failAfter?: number } = {},
+    options: { supplier?: Supplier; failAfter?: number; listedByIndex?: boolean } = {},
   ): SupplierAdapter => ({
     supplier: options.supplier ?? 'tht',
     rules: { hosts: [], paths: [] },
@@ -61,7 +61,10 @@ describe('Catalog sync (e2e)', () => {
     syncCatalog: async function* () {
       for (const [index, batch] of batches.entries()) {
         if (index === options.failAfter) throw new Error('answered 503');
-        yield await Promise.resolve(batch);
+        yield await Promise.resolve({
+          entries: batch,
+          listedByIndex: options.listedByIndex ?? true,
+        });
       }
     },
   });
@@ -84,9 +87,10 @@ describe('Catalog sync (e2e)', () => {
       files: 2,
       listed: 3,
       added: 3,
-      rewritten: 0,
+      changed: 0,
+      unchanged: 0,
       deleted: 0,
-      deletionSkipped: false,
+      deletionSkipped: null,
       before: 0,
       vinyl: 2,
       used: 1,
@@ -102,19 +106,55 @@ describe('Catalog sync (e2e)', () => {
     });
   });
 
-  it('rewrites what changed, adds what is new, deletes what the shop took down', async () => {
+  it('writes what changed, adds what is new, deletes what the shop took down', async () => {
     await sync.sync(adapter([[entry('a'), entry('b'), entry('c')]]));
 
     const report = await sync.sync(
       adapter([[entry('a', { title: 'Renamed - a LP' }), entry('b'), entry('d')]]),
     );
 
-    expect(report).toMatchObject({ listed: 3, added: 1, rewritten: 2, deleted: 1, before: 3 });
+    expect(report).toMatchObject({
+      listed: 3,
+      added: 1,
+      changed: 1,
+      unchanged: 1,
+      deleted: 1,
+      before: 3,
+    });
     expect(await idsOf()).toEqual(['a', 'b', 'd']);
     const renamed = await prisma.catalogEntry.findUniqueOrThrow({
       where: { supplier_externalId: { supplier: 'tht', externalId: 'a' } },
     });
     expect(renamed).toMatchObject({ title: 'Renamed - a LP', searchTitle: 'renamed - a lp' });
+  });
+
+  it('leaves a listing that stayed the same unwritten, and keeps it', async () => {
+    await sync.sync(adapter([[entry('a'), entry('b')]]));
+    const before = await prisma.catalogEntry.findUniqueOrThrow({
+      where: { supplier_externalId: { supplier: 'tht', externalId: 'a' } },
+    });
+
+    // The shops move lastmod for a stock change; that alone isn't a change.
+    const report = await sync.sync(
+      adapter([[entry('a', { sourceUpdatedAt: new Date('2026-11-19T01:00:00Z') }), entry('b')]]),
+    );
+
+    expect(report).toMatchObject({ added: 0, changed: 0, unchanged: 2, deleted: 0 });
+    const after = await prisma.catalogEntry.findUniqueOrThrow({
+      where: { supplier_externalId: { supplier: 'tht', externalId: 'a' } },
+    });
+    expect(after.syncedAt).toEqual(before.syncedAt);
+    expect(await idsOf()).toEqual(['a', 'b']);
+  });
+
+  it('a flag or a cover changing is a change', async () => {
+    await sync.sync(adapter([[entry('a'), entry('b')]]));
+
+    const report = await sync.sync(
+      adapter([[entry('a', { isVinyl: false }), entry('b', { imageUrl: null })]]),
+    );
+
+    expect(report).toMatchObject({ changed: 2, unchanged: 0 });
   });
 
   it('a run that stops partway keeps what it wrote and deletes nothing', async () => {
@@ -143,7 +183,12 @@ describe('Catalog sync (e2e)', () => {
 
     const report = await sync.sync(adapter([[entry('a'), entry('b')]]));
 
-    expect(report).toMatchObject({ listed: 2, deleted: 0, deletionSkipped: true, before: 5 });
+    expect(report).toMatchObject({
+      listed: 2,
+      deleted: 0,
+      deletionSkipped: 'under_half',
+      before: 5,
+    });
     expect(await idsOf()).toEqual(['a', 'b', 'c', 'd', 'e']);
   });
 
@@ -152,7 +197,23 @@ describe('Catalog sync (e2e)', () => {
 
     const report = await sync.sync(adapter([[entry('a'), entry('b')]]));
 
-    expect(report).toMatchObject({ deleted: 2, deletionSkipped: false });
+    expect(report).toMatchObject({ deleted: 2, deletionSkipped: null });
+  });
+
+  it('deletes nothing after a run read without the shop’s index, but adds and changes', async () => {
+    await sync.sync(adapter([[entry('a'), entry('b'), entry('c')]]));
+
+    const report = await sync.sync(
+      adapter([[entry('a', { title: 'Renamed - a LP' }), entry('d')]], { listedByIndex: false }),
+    );
+
+    expect(report).toMatchObject({
+      added: 1,
+      changed: 1,
+      deleted: 0,
+      deletionSkipped: 'no_index',
+    });
+    expect(await idsOf()).toEqual(['a', 'b', 'c', 'd']);
   });
 
   it('counts and writes a listing listed twice once, in one batch or across two', async () => {

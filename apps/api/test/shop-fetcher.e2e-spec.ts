@@ -239,6 +239,95 @@ describe('Shop fetcher (e2e)', () => {
     });
   });
 
+  describe('one more try, after a pause', () => {
+    /** Answers in turn, recording the sleeps between. */
+    const inTurn = (...answers: Answer[]) => {
+      const sleeps: number[] = [];
+      let call = 0;
+      const { fetcher, calls } = fetcherWith(
+        {
+          [PAGE]: (init) => {
+            const answer = answers[Math.min(call, answers.length - 1)];
+            call += 1;
+            return typeof answer === 'function' ? answer(init) : Promise.resolve(answer);
+          },
+        },
+        {
+          timeoutMs: 20,
+          retryPauseMs: 5_000,
+          sleep: (ms) => {
+            sleeps.push(ms);
+            return Promise.resolve();
+          },
+        },
+      );
+      return { fetcher, calls, sleeps };
+    };
+
+    const hanging = (init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('', 'TimeoutError')));
+      });
+
+    it('after a timeout', async () => {
+      const { fetcher, calls, sleeps } = inTurn(hanging, new Response('ok'));
+
+      await expect(fetcher.fetchText(PAGE)).resolves.toBe('ok');
+      expect(calls).toHaveLength(2);
+      expect(sleeps).toContain(5_000);
+    });
+
+    it('after a 5xx', async () => {
+      const { fetcher, calls } = inTurn(new Response('', { status: 503 }), new Response('ok'));
+
+      await expect(fetcher.fetchText(PAGE)).resolves.toBe('ok');
+      expect(calls).toHaveLength(2);
+    });
+
+    it('after a dropped connection', async () => {
+      const { fetcher, calls } = inTurn(
+        () => Promise.reject(new TypeError('fetch failed')),
+        new Response('ok'),
+      );
+
+      await expect(fetcher.fetchText(PAGE)).resolves.toBe('ok');
+      expect(calls).toHaveLength(2);
+    });
+
+    it('only once: two timeouts fail', async () => {
+      const { fetcher, calls } = inTurn(hanging, hanging, new Response('never'));
+
+      expect(await errorOf(fetcher.fetchText(PAGE))).toMatchObject({
+        kind: 'failed',
+        message: 'timed out',
+      });
+      expect(calls).toHaveLength(2);
+    });
+
+    it.each([429, 404, 403])(
+      'not after a %i: asked to slow down, or it won’t change',
+      async (status) => {
+        const { fetcher, calls } = inTurn(new Response('', { status }), new Response('ok'));
+
+        expect(await errorOf(fetcher.fetchText(PAGE))).toMatchObject({
+          kind: 'failed',
+          message: `answered ${status}`,
+        });
+        expect(calls).toHaveLength(1);
+      },
+    );
+
+    it('not after a body too large', async () => {
+      const { fetcher, calls } = inTurn(
+        new Response('x'.repeat(10), { headers: { 'content-length': String(6 * 1024 * 1024) } }),
+        new Response('ok'),
+      );
+
+      expect(await errorOf(fetcher.fetchText(PAGE))).toMatchObject({ message: 'too large' });
+      expect(calls).toHaveLength(1);
+    });
+  });
+
   describe('one request at a time per host', () => {
     /** A clock that only moves when the fetcher sleeps. */
     const clock = () => {
