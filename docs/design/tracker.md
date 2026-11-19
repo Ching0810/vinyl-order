@@ -487,6 +487,28 @@ Sync runs outside the API: at first a command run by hand, locally and
 then against Neon, so the first runs can be watched — how many entries,
 how much space, how long; then a GitHub Actions schedule (§10, step 12).
 
+**The first runs, 2026-11-19** — `catalog:sync all` into an empty table,
+locally and then on Neon from a laptop:
+
+| Shop         | Files | Listed |  Vinyl | Used |    Local |     Neon |
+| ------------ | ----: | -----: | -----: | ---: | -------: | -------: |
+| THT          |    44 | 12 992 | 12 956 |   80 |    ~52 s |   51.7 s |
+| Cosmic       |    49 | 14 536 | 10 559 |    8 |  146.7 s |  138.7 s |
+| Rotten Blues |     4 |  3 624 |  1 202 |    0 |     ~5 s |    6.4 s |
+| **All**      |    97 | 31 152 | 24 717 |   88 | ~3.4 min | ~3.3 min |
+
+The listed counts are Neon's; Cosmic listed 14 637 locally.
+
+- **The time is the shops', not the database's.** Neon, remote, took as
+  long as the local Docker: the run waits a second between requests to a
+  shop (§6.4), and a file costs one to three seconds to fetch.
+- **Cosmic's index failed on both runs**, so its files were read in turn
+  and nothing was deleted (above). Both walks read the same 49 files; the
+  hundred listings between them are most likely the shop's own changes
+  between the runs.
+- **27 MB on Neon, indexes included** — about 0.9 KB a row. Locally 28 MB,
+  after the earlier runs' rewrites.
+
 **⚖️ Decision: keep the whole catalog, flagged, and filter at search.**
 CDs, merchandise and used records are copied too, with `isVinyl` and
 `isUsed`; search shows new vinyl unless asked. Filtering at sync would save
@@ -1285,6 +1307,8 @@ Each step is its own PR.
    first runs are where the size is measured. 7a: the table,
    `CatalogSyncService` and `pnpm --filter api catalog:sync <shop | all>`;
    7b: the first runs, locally and on Neon, and their numbers here.
+   _(Done: 7a #96–#97; 7b's runs 2026-11-19, 31 152 entries in 27 MB on
+   Neon, §7.2.)_
 8. API, in three PRs: search (8a); create from catalog and refresh (8b);
    candidates, attach and detach, and artist aliases (8c). Products get
    their `Artist` here; until step 5, the columns the demo store still reads
@@ -1330,12 +1354,17 @@ then drops them all together, with nothing left reading them.
    of aliases, not a column per language (§5.7).
 2. ⚖️ Where do alerts go — email, LINE Notify's successor, a page of
    changes? Decide with step 12.
-3. ⚖️ Does THT's catalog include non-vinyl items, and how are they named?
-   Settled while writing step 7's filter.
+3. ~~Does THT's catalog include non-vinyl items, and how are they named?~~
+   Hardly: 36 of its 12 992 listings aren't flagged vinyl, and 80 are used.
+   Cosmic's and Rotten Blues' are where the flag matters: only 10 559 of
+   14 536 and 1 202 of 3 624 are vinyl (§7.2's first runs).
 4. Is a WACA listing card enough for the index, or does it miss names that
    only the product page has? Measured in step 11.
-5. Does Neon's free 0.5 GB fit the index? Estimated at a few MB for ~20k
-   entries; checked after the first full sync.
+5. ~~Does Neon's free 0.5 GB fit the index?~~ Yes: 27 MB for 31 152
+   entries, indexes included, after the first full sync — about 5 % of the
+   allowance, against an estimate of a few MB. Step 11's Candlelight
+   catalog, and the old row versions a change leaves until a vacuum, will
+   add to it, but not tenfold.
 6. Does `pg_trgm` work on Chinese and Japanese? It builds trigrams only from
    characters the database's locale counts as letters, so CJK may be
    skipped — and the local Docker and Neon locales may differ. Short names
