@@ -116,13 +116,20 @@ export const readListingTitle = (raw: string, today: string): ListingTitle => {
   });
   text = text.replace(/\s+/g, ' ').trim();
 
-  // Rotten Blues: Artist《Title》, then a translated name.
+  // Rotten Blues: Artist《Title》, then a translated name or the pressing
+  // ("限量7吋透明彩膠EP"); a note after "※" is the shop's ("追加生產預購中").
   let artist: string | null = null;
   let title = text;
   const bracketed = /^(.*?)《([^》]+)》/.exec(text);
   if (bracketed) {
     artist = bracketed[1].trim() || null;
     title = bracketed[2].trim();
+    const after = text.slice(bracketed[0].length).replace(/※.*$/, '').trim();
+    if (EDITION.test(after)) {
+      editions.push(after);
+      // A size or format named here is surer than "【黑膠】".
+      format = formatNamed(after) ?? format;
+    }
   } else {
     const dash = ARTIST_DASH.exec(text);
     if (dash) {
