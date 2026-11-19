@@ -194,12 +194,12 @@ Alerts (step 12) read these; nothing else does yet.
 ### 5.4 `CatalogEntry`: the search index
 
 `supplier`, `externalId`, `url`, `title`, `searchTitle` (the title in search
-form, which the trigram index is on — how it is normalised is settled by
-step 8's search, and a sync rewrites every row, so it can change without a
-migration), `imageUrl`, `priceCents` (when the
-catalog source has it — none of the first three shops' does), `isUsed`, `isVinyl`, `sourceUpdatedAt` (`lastmod`),
-`syncedAt`. Unique on `(supplier, externalId)`; a GIN trigram index on
-`title`. It is a copy of each shop's catalog, not of my records: thousands
+form, which the trigram index is on: NFKC, lower case, spaces collapsed, as
+a query is too — §7.3; if that changes, the next sync rewrites every row,
+so no migration), `imageUrl`, `priceCents` (when the catalog source has it
+— none of the first three shops' does), `isUsed`, `isVinyl`,
+`sourceUpdatedAt` (`lastmod`), `syncedAt`. Unique on
+`(supplier, externalId)`; a GIN trigram index on `searchTitle`. It is a copy of each shop's catalog, not of my records: thousands
 of rows, rewritten by sync (§7.2), never edited by hand.
 
 ### 5.5 `SupplierOrder` and `SupplierOrderItem`
@@ -519,11 +519,33 @@ is a few hundred bytes — tens of thousands fit in tens of MB (§15).
 
 ### 7.3 Matching
 
-Search is Postgres `pg_trgm` similarity over a normalised title (lower case,
-width-folded, punctuation and format words removed), filtered by supplier,
-vinyl, and — unless asked — not used. Trigrams suit this data: titles mix
-Chinese, Japanese and English, word order varies, and nothing here needs a
-search engine at thousands of rows.
+Search is Postgres `pg_trgm` over `searchTitle` (§5.4), filtered by
+supplier, and — unless asked — to new vinyl. Trigrams suit this data:
+titles mix Chinese, Japanese and English, word order varies, and nothing
+here needs a search engine at tens of thousands of rows.
+
+- **Word similarity, `q <% searchTitle`**, not plain similarity: how much
+  of the query is found in one stretch of the title, so a two-word query
+  isn't scored down by a long title. Its cut-off is pg_trgm's default, 0.6.
+  It finds words out of order ("abbey road beatles"), a typo ("abbey
+  roda", 0.73), and uses the GIN index: 6–7 ms over 31 000 rows locally.
+- **Or the query as a substring.** Chinese and Japanese aren't written with
+  spaces, so to pg_trgm a run of them is one word, and a name inside it
+  misses its word-start trigram: `珍妮` scores 0.33 in `金珍妮 Jennie`
+  (BLACKPINK's), and word similarity alone missed it. A `LIKE '%q%'` finds
+  it, ranked after the word matches by its low score. From three
+  characters the GIN index serves it (1–2 ms); a two-character query scans
+  the table, ~90 ms locally — fine at this size.
+- **The query is normalised as titles are** (`searchTitleOf`), so `ＬＰ`
+  finds `lp`. Punctuation and format words stay: trigrams split words on
+  punctuation already, and "LP" in a query is the user's to type.
+- **Best first, 30 at most, no paging.** Equal scores go to the title
+  closest to the query as a whole — the plain record before the box set
+  that contains its name. Hits ranked by score don't page by cursor, and a
+  search too wide for 30 is narrowed with another word.
+- **Every shop unless one is named** (`supplier`). Across all three, a
+  search already shows who carries a record; one shop is for picking the
+  primary below.
 
 Adding a record:
 
@@ -1153,7 +1175,7 @@ orders, which any signed-in user has for their own (§12.1).
 
 | Method and path                                 | Purpose                                                              |
 | ----------------------------------------------- | -------------------------------------------------------------------- |
-| `GET /admin/catalog/search?supplier=&q=&used=`  | search one supplier's index                                          |
+| `GET /admin/catalog/search?q=&supplier=`        | search the index, every shop or one; `used`, `nonVinyl` (§7.3)       |
 | `POST /admin/products/from-catalog`             | create a product and its first offer from an entry                   |
 | `GET /admin/products/:id/candidates`            | candidates at the other suppliers                                    |
 | `POST /admin/products/:id/offers`               | attach a confirmed candidate (or a pasted URL)                       |
@@ -1312,7 +1334,7 @@ Each step is its own PR.
 8. API, in three PRs: search (8a); create from catalog and refresh (8b);
    candidates, attach and detach, and artist aliases (8c). Products get
    their `Artist` here; until step 5, the columns the demo store still reads
-   are filled from it (below).
+   are filled from it (below). _(8a: `GET /admin/catalog/search`.)_
 9. Web: the search page (9a), then the product page's comparison (9b) —
    **the comparison usable**; then the visitors' list, the dashboard
    (§12.2), and the product page's "record an order" and link-a-line.
@@ -1365,14 +1387,15 @@ then drops them all together, with nothing left reading them.
    allowance, against an estimate of a few MB. Step 11's Candlelight
    catalog, and the old row versions a change leaves until a vacuum, will
    add to it, but not tenfold.
-6. Does `pg_trgm` work on Chinese and Japanese? It builds trigrams only from
-   characters the database's locale counts as letters, so CJK may be
-   skipped — and the local Docker and Neon locales may differ. Short names
-   (`珍妮`) give too few trigrams for a stable similarity either way. Step 8
-   matches on `normalized` exactly first and falls back to trigrams, with
-   CJK cases (`坂本龍一`, `米津玄師`) in the e2e suite, run in CI and checked
-   on Neon. If trigrams prove useless for CJK: bigrams, or a stored
-   romanisation.
+6. ~~Does `pg_trgm` work on Chinese and Japanese?~~ Yes, for catalog
+   search (8a). It builds trigrams from the characters the locale counts as
+   letters, and under `en_US.utf8` (the local Docker) CJK counts:
+   `坂本龍一` finds all 151 listings a substring does, and the
+   two-character `珍妮` finds its own and not `珍珠`'s. What trigrams miss
+   is a name inside an unspaced run (`珍妮` in `金珍妮`), so search adds a
+   substring match (§7.3). The e2e suite holds these cases, and CI runs it.
+   Neon agrees (2026-11-19, its own copy): `坂本龍一` 150 by trigram and by
+   substring, `米津玄師` 23 and 23, `珍妮` 2 and 3. Matching artist aliases (`normalized`, 8c) is still to be seen.
 
 ## 16. Interview talking points
 
