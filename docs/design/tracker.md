@@ -84,7 +84,7 @@ Checked on 2026-10-30. Three platforms cover the four shops:
 | ---------------------------------------- | --------- | ------------------------------------------------------------------------------------------- | ------------------- |
 | THT (thtrecords.com)                     | EasyStore | `sitemap_products_N.xml`, names in `<image:title>`, 300 per file                            | no (`/search`)      |
 | Cosmic (cosmicmusicrecord.com)           | EasyStore | the same                                                                                    | no (`/search`)      |
-| Rotten Blues (rottenblues.com)           | Shopify   | `/products.json`, 250 per page                                                              | yes                 |
+| Rotten Blues (rottenblues.com)           | Shopify   | `sitemap_products_N.xml`, names in `<image:title>`, ~1000 per file                          | yes                 |
 | 燭光 Candlelight (candlelightrecords.tw) | WACA      | `/product/all?page=N`, 20 per page, ~890 pages; sitemap has URLs and `lastmod` but no names | no (`/search/*`)    |
 
 What a product page gives, field by field:
@@ -100,6 +100,17 @@ What a product page gives, field by field:
 | Shop's own id | JSON-LD `productID` (`NU0006794`)                        | product id in the URL / page                                          | product id, handle     |
 | Used?         | name contains "二手"                                     | name                                                                  | name / tags            |
 | Vinyl?        | category / name ("黑膠")                                 | name ("Vinyl", "LP")                                                  | `product_type = 黑膠`  |
+
+**Re-checked 2026-11-19** (THT, Cosmic, Rotten Blues; step 6b). Each shop
+serves from `www.` and redirects the bare domain there; robots.txt allows
+`/products/` and the sitemaps. THT lists ~13 000 products in 44 sitemap
+files, Cosmic ~14 700 in 49, Rotten Blues ~4 000 in 4. No catalog source
+gives a price: it comes from the product page. Rotten Blues'
+`/products.json` answered `429 local_rate_limited`, still after its
+`Retry-After`, while its sitemap and product pages answered at once — so
+its catalog is read from the sitemap like the others, and a product from
+`/products/{handle}.js` (~3 KB of JSON: price, `available`, `type`, tags).
+Cosmic's sitemap index took ~15 s, and its product pages are ~950 KB.
 
 The worked example is Candlelight's
 [坂本龍一 Ryuichi Sakamoto – 1996](https://www.candlelightrecords.tw/product/detail/2696454):
@@ -178,7 +189,7 @@ Alerts (step 12) read these; nothing else does yet.
 ### 5.4 `CatalogEntry`: the search index
 
 `supplier`, `externalId`, `url`, `title`, `imageUrl`, `priceCents` (when the
-catalog source has it), `isUsed`, `isVinyl`, `sourceUpdatedAt` (`lastmod`),
+catalog source has it — none of the first three shops' does), `isUsed`, `isVinyl`, `sourceUpdatedAt` (`lastmod`),
 `syncedAt`. Unique on `(supplier, externalId)`; a GIN trigram index on
 `title`. It is a copy of each shop's catalog, not of my records: thousands
 of rows, rewritten by sync (§7.2), never edited by hand.
@@ -336,7 +347,11 @@ Each adapter maps its shop's facts onto the shared columns:
   between CJK and Latin, and at "/" — "坂本龍一 Ryuichi Sakamoto" gives
   `["坂本龍一", "Ryuichi Sakamoto"]` — into §5.7's aliases. Also a proposal,
   confirmed on the form.
-- **Used, vinyl.** Keywords and categories as in §4's table.
+- **Used, vinyl.** Keywords and categories as in §4's table. **Vinyl unless
+  the title names another format** — CD, merchandise (`MD`, `週邊`),
+  calendars, magazines, scores, books, players — since a record hidden from
+  search by mistake is worse than a CD shown; titles naming no format at
+  all are records at these shops.
 
 ### 6.3 When a shop changes its pages
 
@@ -357,7 +372,7 @@ silently: a redesign can turn a price into `null` or a different number.
 
 - **SSRF.** The API fetches URLs I paste. Only `https` and only the hosts of
   the four adapters are allowed; a redirect is followed only to an allowed
-  host; timeout 10 s; response capped at 5 MB. Without this, a pasted URL
+  host; timeout 30 s; response capped at 5 MB. Without this, a pasted URL
   could make the API call anything it can reach.
 - **Politeness.** Only paths robots.txt allows (product pages, catalogs,
   sitemaps — never search, cart, member or order pages). One request at a
@@ -380,7 +395,8 @@ once.
   is the shops' exact public hostnames, and a redirect to an IP is refused
   as "not a host of this shop"; what remains is a shop's own DNS pointing
   inward, which no adapter could defend against usefully.
-- **10 s and 5 MB per request, body included**: a declared size over the cap
+- **30 s and 5 MB per request, body included** (30 s, not 10: Cosmic's
+  sitemap index takes ~15 s): a declared size over the cap
   is refused before reading, and a body that grows past it is cut off.
 - **One request at a time per host, 1 s after the last one finished**, kept
   in memory: one fetcher per shop, in one process (the API, or the sync
@@ -413,8 +429,9 @@ Per supplier, upsert by `(supplier, externalId)`; entries the catalog no
 longer lists are deleted.
 
 - **EasyStore:** the product sitemaps, each entry's `<image:title>` the name.
-- **Shopify:** `/products.json`, page by page; `product_type`, tags and
-  `available` come with it.
+- **Shopify:** the product sitemaps too. `/products.json` would bring
+  prices and `product_type`, but Rotten Blues rate-limits it (§4); the
+  sitemap's name says CD or 黑膠, which is enough to flag vinyl.
 - **WACA:** first the listing pages (names, prices and ids in each card),
   later only entries whose sitemap `lastmod` moved — ~890 pages once, then a
   handful a day.
@@ -1134,8 +1151,9 @@ The carousel, the hot list and the admin hero page go (step 1).
 ### 12.3 Pages
 
 - **Search (`/admin/search`):** keyword box, supplier picker, "show used"
-  toggle, results with cover, name and price; picking one creates the
-  product and opens it.
+  toggle, results with cover and name — no price: the catalogs carry none
+  (§4), and it comes with the product page; picking one creates the product
+  and opens it.
 - **Product page:** the shared details on top; below, a table of offers —
   supplier, price, availability, stock, expected date, last checked, a link
   to the shop. Cheapest price and earliest date are marked. Admins also see
@@ -1206,8 +1224,11 @@ Each step is its own PR.
      and its SSRF tests. _(Done: `ShopFetcher`.)_
    - **6b.** `EasyStoreAdapter` (configured for THT and Cosmic) and
      `ShopifyAdapter`: `fetchOffer` and `syncCatalog`, zod-validated and
-     normalised (§6.2), against saved public pages. The shops' pages are
-     re-checked by hand first: §4's table is from 2026-10-30.
+     normalised (§6.2), against saved public pages. The shops were
+     re-checked by hand first (§4, 2026-11-19). Three PRs: reading titles
+     (6b-1, _done: `readListingTitle`, `splitArtistNames`,
+     `normalizeName`, `availabilityOf`_), the EasyStore adapter (6b-2), the
+     Shopify adapter (6b-3).
 7. `CatalogEntry` and catalog sync for THT, Cosmic and Rotten Blues; used
    and vinyl flags. The table waits for this step: its columns are settled
    by the shops' catalogs as the sync reads them (§15). **Run by hand** — a

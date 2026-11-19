@@ -33,7 +33,10 @@ export interface ShopFetcherOptions {
   fetch?: typeof fetch;
   /** Wait between two requests to one host, after the first has finished. */
   pauseMs?: number;
-  /** For each request, body included. */
+  /**
+   * For each request, body included. 30 s: Cosmic's sitemap index takes
+   * about 15 s to answer.
+   */
   timeoutMs?: number;
   maxBytes?: number;
   maxRedirects?: number;
@@ -85,7 +88,7 @@ export class ShopFetcher {
   ) {
     this.fetchImpl = options.fetch ?? fetch;
     this.pauseMs = options.pauseMs ?? 1_000;
-    this.timeoutMs = options.timeoutMs ?? 10_000;
+    this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxBytes = options.maxBytes ?? 5 * 1024 * 1024;
     this.maxRedirects = options.maxRedirects ?? 3;
     this.now = options.now ?? Date.now;
