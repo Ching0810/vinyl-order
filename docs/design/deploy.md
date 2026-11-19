@@ -470,15 +470,18 @@ binding ties the password check to the TLS connection, so a proxy in the
 middle can't relay it; the Prisma CLI, the API's `pg` driver and `psql` 16 all
 connected with it.
 
-**On Render, `sslmode=verify-full` instead of `require`.** The `pg` driver
+**`sslmode=verify-full` instead of `require`, on every URL.** The `pg` driver
 warned at the first query: today it reads `require` as `verify-full` —
 encrypt, and check that the certificate is Neon's — but its next major
 version will read it as libpq does, encrypt without checking, which a
 man-in-the-middle passes. Written as `verify-full`, the check no longer
 depends on the driver's version. Neon's certificate is from a public CA, so
 Node's own CA list verifies it; the warning went and the catalog still loaded.
-The direct URLs keep `require`: the Prisma CLI and `psql` aren't `pg`, and
-`verify-full` hasn't been tried with them.
+The direct URLs followed when the catalog sync (tracker.md §7.2), which
+writes through `pg`, first ran against Neon and warned the same way: with
+`verify-full`, `prisma migrate status` and the sync both connected, and the
+warning went (2026-11-19). Neon's console still hands out `require`, so a
+copied URL is edited before it is used.
 
 **An empty variable is not an unset one.** The first boot on Render failed on
 `PUBLIC_API_URL` added with no value: the schema's default applies only when a
