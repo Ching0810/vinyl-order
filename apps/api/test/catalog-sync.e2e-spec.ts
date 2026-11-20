@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import type { Supplier } from '@vinyl-order/shared';
 
+import { CatalogPopularService } from '../src/catalog/catalog-popular.service';
 import { CatalogStockFailed, CatalogStockService } from '../src/catalog/catalog-stock.service';
 import { CatalogSyncFailed, CatalogSyncService } from '../src/catalog/catalog-sync.service';
 import type {
@@ -22,16 +23,18 @@ describe('Catalog sync (e2e)', () => {
   let prisma: PrismaService;
   let sync: CatalogSyncService;
   let stock: CatalogStockService;
+  let popular: CatalogPopularService;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [PrismaModule],
-      providers: [CatalogSyncService, CatalogStockService],
+      providers: [CatalogSyncService, CatalogStockService, CatalogPopularService],
     }).compile();
     await moduleRef.init();
     prisma = moduleRef.get(PrismaService);
     sync = moduleRef.get(CatalogSyncService);
     stock = moduleRef.get(CatalogStockService);
+    popular = moduleRef.get(CatalogPopularService);
   });
 
   beforeEach(async () => {
@@ -70,6 +73,8 @@ describe('Catalog sync (e2e)', () => {
       listedByIndex?: boolean;
       stock?: ParsedStock[][];
       stockFailAfter?: number;
+      /** The shop's popular list's handles, or the error reading it. */
+      popular?: string[] | Error;
     } = {},
   ): SupplierAdapter => ({
     supplier: options.supplier ?? 'tht',
@@ -84,6 +89,10 @@ describe('Catalog sync (e2e)', () => {
         });
       }
     },
+    syncPopular: () =>
+      options.popular instanceof Error
+        ? Promise.reject(options.popular)
+        : Promise.resolve(options.popular ?? []),
     syncStock: async function* () {
       for (const [index, entries] of (options.stock ?? []).entries()) {
         if (index === options.stockFailAfter) throw new Error('answered 503');
@@ -388,6 +397,53 @@ describe('Catalog sync (e2e)', () => {
 
       expect((await rowOf('same', 'cosmic')).priceCents).toBeNull();
       expect((await rowOf('same')).priceCents).toBe(1);
+    });
+  });
+
+  describe('the shops’ popular lists', () => {
+    const rankOf = async (externalId: string, supplier: Supplier = 'tht') =>
+      (await rowOf(externalId, supplier)).popularRank;
+
+    it('ranks what the list lists, in its order; the catalog hasn’t copied the rest', async () => {
+      await sync.sync(adapter([[entry('a'), entry('b'), entry('c')]]));
+
+      const report = await popular.sync(adapter([], { popular: ['c', 'new-arrival', 'a'] }));
+
+      expect(report).toMatchObject({ supplier: 'tht', listed: 3, ranked: 2 });
+      // Its place on the shop's list: 1 and 3.
+      expect([await rankOf('c'), await rankOf('a'), await rankOf('b')]).toEqual([1, 3, null]);
+    });
+
+    it('each run replaces the shop’s ranks, and only the shop’s', async () => {
+      await sync.sync(adapter([[entry('x')]], { supplier: 'cosmic' }));
+      await popular.sync(adapter([], { supplier: 'cosmic', popular: ['x'] }));
+      await sync.sync(adapter([[entry('a'), entry('b')]]));
+      await popular.sync(adapter([], { popular: ['a', 'b'] }));
+
+      await popular.sync(adapter([], { popular: ['b'] }));
+
+      expect([await rankOf('b'), await rankOf('a')]).toEqual([1, null]);
+      expect(await rankOf('x', 'cosmic')).toBe(1);
+    });
+
+    it('a list that can’t be read leaves the last ranks', async () => {
+      await sync.sync(adapter([[entry('a')]]));
+      await popular.sync(adapter([], { popular: ['a'] }));
+
+      await expect(
+        popular.sync(adapter([], { popular: new Error('answered 503') })),
+      ).rejects.toThrow('answered 503');
+
+      expect(await rankOf('a')).toBe(1);
+    });
+
+    it('a shop with no list to read has no ranks', async () => {
+      await sync.sync(adapter([[entry('a')]]));
+
+      expect(await popular.sync(adapter([], { popular: [] }))).toMatchObject({
+        listed: 0,
+        ranked: 0,
+      });
     });
   });
 });

@@ -468,13 +468,53 @@ describe('EasyStore adapter (e2e)', () => {
     });
   });
 
-  it("gives the fetcher the shop's hosts, product pages, sitemaps and list — nothing else", async () => {
+  describe('the records its home page features', () => {
+    it('Cosmic: its slideshow, a record a slide; a slide to a search skipped', async () => {
+      const fetcher = fakeFetcher({
+        'https://www.cosmicmusicrecord.com/': fixture('easystore-home-slides.html'),
+      });
+      const adapter = new EasyStoreAdapter(COSMIC, { fetcher, today: () => TODAY });
+
+      const handles = await adapter.syncPopular();
+
+      expect(handles).toHaveLength(5);
+      expect(handles[0]).toMatch(/^-k-da-firestarter-/);
+      expect(handles.some((handle) => handle.includes('search'))).toBe(false);
+      // A product after the slideshow isn't one of its slides.
+      expect(handles).not.toContain('not-a-slide');
+    });
+
+    it('THT: the row under "Featured collection", not the players around it', async () => {
+      const { adapter, fetcher } = tht({
+        'https://www.thtrecords.com/': fixture('easystore-home-featured.html'),
+      });
+
+      const handles = await adapter.syncPopular();
+
+      expect(handles).toHaveLength(4);
+      expect(handles[0]).toMatch(/^菅野祐悟-yugo-kanno-仁王/);
+      expect(handles).not.toContain('pro-ject-debut-evo-2');
+      expect(handles).not.toContain('pro-ject-rpm-5-carbon');
+      expect(fetcher.asked).toEqual(['https://www.thtrecords.com/']);
+    });
+
+    it('a home page featuring nothing it can read is unreadable', async () => {
+      const { adapter } = tht({ 'https://www.thtrecords.com/': '<html>a new theme</html>' });
+
+      await expect(adapter.syncPopular()).rejects.toThrow(
+        new ShopPageUnreadable('no featured products on the home page'),
+      );
+    });
+  });
+
+  it("gives the fetcher the shop's hosts, product pages, sitemaps, list and home page — nothing else", async () => {
     const { rules } = new EasyStoreAdapter(THT);
     const fetch = jest.fn();
 
     expect(rules).toEqual({
       hosts: ['www.thtrecords.com', 'thtrecords.com'],
       paths: ['/products/', '/sitemap_products', '/collections/all'],
+      pages: ['/'],
     });
     // robots.txt forbids search; the fetcher refuses it before sending.
     await expect(

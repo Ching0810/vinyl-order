@@ -488,9 +488,12 @@ model CatalogEntry {
   /// The start of the last sync that wrote it: added, or found changed. A
   /// listing that stays the same isn't written again (§7.2).
   syncedAt        DateTime
-  /// When a sync first copied it: the shops' new arrivals are the newest.
-  /// Rows copied before the column came all have its migration's time.
+  /// When a sync first copied it. Rows copied before the column came all
+  /// have its migration's time.
   createdAt       DateTime      @default(now())
+  /// Its place among the records the shop's home page features, 1 first,
+  /// as the last sync read it (§7.2); null when it isn't featured.
+  popularRank     Int?
 
   /// A listing is copied once per shop; sync upserts on it.
   @@unique([supplier, externalId])

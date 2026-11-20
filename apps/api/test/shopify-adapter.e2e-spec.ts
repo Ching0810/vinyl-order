@@ -298,13 +298,37 @@ describe('Shopify adapter (e2e)', () => {
     });
   });
 
-  it('gives the fetcher the shop’s hosts, product pages, sitemaps and list — not /products.json', async () => {
+  it('the records its home page features: its first two rows of picks', async () => {
+    const { adapter, fetcher } = rottenBlues({ [`${ORIGIN}/`]: fixture('shopify-home.html') });
+
+    const handles = await adapter.syncPopular();
+
+    // Three from each of the first two rows; the third row, a banner and the
+    // footer aren't read.
+    expect(handles).toHaveLength(6);
+    expect(handles[0]).toMatch(/^日版黑膠-淺堤-/);
+    expect(handles[3]).toMatch(/^日版黑膠-宋冬野-/);
+    expect(handles).not.toContain('in-the-footer');
+    expect(handles.some((handle) => handle.startsWith('書籍-'))).toBe(false);
+    expect(fetcher.asked).toEqual([`${ORIGIN}/`]);
+  });
+
+  it('a home page with no rows of picks is unreadable', async () => {
+    const { adapter } = rottenBlues({ [`${ORIGIN}/`]: '<html>a new theme</html>' });
+
+    await expect(adapter.syncPopular()).rejects.toThrow(
+      new ShopPageUnreadable('no featured products on the home page'),
+    );
+  });
+
+  it('gives the fetcher the shop’s hosts, product pages, sitemaps, list and home page — not /products.json', async () => {
     const { rules } = new ShopifyAdapter(ROTTEN_BLUES);
     const fetch = jest.fn();
 
     expect(rules).toEqual({
       hosts: ['www.rottenblues.com', 'rottenblues.com'],
       paths: ['/products/', '/sitemap', '/collections/all'],
+      pages: ['/'],
     });
     // "/products.json" doesn't start with "/products/": refused before sending.
     await expect(

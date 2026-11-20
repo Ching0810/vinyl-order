@@ -5,23 +5,22 @@ import NextLink from 'next/link';
 
 import GridSkeleton from '@/components/product/grid-skeleton';
 import EmptyState from '@/components/ui/empty-state';
+import RecordTile from '@/components/ui/record-tile';
 import SectionHeading from '@/components/ui/section-heading';
 import { AVAILABILITY_BADGE } from '@/lib/utils/catalog-search';
 import { formatPrice } from '@/lib/utils/currency';
 import { SUPPLIER_LABEL } from '@/lib/utils/supplier-order';
 import { useWatches } from '@/services/queries/watches/useWatches';
 
-import RecordTile from './record-tile';
-
 /** The first row's tiles: on screen at once, so their covers load first. */
 const ABOVE_FOLD_COUNT = 4;
 
 /**
- * The signed-in user's tracked versions, the home page (tracker.md §12.1):
- * each its own tile with its own price, and a note when the album is
- * cheaper elsewhere. A tile opens the album's comparison.
+ * The signed-in user's tracked versions (tracker.md §12.1): each its own
+ * tile with its own price, and a note when the album is cheaper elsewhere.
+ * A tile opens the album's comparison.
  */
-export default function Tracking() {
+export default function TrackingList() {
   const { data: watches, isPending, isError } = useWatches({ enabled: true });
 
   const renderBody = () => {
@@ -36,7 +35,7 @@ export default function Tracking() {
           body="Search the shops by album, and track the versions you want to compare."
           cta={
             <Button asChild colorPalette="brand" borderRadius="full">
-              <NextLink href="/search">Search the shops</NextLink>
+              <NextLink href="/">Search the shops</NextLink>
             </Button>
           }
         />
@@ -47,7 +46,7 @@ export default function Tracking() {
         {watches.map((watch, index) => (
           <RecordTile
             key={watch.offerId}
-            href={`/products/${watch.productId}`}
+            open={{ href: `/products/${watch.productId}` }}
             imageUrl={watch.imageUrl}
             title={watch.title}
             artist={watch.artist}
@@ -72,7 +71,7 @@ export default function Tracking() {
         title="Tracking"
         action={
           <Button asChild size="sm" variant="outline" borderRadius="full">
-            <NextLink href="/search">Search the shops</NextLink>
+            <NextLink href="/">Search the shops</NextLink>
           </Button>
         }
       />

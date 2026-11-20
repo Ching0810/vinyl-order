@@ -15,8 +15,8 @@ import {
   type CatalogSearchHit,
   type ProductWithOffers,
   productWithOffersSchema,
-  type NewArrival,
-  newArrivalSchema,
+  type PopularListing,
+  popularListingSchema,
   type Supplier,
 } from '@vinyl-order/shared';
 import request from 'supertest';
@@ -68,6 +68,7 @@ describe('Records from the catalog (e2e)', () => {
     syncStock: () => {
       throw new Error('not used');
     },
+    syncPopular: () => Promise.reject(new Error('not used')),
   });
 
   // Candlelight has no adapter, as in the app.
@@ -1068,14 +1069,15 @@ describe('Records from the catalog (e2e)', () => {
     });
   });
 
-  describe('the shops’ new arrivals', () => {
-    const newArrivals = async () =>
-      (await server().get('/catalog/new').expect(200)).body as NewArrival[];
+  describe('what’s popular at the shops', () => {
+    const popularNow = async () =>
+      (await server().get('/catalog/popular').expect(200)).body as PopularListing[];
 
-    /** A listing a sync copied `minutesAgo` minutes ago, as the list pages read it. */
-    const arrived = (
+    /** A listing on its shop's popular list, as the list pages last read it. */
+    const ranked = (
+      supplier: Supplier,
       title: string,
-      minutesAgo: number,
+      popularRank: number,
       overrides: Partial<{
         availability: 'in_stock' | 'pre_order' | 'sold_out' | null;
         priceCents: number | null;
@@ -1086,9 +1088,9 @@ describe('Records from the catalog (e2e)', () => {
       const externalId = randomUUID();
       return prisma.catalogEntry.create({
         data: {
-          supplier: 'tht',
+          supplier,
           externalId,
-          url: `https://${hostOf('tht')}/products/${externalId}`,
+          url: `https://${hostOf(supplier)}/products/${externalId}`,
           title,
           searchTitle: searchTitleOf(title),
           imageUrl: null,
@@ -1097,56 +1099,69 @@ describe('Records from the catalog (e2e)', () => {
           priceCents: overrides.priceCents === undefined ? 150_000 : overrides.priceCents,
           availability: overrides.availability === undefined ? 'in_stock' : overrides.availability,
           syncedAt: new Date(),
-          createdAt: new Date(Date.now() - minutesAgo * 60 * 1000),
+          popularRank,
         },
       });
     };
 
-    it('anyone reads them: newest first, new vinyl that can be bought, with a search for each', async () => {
-      await arrived('Coldplay - Parachutes LP', 30);
-      await arrived('Oasis - Some Might Say 7" (2/17發行預訂)', 10, {
-        availability: 'pre_order',
-        priceCents: 98_000,
-      });
+    it('anyone reads it: the shops in turn, new vinyl that can be bought, a search for each', async () => {
+      await ranked('tht', 'Coldplay - Parachutes LP', 1);
       // Not shown: sold out, never read, used, not a record.
-      await arrived('Sold Out - Gone LP', 1, { availability: 'sold_out' });
-      await arrived('Unread - Never LP', 1, { availability: null, priceCents: null });
-      await arrived('Used - Second Hand LP (二手)', 1, { isUsed: true });
-      await arrived('A Book - Words', 1, { isVinyl: false });
+      await ranked('tht', 'Sold Out - Gone LP', 2, { availability: 'sold_out' });
+      await ranked('tht', 'Unread - Never LP', 3, { availability: null, priceCents: null });
+      await ranked('tht', 'Used - Second Hand LP (二手)', 4, { isUsed: true });
+      await ranked('tht', 'Oasis - Some Might Say 7"', 5);
+      await ranked('cosmic', 'A Book - Words', 1, { isVinyl: false });
+      await ranked('cosmic', '米津玄師 - LOST CORNER（黑膠唱片 LP）', 2, {
+        availability: 'pre_order',
+      });
+      // Not on a list.
+      await listing('tht');
 
-      const arrivals = await newArrivals();
+      const listings = await popularNow();
 
-      for (const arrival of arrivals) expect(newArrivalSchema.parse(arrival)).toEqual(arrival);
-      expect(arrivals.map((arrival) => [arrival.title, arrival.availability])).toEqual([
-        ['Oasis - Some Might Say 7" (2/17發行預訂)', 'pre_order'],
-        ['Coldplay - Parachutes LP', 'in_stock'],
+      for (const each of listings) expect(popularListingSchema.parse(each)).toEqual(each);
+      // Each shop's first shown, then each one's second.
+      expect(listings.map((each) => [each.supplier, each.title])).toEqual([
+        ['tht', 'Coldplay - Parachutes LP'],
+        ['cosmic', '米津玄師 - LOST CORNER（黑膠唱片 LP）'],
+        ['tht', 'Oasis - Some Might Say 7"'],
       ]);
-      expect(arrivals[1]).toMatchObject({
-        supplier: 'tht',
+      expect(listings[0]).toMatchObject({
         priceCents: 150_000,
         currency: 'TWD',
+        availability: 'in_stock',
         searchQuery: 'Coldplay Parachutes',
+        rank: 1,
       });
+      expect(listings[1]).toMatchObject({ availability: 'pre_order', rank: 2 });
     });
 
-    it('says nothing of what anyone tracks: a tracked listing is just a listing', async () => {
+    it('a dozen at most', async () => {
+      for (let rank = 1; rank <= 15; rank += 1)
+        await ranked('tht', `Artist - Album ${rank} LP`, rank);
+
+      expect(await popularNow()).toHaveLength(12);
+    });
+
+    it('says nothing of what anyone tracks', async () => {
       const { entryId } = await listing('tht');
       await prisma.catalogEntry.update({
         where: { id: entryId },
-        data: { availability: 'in_stock', priceCents: 150_000 },
+        data: { availability: 'in_stock', priceCents: 150_000, popularRank: 1 },
       });
       await created({ catalogEntryId: entryId });
 
-      const [arrival] = await newArrivals();
+      const [listed] = await popularNow();
 
-      expect(Object.keys(arrival).sort()).toEqual(
+      expect(Object.keys(listed).sort()).toEqual(
         [
           'availability',
           'currency',
-          'firstSeenAt',
           'id',
           'imageUrl',
           'priceCents',
+          'rank',
           'searchQuery',
           'supplier',
           'title',

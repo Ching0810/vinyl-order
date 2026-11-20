@@ -7,9 +7,9 @@ import { CatalogProductsController } from './catalog-products.controller';
 import { CatalogSearchController } from './catalog-search.controller';
 import { CatalogSearchService } from './catalog-search.service';
 import { ListingReader } from './listing-reader';
-import { NewArrivalsController } from './new-arrivals.controller';
 import { OfferCandidatesService } from './offer-candidates.service';
 import { OfferRefreshService } from './offer-refresh.service';
+import { PopularController } from './popular.controller';
 import { OffersService } from './offers.service';
 import { ProductFromCatalogService } from './product-from-catalog.service';
 import { ProductOffersController } from './product-offers.controller';
@@ -29,7 +29,7 @@ import { WatchesService } from './watches.service';
     ArtistsController,
     WatchesController,
     ProductOffersController,
-    NewArrivalsController,
+    PopularController,
   ],
   providers: [
     CatalogSearchService,
