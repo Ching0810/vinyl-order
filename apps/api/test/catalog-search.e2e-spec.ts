@@ -277,6 +277,10 @@ describe('Catalog search (e2e)', () => {
   });
 
   describe('albums', () => {
+    /** Each shop's listing's availability; equal scores come in either order. */
+    const availabilityByShop = (album: CatalogAlbum) =>
+      Object.fromEntries(album.listings.map((listing) => [listing.supplier, listing.availability]));
+
     it('groups one album’s listings at every shop, the shared shape, tracked by no one', async () => {
       const member = await createUser('customer');
       await listed('tht', ['Coldplay - Parachutes LP', 'Coldplay - X & Y 2LP']);
@@ -292,7 +296,8 @@ describe('Catalog search (e2e)', () => {
         'rotten_blues',
         'tht',
       ]);
-      expect(albums[0]).toMatchObject({ productId: null, watched: false });
+      expect(albums[0].productId).toBeNull();
+      expect(albums[0].listings.every((listing) => !listing.watched)).toBe(true);
       expect(albums[0].key).toBe(albums[0].listings[0].id);
     });
 
@@ -315,12 +320,13 @@ describe('Catalog search (e2e)', () => {
       expect(await albumsFor(member, { q: 'greatest hits' })).toHaveLength(2);
     });
 
-    it('names the record tracking an album, and whether this user tracks it', async () => {
+    it('names the record holding an album, and which of its listings this user tracks', async () => {
       const [tracker, other] = [await createUser('customer'), await createUser('customer')];
       const [tht] = await listed('tht', ['Coldplay - Parachutes LP']);
       await listed('cosmic', ['Coldplay - Parachutes（黑膠唱片 LP）']);
       const artist = await prisma.artist.create({ data: { name: 'Coldplay' } });
       const product = await prisma.product.create({
+        include: { offers: true },
         data: {
           title: 'Parachutes',
           artist: 'Coldplay',
@@ -340,13 +346,32 @@ describe('Catalog search (e2e)', () => {
         },
       });
       const trackerId = jwt.decode<JwtPayload>(tracker).sub;
-      await prisma.productWatch.create({ data: { userId: trackerId, productId: product.id } });
+      await prisma.offerWatch.create({
+        data: { userId: trackerId, offerId: product.offers[0].id },
+      });
 
       const [mine] = await albumsFor(tracker, { q: 'coldplay parachutes' });
       const [theirs] = await albumsFor(other, { q: 'coldplay parachutes' });
 
-      expect(mine).toMatchObject({ productId: product.id, watched: true });
-      expect(theirs).toMatchObject({ productId: product.id, watched: false });
+      const watchedIn = (album: CatalogAlbum) =>
+        album.listings.filter((listing) => listing.watched).map((listing) => listing.supplier);
+      expect(mine.productId).toBe(product.id);
+      // THT's listing is tracked; Cosmic's, on no record yet, isn't.
+      expect(watchedIn(mine)).toEqual(['tht']);
+      expect(theirs.productId).toBe(product.id);
+      expect(watchedIn(theirs)).toEqual([]);
+      // THT's was read when it was tracked; Cosmic's never has been.
+      expect(availabilityByShop(mine)).toEqual({ tht: 'in_stock', cosmic: 'unknown' });
+    });
+
+    it('a listing on no record is a pre-order if its title says so, else unknown', async () => {
+      const member = await createUser('customer');
+      await listed('tht', ['Coldplay - Parachutes 2LP (12/11發行預訂)']);
+      await listed('cosmic', ['Coldplay - Parachutes（黑膠唱片 LP）']);
+
+      const [album] = await albumsFor(member, { q: 'coldplay parachutes' });
+
+      expect(availabilityByShop(album)).toEqual({ tht: 'pre_order', cosmic: 'unknown' });
     });
   });
 });

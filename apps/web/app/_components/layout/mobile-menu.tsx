@@ -31,6 +31,9 @@ const AccountItems = ({ user }: { user: PublicUser | null | undefined }) => {
   return (
     <Menu.ItemGroup>
       <Menu.ItemGroupLabel truncate>{user.name ?? user.email}</Menu.ItemGroupLabel>
+      <Menu.Item value="search" asChild>
+        <NextLink href="/search">Search shops</NextLink>
+      </Menu.Item>
       <Menu.Item value="orders" asChild>
         <NextLink href="/orders">Orders</NextLink>
       </Menu.Item>

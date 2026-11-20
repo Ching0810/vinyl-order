@@ -9,7 +9,7 @@ import { UserIcon } from '@/components/ui/icons';
 import { useLogout } from '@/services/queries/auth/useLogout';
 /**
  * Logged-in account dropdown: the trigger shows the user's name; the menu holds
- * their identity + role, navigation (Orders, Supplier orders, Admin for admins), and Logout.
+ * their identity + role, navigation (Search shops, Orders, Supplier orders, Admin for admins), and Logout.
  */
 export default function UserMenu({ user }: { user: PublicUser }) {
   const router = useRouter();
@@ -42,6 +42,9 @@ export default function UserMenu({ user }: { user: PublicUser }) {
 
             <Menu.Separator />
 
+            <Menu.Item value="search" asChild>
+              <NextLink href="/search">Search shops</NextLink>
+            </Menu.Item>
             <Menu.Item value="orders" asChild>
               <NextLink href="/orders">Orders</NextLink>
             </Menu.Item>
