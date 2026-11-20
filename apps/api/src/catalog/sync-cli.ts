@@ -1,6 +1,7 @@
 /**
  * Copies the shops' catalogs into CatalogEntry, then their price and stock
- * from the shops' list pages, run by hand (tracker.md §7.2):
+ * from the shops' list pages, then what their home pages feature, run by hand
+ * or nightly (tracker.md §7.2):
  *
  *   pnpm --filter api catalog:sync tht
  *   pnpm --filter api catalog:sync all
@@ -18,6 +19,7 @@ import type { Supplier } from '@vinyl-order/shared';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { createSupplierAdapters } from './adapters';
+import { type CatalogPopularReport, CatalogPopularService } from './catalog-popular.service';
 import {
   CatalogStockFailed,
   type CatalogStockReport,
@@ -31,7 +33,7 @@ import {
 
 @Module({
   imports: [PrismaModule],
-  providers: [CatalogSyncService, CatalogStockService],
+  providers: [CatalogSyncService, CatalogStockService, CatalogPopularService],
 })
 class CatalogSyncCliModule {}
 
@@ -58,6 +60,11 @@ const stockSummaryOf = (report: CatalogStockReport): string =>
     `— ${report.updated} updated in ${(report.ms / 1000).toFixed(1)} s`,
   ].join(' ');
 
+const popularSummaryOf = (report: CatalogPopularReport): string =>
+  report.listed === 0
+    ? `${report.supplier} popular: none to read`
+    : `${report.supplier} popular: ${report.listed} listed, ${report.ranked} ranked in ${(report.ms / 1000).toFixed(1)} s`;
+
 /** A failure's own phrase: a fetch or page error names no listing. */
 const reasonOf = (reason: unknown): string =>
   reason instanceof Error ? reason.message : String(reason);
@@ -79,6 +86,7 @@ const main = async (): Promise<number> => {
   try {
     const sync = app.get(CatalogSyncService);
     const stock = app.get(CatalogStockService);
+    const popular = app.get(CatalogPopularService);
     for (const supplier of suppliers) {
       const adapter = adapters[supplier]!;
       try {
@@ -98,6 +106,13 @@ const main = async (): Promise<number> => {
         failed = true;
         if (!(error instanceof CatalogStockFailed)) throw error;
         logger.error(`${stockSummaryOf(error.report)} — stopped: ${reasonOf(error.reason)}`);
+      }
+      // Ranks what's copied; a list that can't be read keeps the last ranks.
+      try {
+        logger.log(popularSummaryOf(await popular.sync(adapter)));
+      } catch (error) {
+        failed = true;
+        logger.error(`${supplier} popular: stopped: ${reasonOf(error)}; last ranks kept`);
       }
     }
     const [{ size }] = await app.get(PrismaService).$queryRaw<{ size: string }[]>`

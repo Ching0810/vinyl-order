@@ -112,6 +112,22 @@ describe('Shop fetcher (e2e)', () => {
       expect(calls).toHaveLength(0);
     });
 
+    it('an exact page allows that page alone, not the paths it begins', async () => {
+      const home = 'https://shop.example/';
+      const fake = fakeFetch({ [home]: new Response('home') });
+      const fetcher = new ShopFetcher(
+        { ...RULES, pages: ['/'] },
+        { fetch: fake.impl, sleep: () => Promise.resolve() },
+      );
+
+      await expect(fetcher.fetchText(home)).resolves.toBe('home');
+      // "/cart" begins with "/", but "/" is a page here, not a prefix.
+      expect(await errorOf(fetcher.fetchText('https://shop.example/cart'))).toMatchObject({
+        kind: 'refused',
+        message: 'not a path this shop allows',
+      });
+    });
+
     it('allows the default port written out', async () => {
       const { fetcher } = fetcherWith({ [PAGE]: new Response('ok') });
 

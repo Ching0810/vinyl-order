@@ -16,7 +16,7 @@ export interface CatalogSearchState {
 }
 
 /**
- * The search a `/search` URL describes. An unknown `?shop=` searches
+ * The search the home page's URL describes. An unknown `?shop=` searches
  * every shop rather than nothing.
  *
  * @param params - the page's search params
@@ -30,7 +30,7 @@ export const toCatalogSearchState = (params: URLSearchParams): CatalogSearchStat
   };
 };
 
-/** The `/search` URL for a search; empty and off values are left out. */
+/** The home page's URL for a search; empty and off values are left out. */
 export const catalogSearchHref = ({ q, supplier, used, nonVinyl }: CatalogSearchState): string => {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
@@ -38,7 +38,7 @@ export const catalogSearchHref = ({ q, supplier, used, nonVinyl }: CatalogSearch
   if (used) params.set('used', '1');
   if (nonVinyl) params.set('nonVinyl', '1');
   const query = params.toString();
-  return query ? `/search?${query}` : '/search';
+  return query ? `/?${query}` : '/';
 };
 
 /**

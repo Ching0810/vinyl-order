@@ -556,6 +556,28 @@ a time (§4) and writes each listing's price, availability and count:
 - **The walk ends** at a page with none, or the same as the page before
   (past the last, EasyStore answers the last again), and at 400 pages.
 
+**Then what the shops feature on their home pages** (2026-11-20), for the
+home page's "Popular now". The catalogs carry no sales, views or ratings.
+First built from THT's best-selling order and Cosmic's "近期熱門新品"
+collection: what came out was obscure, not what a visitor would know. What a
+shop puts on its own front page is what it's pushing now:
+
+- **Cosmic: its slideshow** — K/DA, Bocchi the Rock!, ONE OK ROCK on the
+  day checked — a record a slide; a slide to a search or a collection is
+  skipped.
+- **Rotten Blues: its first two rows of picks** (Shopify's featured
+  collections); it has no slideshow, and the rows below are books and
+  players.
+- **THT: its "Featured collection" row** — its slideshow is the shop's
+  anniversary and turntables, with no records.
+
+One home page each, three requests a night. The fetcher allows the home page
+as a page, `/` exactly — a prefix of `/` would allow every path. Each run
+replaces the shop's ranks (`popularRank`, 1 first, in the page's order),
+read before cleared, so a page that can't be read — a new theme — keeps the
+last. The section takes the shops in turn — each one's first, then each
+one's second — showing new vinyl that can be bought.
+
 The first walks, 2026-11-20, locally:
 
 | Shop         | Pages |  Shown | In the catalog | In stock | Pre-order | Sold out |  Time |
@@ -1328,7 +1350,7 @@ orders, which any signed-in user has for their own (§12.1).
 | `POST /admin/products/:id/refresh`              | re-fetch the product's offers                                        |
 | `PATCH /admin/artists/:id`                      | rename; add or remove aliases                                        |
 | `GET /products/:id/offers`                      | a tracked record and every offer; public, 404 if not tracked         |
-| `GET /catalog/new`                              | the shops' newest listings that can be bought; public                |
+| `GET /catalog/popular`                          | what's popular at the shops, by their own lists; public              |
 | `POST /products/:id/refresh`                    | any member; a record at most every ten minutes (429)                 |
 | `PUT /watches/:offerId`                         | track a version from its record's comparison                         |
 | `GET /admin/dashboard`                          | the home page's three sections (§12.2)                               |
@@ -1347,10 +1369,10 @@ Shapes go in `packages/shared` as now.
 
 | Page               | Admin (me)                               | Visitor                             |
 | ------------------ | ---------------------------------------- | ----------------------------------- |
-| `/`                | the dashboard (§12.2)                    | the shops' new arrivals             |
-| `/` (signed in)    | my tracked versions                      | their own tracked versions          |
+| `/`                | search; popular at the shops till then   | the same; searching asks to sign in |
+| `/tracking`        | my tracked versions                      | their own tracked versions          |
 | `/products/[id]`   | comparison, candidates, refresh, aliases | comparison, "add to cart" per offer |
-| `/search`          | search by album; track one               | the same, once signed in            |
+| `/search`          | redirects to `/`, keeping the search     | the same                            |
 | `/supplier-orders` | my orders at the suppliers (§9.2)        | their own, once signed in           |
 | `/cart`, `/orders` | the demo store, as today                 | the demo store, as today            |
 
@@ -1425,19 +1447,23 @@ The carousel, the hot list and the admin hero page go (step 1).
   store's own records, with no offers, show as before. Later: the
   candidates and aliases for the admin, "record an order" per offer, and
   "ordered at THT · preparing" when a supplier order holds it.
-- **Home (`/`):** signed in, **"Tracking"** — each version I track a tile
+- **Home (`/`) is the search** (2026-11-20): the search box on top; before
+  anything is searched, **"Popular now"** — the shops' own popular lists,
+  §7.2 — whose tiles search for their album; once something is searched,
+  the albums found. Anyone sees what's popular; searching is for members,
+  and someone not signed in who searches is asked to sign in. The old hero
+  and its search box, which searched the records already made — what
+  members track — are gone. `/search` redirects here, keeping the search.
+- **Tracking (`/tracking`, in the menu):** each version I track a tile
   with its own price, availability and shop, and "NT$1,350 at CM唱片" when
   the album is cheaper elsewhere; nothing tracked yet says so and leads to
-  search. A tile opens the album's comparison. Not signed in, **"New at
-  the shops"** — the newest listings the nightly sync copied that can be
-  bought, at their price; a tile searches for its album.
+  search. A tile opens the album's comparison.
 
   **⚖️ Decision (2026-11-20): a visitor sees the shops, not the members.**
   First built as "Tracked lately", the records members track: that shows
-  strangers what other people follow. The shops' new arrivals come from
-  their public catalogs alone. Ordered by `CatalogEntry.createdAt`, when a
-  sync first copied the listing; rows copied before the column share its
-  migration's time, so the order means something from the next sync on.
+  strangers what other people follow. Then the shops' newest listings —
+  too obscure to draw anyone in. Now the shops' own popular lists, from
+  their public pages alone.
 
 - **Supplier orders (`/supplier-orders`):** §9.2.
 

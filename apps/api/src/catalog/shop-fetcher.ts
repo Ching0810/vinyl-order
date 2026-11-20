@@ -11,6 +11,11 @@ export interface ShopRules {
   hosts: readonly string[];
   /** Path prefixes, e.g. `/products/`, checked after the URL is parsed. */
   paths: readonly string[];
+  /**
+   * Exact paths, e.g. `/` for the home page: one page, not every path that
+   * starts with it, as a prefix of `/` would be.
+   */
+  pages?: readonly string[];
 }
 
 /**
@@ -150,7 +155,10 @@ export class ShopFetcher {
     if (url.port) throw refused('a port other than https');
     if (!this.rules.hosts.includes(url.hostname)) throw refused('not a host of this shop');
     // pathname is read after parsing, so `..` can't climb out of a prefix.
-    if (!this.rules.paths.some((prefix) => url.pathname.startsWith(prefix))) {
+    if (
+      !this.rules.paths.some((prefix) => url.pathname.startsWith(prefix)) &&
+      !this.rules.pages?.includes(url.pathname)
+    ) {
       throw refused('not a path this shop allows');
     }
     return url;

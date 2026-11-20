@@ -1,29 +1,20 @@
-'use client';
-
-import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
-
-import CatalogSearch from '@/components/catalog-search';
-import PageShell from '@/components/layout/page-shell';
-import { toCatalogSearchState } from '@/lib/utils/catalog-search';
-
-/** Reads the search from the URL, then hands it down. */
-const SearchFromUrl = () => {
-  const params = useSearchParams();
-  return <CatalogSearch search={toCatalogSearchState(new URLSearchParams(params.toString()))} />;
-};
+import { redirect } from 'next/navigation';
 
 /**
- * `/search` — the shops' catalogs by album, to track one (tracker.md §12.1,
- * §12.3). `useSearchParams` needs a Suspense boundary above it, so it lives
- * here.
+ * `/search` — where search lived before it became the home page (tracker.md
+ * §12.3): kept for links to it, its words and filters carried over.
  */
-export default function SearchPage() {
-  return (
-    <PageShell>
-      <Suspense fallback={null}>
-        <SearchFromUrl />
-      </Suspense>
-    </PageShell>
-  );
+export default async function SearchRedirect({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(await searchParams)) {
+    for (const each of Array.isArray(value) ? value : [value]) {
+      if (each !== undefined) params.append(key, each);
+    }
+  }
+  const query = params.toString();
+  redirect(query ? `/?${query}` : '/');
 }

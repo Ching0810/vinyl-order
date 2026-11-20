@@ -2,6 +2,7 @@ import type { Supplier } from '@vinyl-order/shared';
 import { z } from 'zod';
 
 import { availabilityOf } from './availability';
+import { handlesUnderHeading, slideshowHandles } from './home-picks';
 import { readListingTitle, splitArtistNames } from './listing-title';
 import { ShopFetcher, ShopFetchError, type ShopRules } from './shop-fetcher';
 import { sitemapIndexLocs, type SitemapProduct, sitemapProducts } from './sitemap';
@@ -26,18 +27,25 @@ export interface EasyStoreShop {
   origin: string;
   /** The hosts a pasted URL may name; the bare domain redirects to `www.`. */
   hosts: readonly string[];
+  /**
+   * Where its home page features records (§7.2): Cosmic's slideshow is
+   * records; THT's is brands and players, so its featured row instead.
+   */
+  picks: { from: 'slideshow' } | { from: 'heading'; heading: string };
 }
 
 export const THT: EasyStoreShop = {
   supplier: 'tht',
   origin: 'https://www.thtrecords.com',
   hosts: ['www.thtrecords.com', 'thtrecords.com'],
+  picks: { from: 'heading', heading: 'Featured collection' },
 };
 
 export const COSMIC: EasyStoreShop = {
   supplier: 'cosmic',
   origin: 'https://www.cosmicmusicrecord.com',
   hosts: ['www.cosmicmusicrecord.com', 'cosmicmusicrecord.com'],
+  picks: { from: 'slideshow' },
 };
 
 /**
@@ -45,6 +53,9 @@ export const COSMIC: EasyStoreShop = {
  * allows all three (§4).
  */
 const PATHS = ['/products/', '/sitemap_products', '/collections/all'];
+
+/** The home page alone, for the records it features: a page, not a prefix. */
+const PAGES = ['/'];
 
 /** A product page's path: `/products/<handle>`, nothing below it. */
 const PRODUCT_PATH = /^\/products\/([^/]+)\/?$/;
@@ -117,8 +128,8 @@ export interface EasyStoreAdapterOptions {
 
 /**
  * Reads an EasyStore shop (tracker.md §6): its product sitemaps for the
- * catalog, its list of every product for price and stock, and a product
- * page for an offer.
+ * catalog, its list of every product for price and stock, its home page for
+ * the records it features, and a product page for an offer.
  *
  * The page carries what an offer needs in two scripts: a JSON-LD Product
  * (name, price, availability) and the theme's `variants` array (stock,
@@ -136,7 +147,7 @@ export class EasyStoreAdapter implements SupplierAdapter {
     options: EasyStoreAdapterOptions = {},
   ) {
     this.supplier = shop.supplier;
-    this.rules = { hosts: shop.hosts, paths: PATHS };
+    this.rules = { hosts: shop.hosts, paths: PATHS, pages: PAGES };
     this.fetcher = options.fetcher ?? new ShopFetcher(this.rules);
     this.today = options.today ?? (() => taipeiToday());
   }
@@ -267,6 +278,20 @@ export class EasyStoreAdapter implements SupplierAdapter {
         })),
       };
     }
+  }
+
+  /** The records the home page features, in its order. */
+  async syncPopular(): Promise<string[]> {
+    const html = await this.fetcher.fetchText(`${this.shop.origin}/`);
+    const { picks } = this.shop;
+    const handles =
+      picks.from === 'slideshow'
+        ? slideshowHandles(html, this.shop.hosts)
+        : handlesUnderHeading(html, picks.heading, this.shop.hosts);
+    if (handles.length === 0) {
+      throw new ShopPageUnreadable('no featured products on the home page');
+    }
+    return handles;
   }
 
   private entriesOf(products: SitemapProduct[]): ParsedCatalogEntry[] {

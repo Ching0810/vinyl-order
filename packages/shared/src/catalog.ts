@@ -93,12 +93,14 @@ export const catalogAlbumSchema = z.object({
 export type CatalogAlbum = z.infer<typeof catalogAlbumSchema>;
 
 /**
- * A listing new at a shop (GET /catalog/new): what a sync copied lately, as
- * the shop names and prices it — the home page for someone not signed in.
- * From the shops' public catalogs only: nothing in it says what anyone
- * tracks.
+ * A listing popular at its shop (GET /catalog/popular): among what its
+ * home page features — Cosmic's slideshow, THT's featured row, Rotten
+ * Blues' rows of picks — as
+ * the shop names and prices it. The home page's section when nothing is
+ * searched. From the shops' public pages only: nothing in it says what
+ * anyone tracks.
  */
-export const newArrivalSchema = catalogSearchHitSchema
+export const popularListingSchema = catalogSearchHitSchema
   .omit({ score: true, isVinyl: true, isUsed: true })
   .extend({
     priceCents: z.number().int(),
@@ -106,7 +108,7 @@ export const newArrivalSchema = catalogSearchHitSchema
     availability: availabilitySchema.exclude(['sold_out']),
     /** The artist and album its title names, to search for it by. */
     searchQuery: z.string(),
-    /** When a sync first copied it. */
-    firstSeenAt: z.iso.datetime(),
+    /** Its place among its shop's features, 1 first. */
+    rank: z.number().int(),
   });
-export type NewArrival = z.infer<typeof newArrivalSchema>;
+export type PopularListing = z.infer<typeof popularListingSchema>;

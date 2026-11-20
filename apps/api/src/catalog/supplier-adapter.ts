@@ -93,6 +93,11 @@ export interface SupplierAdapter {
   syncCatalog(): AsyncIterable<CatalogBatch>;
   /** Walk the shop's list pages for price and stock, a page at a time (§7.2). */
   syncStock(): AsyncIterable<StockBatch>;
+  /**
+   * The records the shop's home page features — its slideshow, or its
+   * rows of picks — as handles, in the page's order (§7.2).
+   */
+  syncPopular(): Promise<string[]>;
 }
 
 /**

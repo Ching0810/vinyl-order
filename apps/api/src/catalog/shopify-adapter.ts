@@ -2,6 +2,7 @@ import type { Supplier } from '@vinyl-order/shared';
 import { z } from 'zod';
 
 import { availabilityOf } from './availability';
+import { featuredSectionHandles } from './home-picks';
 import { readListingTitle, splitArtistNames } from './listing-title';
 import { ShopFetcher, type ShopRules } from './shop-fetcher';
 import { sitemapIndexLocs, sitemapProducts } from './sitemap';
@@ -40,6 +41,15 @@ export const ROTTEN_BLUES: ShopifyShop = {
  * prefix is `/sitemap`, not `/sitemap_products` as on EasyStore.
  */
 const PATHS = ['/products/', '/sitemap', '/collections/all'];
+
+/** The home page alone, for the records it features: a page, not a prefix. */
+const PAGES = ['/'];
+
+/**
+ * The home page's rows of picked products read: the first two are the
+ * shop's records of the moment; those below are books, players and the like.
+ */
+const FEATURED_ROWS = 2;
 
 /**
  * A product's path, as pasted or listed: `/products/<handle>`, also under a
@@ -118,7 +128,7 @@ export class ShopifyAdapter implements SupplierAdapter {
     options: ShopifyAdapterOptions = {},
   ) {
     this.supplier = shop.supplier;
-    this.rules = { hosts: shop.hosts, paths: PATHS };
+    this.rules = { hosts: shop.hosts, paths: PATHS, pages: PAGES };
     this.fetcher = options.fetcher ?? new ShopFetcher(this.rules);
     this.today = options.today ?? (() => taipeiToday());
   }
@@ -186,6 +196,23 @@ export class ShopifyAdapter implements SupplierAdapter {
 
       yield { entries };
     }
+  }
+
+  /**
+   * The records the home page features: its first FEATURED_ROWS rows of
+   * picked products. It has no slideshow, and its best-selling order is a
+   * `sort_by`, which its robots.txt forbids (§4).
+   */
+  async syncPopular(): Promise<string[]> {
+    const handles = featuredSectionHandles(
+      await this.fetcher.fetchText(`${this.shop.origin}/`),
+      FEATURED_ROWS,
+      this.shop.hosts,
+    );
+    if (handles.length === 0) {
+      throw new ShopPageUnreadable('no featured products on the home page');
+    }
+    return handles;
   }
 
   async *syncCatalog(): AsyncIterable<CatalogBatch> {
