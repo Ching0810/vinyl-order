@@ -319,6 +319,19 @@ out common, `Product`–`Artist` becomes many-to-many.
 record, so it needs no table: every attached offer's `sourceTitle` already is
 one more way to write it, and matching uses them all (§7.3).
 
+### 5.8 `ProductWatch`: each user's tracked records
+
+`userId`, `productId`, `createdAt`; the key is the pair, so tracking twice
+is tracking once. Both sides cascade.
+
+**⚖️ Decision (2026-11-20): records are shared, lists are each user's
+own.** One record per album, whoever added it: a second member tracking
+the same album gets the same record, its comparison already built, not a
+copy to match again. What each user follows is theirs alone — the same
+row-level scoping supplier orders have (§12.1). Matching a record's offers
+and editing its artist's names change it for everyone, so they stay the
+admin's (§12.1).
+
 ## 6. Supplier adapters
 
 ### 6.1 The interface
@@ -554,7 +567,28 @@ here needs a search engine at tens of thousands of rows.
   search already shows who carries a record; one shop is for picking the
   primary below.
 
-Adding a record:
+**Search answers with albums** (2026-11-20). The best 120 listings found
+are grouped: two listings are one album when their titles, read as §6.2
+reads them, share an artist name and name **the same album** once case,
+width, spaces and punctuation are set aside. Each album lists its listing
+at every shop that carries it, best first, and says whether a record
+tracks it already, and whether the searcher does. Measured on ten
+artists' 430 listings first: the same album exactly found 78 albums at two
+shops or more and merged no two releases; a title containing the other
+merged Kid A with Kid A Mnesia and OK Computer with its OKNOTOK box. A
+title with no artist read stays an album of its own. A shop may list one
+album twice — two pressings — and then the album has both, for the
+searcher to pick one.
+
+**Tracking an album** (`POST /watches`, any member) takes its listings,
+one per shop: the record tracking any of them is the one; otherwise a new
+record is made from the first, as below. Each shop the record has no offer
+at is then attached from its listing, read live; a listing another record
+tracks, or a page that can't be read, is skipped and said so. A shop the
+record has already isn't attached again — a second listing there is most
+likely another pressing. Then the record goes on the member's list.
+
+Adding a record by hand, the admin's way:
 
 1. Search one supplier — the "primary" — and pick an entry.
 2. Its page is fetched (`fetchOffer`); the product is created from it, with
@@ -1214,7 +1248,8 @@ orders, which any signed-in user has for their own (§12.1).
 
 | Method and path                                 | Purpose                                                              |
 | ----------------------------------------------- | -------------------------------------------------------------------- |
-| `GET /admin/catalog/search?q=&supplier=`        | search the index, every shop or one; `used`, `nonVinyl` (§7.3)       |
+| `GET /catalog/search?q=&supplier=`              | albums found, any member; `used`, `nonVinyl` (§7.3)                  |
+| `GET/POST /watches`, `DELETE /watches/:id`      | my tracked records; track an album; stop tracking (§5.8)             |
 | `POST /admin/products/from-catalog`             | create a product and its first offer from an entry                   |
 | `GET /admin/products/:id/candidates`            | candidates at the other suppliers                                    |
 | `POST /admin/products/:id/offers`               | attach a confirmed candidate (or a pasted URL)                       |
@@ -1239,10 +1274,17 @@ Shapes go in `packages/shared` as now.
 | Page               | Admin (me)                               | Visitor                             |
 | ------------------ | ---------------------------------------- | ----------------------------------- |
 | `/`                | the dashboard (§12.2)                    | tracked records, lowest price each  |
+| `/` (signed in)    | my tracked records                       | their own tracked records           |
 | `/products/[id]`   | comparison, candidates, refresh, aliases | comparison, "add to cart" per offer |
-| `/admin/search`    | add a record from a supplier's catalog   | —                                   |
+| `/search`          | search by album; track one               | the same, once signed in            |
 | `/supplier-orders` | my orders at the suppliers (§9.2)        | their own, once signed in           |
 | `/cart`, `/orders` | the demo store, as today                 | the demo store, as today            |
+
+**Changed 2026-11-20: searching and tracking are every member's.** Rather
+than the admin alone adding records, anyone signed in searches the shops by
+album and tracks one; their home page is their list (§5.8). Records stay
+shared, so the comparison one member's tracking builds is there for the
+next. Matching offers and artists' names stay the admin's.
 
 **⚖️ Decision: visitors read, they don't see the personal pages.** The prices
 are the shops' public ones, so the comparison is safe to show and is what a
@@ -1379,6 +1421,10 @@ Each step is its own PR.
 9. Web: the search page (9a), then the product page's comparison (9b) —
    **the comparison usable**; then the visitors' list, the dashboard
    (§12.2), and the product page's "record an order" and link-a-line.
+   **Changed 2026-11-20** (§12.1): search and tracking open to every
+   member, by album. Four PRs: the API — album search, `ProductWatch`, track
+   and untrack (9a-1); the search page (9a-2); the product page's
+   comparison (9b); each member's tracked records on the home page (9c).
 10. Cosmic — folded into steps 6–7: it is on THT's platform, so it is the
     same adapter configured twice, and the only shop that fills barcodes,
     which matching ranks first (§7.3).

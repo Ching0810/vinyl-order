@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import { type CatalogSearchHit, catalogSearchHitSchema, type Supplier } from '@vinyl-order/shared';
+import {
+  type CatalogAlbum,
+  catalogAlbumSchema,
+  type CatalogSearchHit,
+  type Supplier,
+} from '@vinyl-order/shared';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
@@ -15,8 +20,9 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 /**
  * Searching the shops' copied catalogs (docs/design/tracker.md §7.3, §11):
- * admin-only, best match first, new vinyl unless asked, and Chinese and
- * Japanese names found as well as English ones (§15 Q6).
+ * anyone signed in, best match first, new vinyl unless asked, Chinese and
+ * Japanese names found as well as English ones (§15 Q6), and the listings
+ * grouped into albums, each saying whether a record tracks it.
  *
  * The listings are made up, written straight into CatalogEntry the way the
  * sync writes them.
@@ -55,7 +61,7 @@ describe('Catalog search (e2e)', () => {
     supplier: Supplier,
     titles: (string | { title: string; isVinyl?: boolean; isUsed?: boolean })[],
   ) =>
-    prisma.catalogEntry.createMany({
+    prisma.catalogEntry.createManyAndReturn({
       data: titles.map((listing) => {
         const {
           title,
@@ -77,26 +83,30 @@ describe('Catalog search (e2e)', () => {
       }),
     });
 
-  const search = async (token: string, query: Record<string, string>) => {
+  const albumsFor = async (token: string, query: Record<string, string>) => {
     const response = await request(app.getHttpServer())
-      .get('/admin/catalog/search')
+      .get('/catalog/search')
       .query(query)
       .set({ Authorization: `Bearer ${token}` })
       .expect(200);
-    return response.body as CatalogSearchHit[];
+    return response.body as CatalogAlbum[];
   };
+
+  /** The listings found, album by album: what matching is about. */
+  const search = async (token: string, query: Record<string, string>) =>
+    (await albumsFor(token, query)).flatMap((album) => album.listings);
 
   const titlesOf = (hits: CatalogSearchHit[]) => hits.map((hit) => hit.title);
 
   describe('who may search', () => {
-    it('refuses anyone not signed in, and a customer', async () => {
+    it('anyone signed in, no one else', async () => {
       const customer = await createUser('customer');
+      await listed('tht', ['The Beatles - Abbey Road LP']);
 
-      await request(app.getHttpServer()).get('/admin/catalog/search?q=abbey').expect(401);
-      await request(app.getHttpServer())
-        .get('/admin/catalog/search?q=abbey')
-        .set({ Authorization: `Bearer ${customer}` })
-        .expect(403);
+      await request(app.getHttpServer()).get('/catalog/search?q=abbey').expect(401);
+      expect(titlesOf(await search(customer, { q: 'abbey' }))).toEqual([
+        'The Beatles - Abbey Road LP',
+      ]);
     });
 
     it.each([
@@ -110,7 +120,7 @@ describe('Catalog search (e2e)', () => {
       const admin = await createUser('admin');
 
       await request(app.getHttpServer())
-        .get('/admin/catalog/search')
+        .get('/catalog/search')
         .query(query)
         .set({ Authorization: `Bearer ${admin}` })
         .expect(400);
@@ -127,7 +137,6 @@ describe('Catalog search (e2e)', () => {
       const hits = await search(admin, { q: 'beatles abbey road' });
 
       expect(hits.map((hit) => hit.supplier).sort()).toEqual(['cosmic', 'rotten_blues', 'tht']);
-      for (const hit of hits) expect(catalogSearchHitSchema.parse(hit)).toEqual(hit);
       expect(hits[0].score).toBe(1);
     });
 
@@ -206,14 +215,14 @@ describe('Catalog search (e2e)', () => {
       expect(await search(admin, { q: 'zz' })).toEqual([]);
     });
 
-    it('returns 30 at most', async () => {
+    it('returns 30 albums at most', async () => {
       const admin = await createUser('admin');
       await listed(
         'tht',
         Array.from({ length: 35 }, (_, index) => `Miles Davis - Kind of Blue #${index} LP`),
       );
 
-      expect(await search(admin, { q: 'kind of blue' })).toHaveLength(30);
+      expect(await albumsFor(admin, { q: 'kind of blue' })).toHaveLength(30);
     });
   });
 
@@ -264,6 +273,80 @@ describe('Catalog search (e2e)', () => {
       const hits = await search(admin, { q: 'waltz for debby', supplier: 'cosmic' });
 
       expect(hits.map((hit) => hit.supplier)).toEqual(['cosmic']);
+    });
+  });
+
+  describe('albums', () => {
+    it('groups one album’s listings at every shop, the shared shape, tracked by no one', async () => {
+      const member = await createUser('customer');
+      await listed('tht', ['Coldplay - Parachutes LP', 'Coldplay - X & Y 2LP']);
+      await listed('cosmic', ['Coldplay - Parachutes（黑膠唱片 LP）']);
+      await listed('rotten_blues', ['【歐版黑膠】Coldplay《Parachutes》']);
+
+      const albums = await albumsFor(member, { q: 'coldplay parachutes' });
+
+      for (const album of albums) expect(catalogAlbumSchema.parse(album)).toEqual(album);
+      expect(albums[0]).toMatchObject({ artist: 'Coldplay', title: 'Parachutes' });
+      expect(albums[0].listings.map((listing) => listing.supplier).sort()).toEqual([
+        'cosmic',
+        'rotten_blues',
+        'tht',
+      ]);
+      expect(albums[0]).toMatchObject({ productId: null, watched: false });
+      expect(albums[0].key).toBe(albums[0].listings[0].id);
+    });
+
+    it('keeps two pressings at one shop in one album; another album apart', async () => {
+      const member = await createUser('customer');
+      await listed('tht', ['Coldplay - Parachutes LP', 'Coldplay - Parachutes LP (Red Vinyl)']);
+      await listed('tht', ['Coldplay - Parachutes Live LP']);
+
+      const albums = await albumsFor(member, { q: 'coldplay parachutes' });
+
+      const parachutes = albums.find((album) => album.title === 'Parachutes');
+      expect(parachutes?.listings).toHaveLength(2);
+      expect(albums.map((album) => album.title)).toContain('Parachutes Live');
+    });
+
+    it('the same album title by another artist is another album', async () => {
+      const member = await createUser('customer');
+      await listed('tht', ['Coldplay - Greatest Hits LP', 'Queen - Greatest Hits LP']);
+
+      expect(await albumsFor(member, { q: 'greatest hits' })).toHaveLength(2);
+    });
+
+    it('names the record tracking an album, and whether this user tracks it', async () => {
+      const [tracker, other] = [await createUser('customer'), await createUser('customer')];
+      const [tht] = await listed('tht', ['Coldplay - Parachutes LP']);
+      await listed('cosmic', ['Coldplay - Parachutes（黑膠唱片 LP）']);
+      const artist = await prisma.artist.create({ data: { name: 'Coldplay' } });
+      const product = await prisma.product.create({
+        data: {
+          title: 'Parachutes',
+          artist: 'Coldplay',
+          artistId: artist.id,
+          priceCents: 100_000,
+          offers: {
+            create: {
+              supplier: 'tht',
+              externalId: tht.externalId,
+              url: tht.url,
+              sourceTitle: tht.title,
+              priceCents: 100_000,
+              availability: 'in_stock',
+              lastCheckedAt: new Date(),
+            },
+          },
+        },
+      });
+      const trackerId = jwt.decode<JwtPayload>(tracker).sub;
+      await prisma.productWatch.create({ data: { userId: trackerId, productId: product.id } });
+
+      const [mine] = await albumsFor(tracker, { q: 'coldplay parachutes' });
+      const [theirs] = await albumsFor(other, { q: 'coldplay parachutes' });
+
+      expect(mine).toMatchObject({ productId: product.id, watched: true });
+      expect(theirs).toMatchObject({ productId: product.id, watched: false });
     });
   });
 });

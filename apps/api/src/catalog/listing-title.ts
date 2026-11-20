@@ -47,11 +47,12 @@ const PRE_ORDER = /預購|預訂|預約/;
 const USED = /二手|中古|\bused\b/i;
 
 /**
- * What else the shops sell, as their titles name it: merchandise, calendars,
- * magazines, scores, books, players. Flagged so search can hide them.
+ * What else the shops sell, as their titles name it: films (`BD`, 藍光),
+ * merchandise, calendars, magazines, scores, books, players. Flagged so
+ * search can hide them.
  */
 const OTHER_GOODS =
-  /\b(?:MD|DVD|Blu-?ray|BOOK)\b|卡帶|周邊|週邊|年曆|月曆|雜誌|樂譜|硬體|專書|書籍|寫真/i;
+  /\b(?:MD|DVD|BD|Blu-?ray|BOOK)\b|藍光|卡帶|周邊|週邊|年曆|月曆|雜誌|樂譜|硬體|專書|書籍|寫真/i;
 
 /** Formats that are not vinyl. */
 const NOT_VINYL = new RegExp(`^\\d*CD$|${OTHER_GOODS.source}`, 'i');
