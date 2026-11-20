@@ -528,7 +528,11 @@ longer lists are deleted.
 
 Sync runs outside the API: at first a command run by hand, locally and
 then against Neon, so the first runs can be watched — how many entries,
-how much space, how long; then a GitHub Actions schedule (§10, step 12).
+how much space, how long; then a GitHub Actions schedule (§10, step 12):
+nightly at 03:00 Taipei since step 12a, the same command against production.
+The repository is public and so are the run's logs: the command prints
+counts and timings, never a title, and the workflow masks the database's
+host as the deploy does. A failed run fails the job, and GitHub mails it.
 
 **Then price and stock, from the list pages** (2026-11-20). After the
 sitemap walk, `catalog:sync` reads the shop's `/collections/all` a page at
@@ -1508,7 +1512,11 @@ Each step is its own PR.
 11. Candlelight: the WACA adapter (the 1996 page as fixture), paged sync,
     `lastmod` increments.
 12. Scheduled refresh and catalog sync in GitHub Actions; alerts from
-    snapshots (price drop, back in stock, one or two left).
+    snapshots (price drop, back in stock, one or two left). Two parts:
+    **12a**, the catalog sync nightly (`.github/workflows/catalog-sync.yml`,
+    03:00 Taipei, `catalog:sync all` against production) — pulled ahead
+    once the list pages brought prices, which go stale without it; **12b**,
+    every tracked offer's page read again nightly, and the alerts.
 13. Supplier orders from email — **pulled ahead to follow step 4**, once
     typing orders in had shown what it costs: confirmations from THT, Cosmic
     and Rotten Blues (§9.4). _(Done: API #74 — parsers, import token,

@@ -1,0 +1,64 @@
+# Copies the shops' catalogs into the production database every night: their
+# sitemaps, then their list pages for price and stock (docs/design/tracker.md
+# §7.2, step 12a). The same command as by hand, `catalog:sync all`, so a run
+# here and one on a laptop do the same thing.
+name: Catalog sync
+
+on:
+  # 03:00 in Taipei (UTC+8), when the shops are quietest and nothing else
+  # runs: the email import is 10:00–22:00. GitHub may start a scheduled run
+  # late at busy times; a few minutes don't matter here.
+  schedule:
+    - cron: '0 19 * * *'
+  # Again by hand, after a failure or to see it run.
+  workflow_dispatch:
+
+# One sync at a time: two would walk the shops twice and write the same rows.
+# A run that's going is never cancelled for the next; the next waits.
+concurrency:
+  group: catalog-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # ~28 minutes on a laptop (§7.2); the margin is for a slow shop, not a hang
+    # — the fetcher times out each request at 30 s.
+    timeout-minutes: 90
+    # The production database's secret is readable only from this environment.
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # The API and what it depends on; postinstall generates the Prisma client.
+      - run: pnpm install --frozen-lockfile --filter "api..."
+      # The API reads @vinyl-order/shared at runtime from its dist.
+      - run: pnpm --filter "api^..." build
+      # The repository is public, and so are its logs. The command prints
+      # counts and timings, never a listing's title or the database's host;
+      # the host is masked anyway, as the deploy masks it. So is the password
+      # on its own: GitHub masks a secret's exact value, and the URL the sync
+      # connects with is rewritten below — a string holding the password
+      # that no longer is the secret, so wouldn't be masked if ever printed.
+      - name: Hide the database host and password from the log
+        env:
+          VINYL: ${{ secrets.NEON_VINYL_DIRECT }}
+        run: |
+          host=${VINYL#*@}
+          echo "::add-mask::${host%%/*}"
+          credentials=${VINYL#*://}
+          credentials=${credentials%%@*}
+          echo "::add-mask::${credentials#*:}"
+      # Direct, not pooled: one long batch of writes (deploy.md §7).
+      # verify-full spelled out, as everywhere the pg driver connects.
+      - name: Sync the catalogs
+        working-directory: apps/api
+        env:
+          NEON_URL: ${{ secrets.NEON_VINYL_DIRECT }}
+        run: |
+          export DATABASE_URL="${NEON_URL/sslmode=require/sslmode=verify-full}"
+          pnpm catalog:sync all
