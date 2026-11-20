@@ -5,13 +5,14 @@ import NextLink from 'next/link';
 import SupplierBadge from '@/components/supplier-order/supplier-badge';
 import Cover from '@/components/ui/cover';
 import { AVAILABILITY_BADGE } from '@/lib/utils/catalog-search';
+import { formatPrice } from '@/lib/utils/currency';
+import { formatTimeAgo } from '@/lib/utils/date';
 
 /**
  * One album: artist and title, then each listing of it — a version at a
  * shop, with its own cover and the shop's own title, a link there and its
  * own "Track". Two pressings at a shop are two rows: different records,
- * different covers and prices, tracked one at a time. No price here: the catalogs carry none (tracker.md
- * §12.3); the record's page reads them.
+ * different covers and prices, tracked one at a time.
  *
  * @param album - the album
  * @param trackingId - the listing whose track is running, if any
@@ -97,6 +98,7 @@ const ListingRow = ({
         <Link href={listing.url} target="_blank" rel="noreferrer" fontSize="sm" lineClamp={2}>
           {listing.title} ↗
         </Link>
+        <StockLine listing={listing} />
       </Stack>
       <Box flexShrink="0">
         {listing.watched && productId ? (
@@ -125,3 +127,29 @@ const ListingRow = ({
     ) : null}
   </Stack>
 );
+
+/**
+ * The listing's price, its count when the shop keeps one, and how old they
+ * are — the list pages are walked nightly (tracker.md §7.2). Nothing when
+ * nothing has read it.
+ */
+const StockLine = ({ listing }: { listing: CatalogAlbumListing }) => {
+  if (listing.priceCents === null && listing.checkedAt === null) return null;
+  return (
+    <HStack gap="2" wrap="wrap" align="baseline">
+      {listing.priceCents === null ? null : (
+        <Text fontWeight="semibold">{formatPrice(listing.priceCents, listing.currency)}</Text>
+      )}
+      {listing.stockQty !== null && listing.availability === 'in_stock' ? (
+        <Text fontSize="sm" color="fg.muted">
+          {listing.stockQty} left
+        </Text>
+      ) : null}
+      {listing.checkedAt === null ? null : (
+        <Text fontSize="xs" color="fg.subtle">
+          checked {formatTimeAgo(listing.checkedAt)}
+        </Text>
+      )}
+    </HStack>
+  );
+};

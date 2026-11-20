@@ -45,18 +45,28 @@ export const catalogSearchHitSchema = z.object({
 export type CatalogSearchHit = z.infer<typeof catalogSearchHitSchema>;
 
 /**
- * Whether a listing can be bought, as far as search knows. The catalog
- * carries no stock (§4): a listing on a record has its page's last read
- * (§5.2); one whose title says pre-order is `pre_order`; any other is
- * `unknown` — never guessed in stock.
+ * Whether a listing can be bought, as far as search knows (§7.2, §12.3): the
+ * newer of its record's offer, read from the product page, and the copied
+ * catalog, read from the shop's list pages. A listing neither has read is a
+ * pre-order if its title says so, and otherwise `unknown` — never guessed.
  */
 export const listingAvailabilitySchema = z.enum([...availabilitySchema.options, 'unknown']);
 export type ListingAvailability = z.infer<typeof listingAvailabilitySchema>;
 
-/** One listing of an album found: a version at a shop, and whether I track it. */
+/**
+ * One listing of an album found: a version at a shop, whether I track it,
+ * and its price and stock as of `checkedAt`.
+ */
 export const catalogAlbumListingSchema = catalogSearchHitSchema.extend({
   watched: z.boolean(),
   availability: listingAvailabilitySchema,
+  /** Null until read. */
+  priceCents: z.number().int().nullable(),
+  currency: z.string(),
+  /** The shop's count, when it keeps one. */
+  stockQty: z.number().int().nullable(),
+  /** When the values were read; null when nothing has read them. */
+  checkedAt: z.iso.datetime().nullable(),
 });
 export type CatalogAlbumListing = z.infer<typeof catalogAlbumListingSchema>;
 

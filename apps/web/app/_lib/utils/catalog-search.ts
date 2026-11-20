@@ -43,8 +43,8 @@ export const catalogSearchHref = ({ q, supplier, used, nonVinyl }: CatalogSearch
 
 /**
  * A listing's availability as its badge says it. "Unknown" is said, not
- * hidden: the catalog carries no stock, and only a listing a record holds
- * has had its page read.
+ * hidden: a listing no list page or product page has read yet — one added
+ * since the last stock walk — isn't guessed in stock.
  */
 export const AVAILABILITY_BADGE: Record<ListingAvailability, { label: string; palette: string }> = {
   in_stock: { label: 'In stock', palette: 'green' },
