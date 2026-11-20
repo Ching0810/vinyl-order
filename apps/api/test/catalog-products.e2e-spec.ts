@@ -15,6 +15,8 @@ import {
   type CatalogSearchHit,
   type ProductWithOffers,
   productWithOffersSchema,
+  type NewArrival,
+  newArrivalSchema,
   type Supplier,
 } from '@vinyl-order/shared';
 import request from 'supertest';
@@ -965,6 +967,192 @@ describe('Records from the catalog (e2e)', () => {
         supplier: 'cosmic',
         priceCents: 90_000,
       });
+    });
+  });
+
+  describe('a record’s comparison', () => {
+    const offersOf = (productId: string) => server().get(`/products/${productId}/offers`);
+
+    const memberRefresh = (productId: string, token: string) =>
+      server().post(`/products/${productId}/refresh`).set(auth(token));
+
+    /** Every offer of a record read this long ago, as if refreshed then. */
+    const readAgo = (productId: string, ms: number) =>
+      prisma.offer.updateMany({
+        where: { productId },
+        data: { lastCheckedAt: new Date(Date.now() - ms), lastErrorAt: null },
+      });
+
+    it('anyone reads it: every offer, each with its own cover', async () => {
+      const { entryId } = await listing('tht', {
+        imageUrl: 'https://cdn.example-shop.test/red.jpg',
+      });
+      const product = await created({ catalogEntryId: entryId });
+
+      const response = await offersOf(product.id).expect(200);
+      const read = response.body as ProductWithOffers;
+
+      expect(productWithOffersSchema.parse(read)).toEqual(read);
+      expect(read.offers[0].imageUrl).toBe('https://cdn.example-shop.test/red.jpg');
+    });
+
+    it('404 for a record that isn’t tracked, or isn’t there', async () => {
+      const demo = await prisma.product.create({
+        data: { title: 'Demo', artist: 'Demo Artist', priceCents: 100_000 },
+      });
+
+      await offersOf(demo.id).expect(404);
+      await offersOf(randomUUID()).expect(404);
+    });
+
+    it('a member reads it again at most every ten minutes; a failed read counts', async () => {
+      const member = await createUser('customer');
+      const { entryId, url, offer } = await listing('tht');
+      const product = await created({ catalogEntryId: entryId });
+
+      // Just made: read a moment ago.
+      const tooSoon = await memberRefresh(product.id, member).expect(429);
+      expect(tooSoon.body).toMatchObject({ code: 'REFRESH_TOO_SOON' });
+      expect((tooSoon.body as { retryAfterSeconds: number }).retryAfterSeconds).toBeGreaterThan(
+        590,
+      );
+
+      await readAgo(product.id, 11 * 60 * 1000);
+      pages.set(url, {
+        ...offer,
+        priceCents: 120_000,
+        imageUrl: 'https://cdn.example-shop.test/new.jpg',
+      });
+      const refreshed = (await memberRefresh(product.id, member).expect(200))
+        .body as ProductWithOffers;
+      expect(refreshed.offers[0]).toMatchObject({
+        priceCents: 120_000,
+        imageUrl: 'https://cdn.example-shop.test/new.jpg',
+      });
+
+      // A read that failed a minute ago holds it too.
+      await readAgo(product.id, 11 * 60 * 1000);
+      await prisma.offer.updateMany({
+        where: { productId: product.id },
+        data: { lastErrorAt: new Date(Date.now() - 60 * 1000) },
+      });
+      await memberRefresh(product.id, member).expect(429);
+    });
+
+    it('refreshing needs a member; the admin’s has no wait', async () => {
+      const { entryId } = await listing('tht');
+      const product = await created({ catalogEntryId: entryId });
+
+      await server().post(`/products/${product.id}/refresh`).expect(401);
+      await refresh(product.id).expect(200);
+    });
+
+    it('a member tracks a version from it, and stops', async () => {
+      const member = await createUser('customer');
+      const { entryId } = await listing('tht');
+      const product = await created({ catalogEntryId: entryId });
+      const [offer] = product.offers;
+      const watched = async () =>
+        ((await server().get('/watches').set(auth(member)).expect(200)).body as WatchedOffer[]).map(
+          (watch) => watch.offerId,
+        );
+
+      await server().put(`/watches/${offer.id}`).set(auth(member)).expect(204);
+      await server().put(`/watches/${offer.id}`).set(auth(member)).expect(204);
+      expect(await watched()).toEqual([offer.id]);
+
+      await server().delete(`/watches/${offer.id}`).set(auth(member)).expect(204);
+      expect(await watched()).toEqual([]);
+      await server().put(`/watches/${randomUUID()}`).set(auth(member)).expect(404);
+      await server().put(`/watches/${offer.id}`).expect(401);
+    });
+  });
+
+  describe('the shops’ new arrivals', () => {
+    const newArrivals = async () =>
+      (await server().get('/catalog/new').expect(200)).body as NewArrival[];
+
+    /** A listing a sync copied `minutesAgo` minutes ago, as the list pages read it. */
+    const arrived = (
+      title: string,
+      minutesAgo: number,
+      overrides: Partial<{
+        availability: 'in_stock' | 'pre_order' | 'sold_out' | null;
+        priceCents: number | null;
+        isVinyl: boolean;
+        isUsed: boolean;
+      }> = {},
+    ) => {
+      const externalId = randomUUID();
+      return prisma.catalogEntry.create({
+        data: {
+          supplier: 'tht',
+          externalId,
+          url: `https://${hostOf('tht')}/products/${externalId}`,
+          title,
+          searchTitle: searchTitleOf(title),
+          imageUrl: null,
+          isVinyl: overrides.isVinyl ?? true,
+          isUsed: overrides.isUsed ?? false,
+          priceCents: overrides.priceCents === undefined ? 150_000 : overrides.priceCents,
+          availability: overrides.availability === undefined ? 'in_stock' : overrides.availability,
+          syncedAt: new Date(),
+          createdAt: new Date(Date.now() - minutesAgo * 60 * 1000),
+        },
+      });
+    };
+
+    it('anyone reads them: newest first, new vinyl that can be bought, with a search for each', async () => {
+      await arrived('Coldplay - Parachutes LP', 30);
+      await arrived('Oasis - Some Might Say 7" (2/17發行預訂)', 10, {
+        availability: 'pre_order',
+        priceCents: 98_000,
+      });
+      // Not shown: sold out, never read, used, not a record.
+      await arrived('Sold Out - Gone LP', 1, { availability: 'sold_out' });
+      await arrived('Unread - Never LP', 1, { availability: null, priceCents: null });
+      await arrived('Used - Second Hand LP (二手)', 1, { isUsed: true });
+      await arrived('A Book - Words', 1, { isVinyl: false });
+
+      const arrivals = await newArrivals();
+
+      for (const arrival of arrivals) expect(newArrivalSchema.parse(arrival)).toEqual(arrival);
+      expect(arrivals.map((arrival) => [arrival.title, arrival.availability])).toEqual([
+        ['Oasis - Some Might Say 7" (2/17發行預訂)', 'pre_order'],
+        ['Coldplay - Parachutes LP', 'in_stock'],
+      ]);
+      expect(arrivals[1]).toMatchObject({
+        supplier: 'tht',
+        priceCents: 150_000,
+        currency: 'TWD',
+        searchQuery: 'Coldplay Parachutes',
+      });
+    });
+
+    it('says nothing of what anyone tracks: a tracked listing is just a listing', async () => {
+      const { entryId } = await listing('tht');
+      await prisma.catalogEntry.update({
+        where: { id: entryId },
+        data: { availability: 'in_stock', priceCents: 150_000 },
+      });
+      await created({ catalogEntryId: entryId });
+
+      const [arrival] = await newArrivals();
+
+      expect(Object.keys(arrival).sort()).toEqual(
+        [
+          'availability',
+          'currency',
+          'firstSeenAt',
+          'id',
+          'imageUrl',
+          'priceCents',
+          'searchQuery',
+          'supplier',
+          'title',
+          'url',
+        ].sort(),
+      );
     });
   });
 });

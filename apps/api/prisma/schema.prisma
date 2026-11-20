@@ -396,6 +396,9 @@ model Offer {
   /// The shop's own name for the record, to check a match against and to
   /// match the next shop's title with.
   sourceTitle String
+  /// This listing's own cover, as its page shows it: two pressings of an
+  /// album look different. Null until a read finds one.
+  imageUrl    String?
 
   priceCents   Int
   currency     String       @default("TWD")
@@ -485,6 +488,9 @@ model CatalogEntry {
   /// The start of the last sync that wrote it: added, or found changed. A
   /// listing that stays the same isn't written again (§7.2).
   syncedAt        DateTime
+  /// When a sync first copied it: the shops' new arrivals are the newest.
+  /// Rows copied before the column came all have its migration's time.
+  createdAt       DateTime      @default(now())
 
   /// A listing is copied once per shop; sync upserts on it.
   @@unique([supplier, externalId])

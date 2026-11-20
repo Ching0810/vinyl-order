@@ -63,6 +63,7 @@ const toOfferContract = (offer: Offer): OfferContract => ({
   externalId: offer.externalId,
   url: offer.url,
   sourceTitle: offer.sourceTitle,
+  imageUrl: offer.imageUrl,
   priceCents: offer.priceCents,
   currency: offer.currency,
   availability: offer.availability,
@@ -80,6 +81,7 @@ const toOfferContract = (offer: Offer): OfferContract => ({
 export const offerValuesOf = (parsed: ParsedOffer) => ({
   url: parsed.url,
   sourceTitle: parsed.sourceTitle,
+  imageUrl: parsed.imageUrl,
   priceCents: parsed.priceCents,
   currency: parsed.currency,
   availability: parsed.availability,

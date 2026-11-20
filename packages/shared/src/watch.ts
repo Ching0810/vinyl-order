@@ -50,6 +50,7 @@ export const watchedOfferSchema = z.object({
   /** The album, as its record names it. */
   title: z.string(),
   artist: z.string(),
+  /** The version's own cover, or the record's when it has none yet. */
   imageUrl: z.url().nullable(),
   /** The version, as its shop names it. */
   sourceTitle: z.string(),

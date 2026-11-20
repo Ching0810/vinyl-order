@@ -91,3 +91,22 @@ export const catalogAlbumSchema = z.object({
   productId: z.uuid().nullable(),
 });
 export type CatalogAlbum = z.infer<typeof catalogAlbumSchema>;
+
+/**
+ * A listing new at a shop (GET /catalog/new): what a sync copied lately, as
+ * the shop names and prices it — the home page for someone not signed in.
+ * From the shops' public catalogs only: nothing in it says what anyone
+ * tracks.
+ */
+export const newArrivalSchema = catalogSearchHitSchema
+  .omit({ score: true, isVinyl: true, isUsed: true })
+  .extend({
+    priceCents: z.number().int(),
+    currency: z.string(),
+    availability: availabilitySchema.exclude(['sold_out']),
+    /** The artist and album its title names, to search for it by. */
+    searchQuery: z.string(),
+    /** When a sync first copied it. */
+    firstSeenAt: z.iso.datetime(),
+  });
+export type NewArrival = z.infer<typeof newArrivalSchema>;
