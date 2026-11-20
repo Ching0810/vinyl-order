@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-TW">
+<head><meta charset="utf-8"><title>所有商品</title></head>
+<body>
+<!-- A /collections/all page cut to its product data, three products kept (2026-11-20). -->
+<script>
+      function onCollectionView() {
+        const collection = {"id":null,"handle":"all","name":"所有商品","title":"所有商品","url":"/collections/all","products":[{"id":17772797,"handle":"globe-lights-2lp","title":"globe - Lights 2LP","url":"/products/globe-lights-2lp","price":1780,"price_min":"1780.0","price_max":"1780.0","available":false,"variants":[{"id":82185153,"title":"Default Title","sku":"","barcode":null,"available":false,"inventory_quantity":0,"infinite_stock":false}]},{"id":17773955,"handle":"olive-oil-vitamin-o-lp-2027-3-17發行預訂-","title":"Olive Oil - VITAMIN O LP (2027/3/17發行預訂）","url":"/products/olive-oil-vitamin-o-lp-2027-3-17發行預訂-","price":1380,"price_min":"1380.0","price_max":"1380.0","available":true,"variants":[{"id":82191297,"title":"Default Title","sku":"","barcode":null,"available":true,"inventory_quantity":null,"infinite_stock":true}]},{"id":17772925,"handle":"bloodthirsty-butchers-kocorono-2lp-完全盤-2lp重量盤","title":"bloodthirsty butchers - kocorono 2LP【完全盤】2LP重量盤","url":"/products/bloodthirsty-butchers-kocorono-2lp-完全盤-2lp重量盤","price":1580,"price_min":"1580.0","price_max":"1580.0","available":true,"variants":[{"id":82185545,"title":"Default Title","sku":"","barcode":null,"available":true,"inventory_quantity":1,"infinite_stock":false}]}]}
+        EasyStore.Event.dispatch('collections/viewed', { collection })
+      }
+</script>
+</body>
+</html>

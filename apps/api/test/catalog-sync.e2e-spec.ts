@@ -1,8 +1,13 @@
 import { Test } from '@nestjs/testing';
 import type { Supplier } from '@vinyl-order/shared';
 
+import { CatalogStockFailed, CatalogStockService } from '../src/catalog/catalog-stock.service';
 import { CatalogSyncFailed, CatalogSyncService } from '../src/catalog/catalog-sync.service';
-import type { ParsedCatalogEntry, SupplierAdapter } from '../src/catalog/supplier-adapter';
+import type {
+  ParsedCatalogEntry,
+  ParsedStock,
+  SupplierAdapter,
+} from '../src/catalog/supplier-adapter';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -16,19 +21,22 @@ import { PrismaService } from '../src/prisma/prisma.service';
 describe('Catalog sync (e2e)', () => {
   let prisma: PrismaService;
   let sync: CatalogSyncService;
+  let stock: CatalogStockService;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [PrismaModule],
-      providers: [CatalogSyncService],
+      providers: [CatalogSyncService, CatalogStockService],
     }).compile();
     await moduleRef.init();
     prisma = moduleRef.get(PrismaService);
     sync = moduleRef.get(CatalogSyncService);
+    stock = moduleRef.get(CatalogStockService);
   });
 
   beforeEach(async () => {
     await prisma.catalogEntry.deleteMany();
+    await prisma.catalogStockRun.deleteMany();
   });
 
   afterAll(async () => {
@@ -50,10 +58,19 @@ describe('Catalog sync (e2e)', () => {
     ...overrides,
   });
 
-  /** An adapter whose catalog is these batches, then perhaps a failure. */
+  /**
+   * An adapter whose catalog is these batches, its list pages these, each
+   * perhaps ending in a failure.
+   */
   const adapter = (
     batches: ParsedCatalogEntry[][],
-    options: { supplier?: Supplier; failAfter?: number; listedByIndex?: boolean } = {},
+    options: {
+      supplier?: Supplier;
+      failAfter?: number;
+      listedByIndex?: boolean;
+      stock?: ParsedStock[][];
+      stockFailAfter?: number;
+    } = {},
   ): SupplierAdapter => ({
     supplier: options.supplier ?? 'tht',
     rules: { hosts: [], paths: [] },
@@ -67,7 +84,27 @@ describe('Catalog sync (e2e)', () => {
         });
       }
     },
+    syncStock: async function* () {
+      for (const [index, entries] of (options.stock ?? []).entries()) {
+        if (index === options.stockFailAfter) throw new Error('answered 503');
+        yield await Promise.resolve({ entries });
+      }
+    },
   });
+
+  /** One listing as a list page shows it: buyable, uncounted, unless said. */
+  const shown = (externalId: string, overrides: Partial<ParsedStock> = {}): ParsedStock => ({
+    externalId,
+    priceCents: 150_000,
+    available: true,
+    stockQty: null,
+    ...overrides,
+  });
+
+  const rowOf = (externalId: string, supplier: Supplier = 'tht') =>
+    prisma.catalogEntry.findUniqueOrThrow({
+      where: { supplier_externalId: { supplier, externalId } },
+    });
 
   const idsOf = async (supplier: Supplier = 'tht') =>
     (
@@ -242,5 +279,115 @@ describe('Catalog sync (e2e)', () => {
     await sync.sync(adapter([[entry('same')]]));
 
     expect(await prisma.catalogEntry.count({ where: { externalId: 'same' } })).toBe(2);
+  });
+
+  describe('price and stock, from the list pages', () => {
+    it('fills each listing’s price, availability and count; a title saying pre-order is one', async () => {
+      await sync.sync(
+        adapter([
+          [entry('a'), entry('b'), entry('c', { title: 'Test Artist - c LP (12/11發行預訂)' })],
+        ]),
+      );
+
+      const report = await stock.sync(
+        adapter([], {
+          stock: [
+            [
+              shown('a', { stockQty: 2 }),
+              shown('b', { priceCents: 99_000, available: false, stockQty: 0 }),
+            ],
+            [shown('c')],
+          ],
+        }),
+      );
+
+      expect(report).toMatchObject({
+        supplier: 'tht',
+        pages: 2,
+        seen: 3,
+        matched: 3,
+        updated: 3,
+        inStock: 1,
+        preOrder: 1,
+        soldOut: 1,
+      });
+      expect(await rowOf('a')).toMatchObject({
+        priceCents: 150_000,
+        availability: 'in_stock',
+        stockQty: 2,
+      });
+      expect(await rowOf('b')).toMatchObject({ priceCents: 99_000, availability: 'sold_out' });
+      expect(await rowOf('c')).toMatchObject({ availability: 'pre_order', stockQty: null });
+      const run = await prisma.catalogStockRun.findUniqueOrThrow({ where: { supplier: 'tht' } });
+      expect(run).toMatchObject({ pages: 2, entries: 3 });
+    });
+
+    it('writes only what changed', async () => {
+      await sync.sync(adapter([[entry('a'), entry('b')]]));
+      await stock.sync(adapter([], { stock: [[shown('a'), shown('b')]] }));
+
+      const report = await stock.sync(
+        adapter([], { stock: [[shown('a'), shown('b', { available: false })]] }),
+      );
+
+      expect(report).toMatchObject({ matched: 2, updated: 1 });
+    });
+
+    it('ignores what the catalog hasn’t copied, and counts a listing on two pages once', async () => {
+      await sync.sync(adapter([[entry('a')]]));
+
+      const report = await stock.sync(
+        adapter([], { stock: [[shown('a'), shown('new-arrival')], [shown('a')]] }),
+      );
+
+      expect(report).toMatchObject({ seen: 2, matched: 1, updated: 1 });
+      expect(await prisma.catalogEntry.count()).toBe(1);
+    });
+
+    it('a walk that stops keeps what it wrote, and leaves the shop’s last run alone', async () => {
+      await sync.sync(adapter([[entry('a'), entry('b')]]));
+      await stock.sync(adapter([], { stock: [[shown('a'), shown('b')]] }));
+      const before = await prisma.catalogStockRun.findUniqueOrThrow({ where: { supplier: 'tht' } });
+
+      const failed = await stock
+        .sync(
+          adapter([], {
+            stock: [[shown('a', { priceCents: 120_000 })], [shown('b')]],
+            stockFailAfter: 1,
+          }),
+        )
+        .catch((error: unknown) => error);
+
+      expect(failed).toBeInstanceOf(CatalogStockFailed);
+      expect((failed as CatalogStockFailed).report).toMatchObject({ pages: 1, updated: 1 });
+      expect((await rowOf('a')).priceCents).toBe(120_000);
+      expect(
+        await prisma.catalogStockRun.findUniqueOrThrow({ where: { supplier: 'tht' } }),
+      ).toEqual(before);
+    });
+
+    it('the sitemap sync leaves price and stock alone, and finds nothing changed', async () => {
+      await sync.sync(adapter([[entry('a')]]));
+      await stock.sync(adapter([], { stock: [[shown('a', { stockQty: 3 })]] }));
+
+      const report = await sync.sync(adapter([[entry('a')]]));
+
+      expect(report).toMatchObject({ changed: 0, unchanged: 1 });
+      expect(await rowOf('a')).toMatchObject({
+        priceCents: 150_000,
+        availability: 'in_stock',
+        stockQty: 3,
+      });
+    });
+
+    it("never touches another shop's listings", async () => {
+      await sync.sync(adapter([[entry('same')]], { supplier: 'cosmic' }));
+      await sync.sync(adapter([[entry('same')]]));
+
+      await stock.sync(adapter([], { stock: [[shown('same', { priceCents: 1 })]] }));
+
+      expect((await rowOf('same', 'cosmic')).priceCents).toBeNull();
+      expect((await rowOf('same')).priceCents).toBe(1);
+    });
   });
 });

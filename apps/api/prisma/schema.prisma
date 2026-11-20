@@ -456,7 +456,7 @@ model OfferSnapshot {
 /// the shops have, rewritten by each sync and never edited by hand. A
 /// product is created from one, and its candidates found among them.
 model CatalogEntry {
-  id              String    @id @default(uuid())
+  id              String        @id @default(uuid())
   supplier        Supplier
   /// The listing's handle, the last part of its URL: the same id its offer
   /// gets, so the two are known as one listing (§6.1).
@@ -468,8 +468,15 @@ model CatalogEntry {
   /// on. How it is normalised can change: the next sync rewrites every row.
   searchTitle     String
   imageUrl        String?
-  /// Null when the catalog source gives no price — none of the sitemaps do.
+  /// From the shop's list pages (§7.2); null until a stock walk has read
+  /// it. The sitemaps carry none, and their sync leaves it alone.
   priceCents      Int?
+  /// From the list pages, as of the shop's last stock walk
+  /// (CatalogStockRun); null until one has read it.
+  availability    Availability?
+  /// The shop's count, when it keeps one for every option; null when it
+  /// doesn't say, or before a stock walk.
+  stockQty        Int?
   isVinyl         Boolean
   isUsed          Boolean
   /// The sitemap's lastmod when the row was last written: a lastmod change
@@ -588,4 +595,16 @@ model OfferWatch {
   @@id([userId, offerId])
   /// "Who tracks this listing", for deleting or counting.
   @@index([offerId])
+}
+
+/// When a shop's list pages were last walked for stock and price (§7.2):
+/// once a shop, not a column on every listing — writing that on all of them
+/// each night would rewrite every row for a timestamp.
+model CatalogStockRun {
+  supplier   Supplier @id
+  finishedAt DateTime
+  /// List pages read.
+  pages      Int
+  /// The shop's catalog listings the walk found.
+  entries    Int
 }

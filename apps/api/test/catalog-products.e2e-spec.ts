@@ -63,6 +63,9 @@ describe('Records from the catalog (e2e)', () => {
     syncCatalog: () => {
       throw new Error('not used');
     },
+    syncStock: () => {
+      throw new Error('not used');
+    },
   });
 
   // Candlelight has no adapter, as in the app.

@@ -60,6 +60,28 @@ export interface CatalogBatch {
   listedByIndex: boolean;
 }
 
+/**
+ * One listing as a shop's list page shows it (§7.2): its price and whether
+ * it can be bought. Pre-order isn't here: no shop marks it on a list, so it
+ * is read from the listing's title where it's written.
+ */
+export interface ParsedStock {
+  externalId: string;
+  /** Null when the page shows none. */
+  priceCents: number | null;
+  available: boolean;
+  /** The shop's count, when it keeps one for every option; else null. */
+  stockQty: number | null;
+}
+
+/** One list page's listings. */
+export interface StockBatch {
+  entries: ParsedStock[];
+}
+
+/** List pages read at most, whatever happens: a shop of ~20 000 listings. */
+export const MAX_LIST_PAGES = 400;
+
 /** A shop's pages, read into the shared shapes (tracker.md §6.1). */
 export interface SupplierAdapter {
   supplier: Supplier;
@@ -69,6 +91,8 @@ export interface SupplierAdapter {
   fetchOffer(url: string): Promise<ParsedOffer>;
   /** Walk the shop's public catalog, a sitemap file at a time. */
   syncCatalog(): AsyncIterable<CatalogBatch>;
+  /** Walk the shop's list pages for price and stock, a page at a time (§7.2). */
+  syncStock(): AsyncIterable<StockBatch>;
 }
 
 /**

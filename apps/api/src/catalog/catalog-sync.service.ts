@@ -159,20 +159,19 @@ export class CatalogSyncService {
         "title" = EXCLUDED."title",
         "searchTitle" = EXCLUDED."searchTitle",
         "imageUrl" = EXCLUDED."imageUrl",
-        "priceCents" = EXCLUDED."priceCents",
         "isVinyl" = EXCLUDED."isVinyl",
         "isUsed" = EXCLUDED."isUsed",
         "sourceUpdatedAt" = EXCLUDED."sourceUpdatedAt",
         "syncedAt" = EXCLUDED."syncedAt"
       -- What search shows and filters on. sourceUpdatedAt is left out: the
       -- shops move it for a stock change, and Rotten Blues' are all today's.
+      -- Price and stock too: they come from the list pages (CatalogStock-
+      -- Service), and a sitemap's null would undo them every night.
       WHERE ("CatalogEntry"."url", "CatalogEntry"."title", "CatalogEntry"."searchTitle",
-             "CatalogEntry"."imageUrl", "CatalogEntry"."priceCents",
-             "CatalogEntry"."isVinyl", "CatalogEntry"."isUsed")
+             "CatalogEntry"."imageUrl", "CatalogEntry"."isVinyl", "CatalogEntry"."isUsed")
         IS DISTINCT FROM
             (EXCLUDED."url", EXCLUDED."title", EXCLUDED."searchTitle",
-             EXCLUDED."imageUrl", EXCLUDED."priceCents",
-             EXCLUDED."isVinyl", EXCLUDED."isUsed")
+             EXCLUDED."imageUrl", EXCLUDED."isVinyl", EXCLUDED."isUsed")
       RETURNING (xmax = 0) AS inserted
     `;
     // A row left alone by the WHERE isn't returned at all.
