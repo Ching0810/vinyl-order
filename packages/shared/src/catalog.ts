@@ -1,5 +1,5 @@
-// Catalog search contract shared by apps/web (the admin search page) and
-// apps/api (query validation, response shaping).
+// Catalog search contract shared by apps/web (the search page) and apps/api
+// (query validation, response shaping).
 //
 // The catalog is each shop's listings copied into CatalogEntry by the sync
 // (docs/design/tracker.md §7.2), and search runs on that copy, not on the
@@ -10,9 +10,8 @@ import { z } from 'zod';
 import { supplierSchema } from './supplier-order';
 
 /**
- * GET /admin/catalog/search's query. Without `supplier`, every shop is
- * searched at once, which shows who carries a record; with it, one shop is,
- * as when picking the shop a product is created from (§7.3).
+ * GET /catalog/search's query. Without `supplier`, every shop is searched at
+ * once, which shows who carries a record; with it, one shop is.
  *
  * New vinyl unless asked: used records and other goods (CDs, books) are in
  * the copy, flagged, and shown only when the search says so (§7.2).
@@ -27,7 +26,7 @@ export const catalogSearchQuerySchema = z.object({
 });
 export type CatalogSearchQuery = z.infer<typeof catalogSearchQuerySchema>;
 
-/** One listing found, as the shop names it. */
+/** One listing, as the shop names it: a search hit, or a candidate (§7.3). */
 export const catalogSearchHitSchema = z.object({
   id: z.uuid(),
   supplier: supplierSchema,
@@ -43,3 +42,26 @@ export const catalogSearchHitSchema = z.object({
   score: z.number(),
 });
 export type CatalogSearchHit = z.infer<typeof catalogSearchHitSchema>;
+
+/**
+ * One album found, with its listing at each shop that carries it (§7.3):
+ * listings whose titles name the same artist and the same album, best match
+ * first. A shop may list it twice — two pressings — and then has two.
+ */
+export const catalogAlbumSchema = z.object({
+  /** Stable for the list: the best listing's id. */
+  key: z.uuid(),
+  /** As the best listing's title names them; null when it names none. */
+  artist: z.string().nullable(),
+  title: z.string(),
+  /** The first listing's cover that has one. */
+  imageUrl: z.url().nullable(),
+  /** The best listing's score. */
+  score: z.number(),
+  listings: z.array(catalogSearchHitSchema),
+  /** The record that tracks it already, whoever added it; null if none. */
+  productId: z.uuid().nullable(),
+  /** Whether the signed-in user tracks that record. */
+  watched: z.boolean(),
+});
+export type CatalogAlbum = z.infer<typeof catalogAlbumSchema>;

@@ -194,6 +194,11 @@ describe('Reading listing titles (e2e)', () => {
       ['a score', '【樂譜】愛繆吉他譜全新 ギター弾き語り あいみょん Songbook'],
       ['a player', '【硬體】Shanling 山靈 EC Smart 隨身CD耳擴一體機播放器 CD播放機'],
       ['a book', '【音樂專書】龍冠志《早操》一本關於唱片行的遊記'],
+      ['a Blu-ray, as Rotten Blues writes it', '【日版BD】坂本龍一《opus》'],
+      [
+        'a Blu-ray, as Cosmic writes it',
+        '坂本龍一 Ryuichi Sakamoto - Opus【生前最後的紀錄】 （藍光）',
+      ],
     ])('%s is not vinyl', (_case, title) => {
       expect(read(title).isVinyl).toBe(false);
     });

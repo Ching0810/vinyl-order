@@ -1,27 +1,28 @@
 import { Controller, Get, Query, UseGuards, UsePipes } from '@nestjs/common';
-import type { CatalogSearchHit } from '@vinyl-order/shared';
+import type { CatalogAlbum, PublicUser } from '@vinyl-order/shared';
 import { ZodValidationPipe } from 'nestjs-zod';
 
+import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { Roles } from '../auth/roles.decorator';
-import { RolesGuard } from '../auth/roles.guard';
 import { CatalogSearchService } from './catalog-search.service';
 import { CatalogSearchQueryDto } from './dto/catalog-search-query.dto';
 
 /**
- * The shops' copied catalogs, searched to add a record (tracker.md §7.3,
- * §11). Admin-only: a hit is a shop's listing, not yet a product.
+ * The shops' copied catalogs, searched by album to track one (tracker.md
+ * §7.3, §11, §12.1). Anyone signed in: tracking is everyone's own.
  */
-@Controller('admin/catalog')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('admin')
+@Controller('catalog')
+@UseGuards(JwtAuthGuard)
 @UsePipes(ZodValidationPipe)
 export class CatalogSearchController {
   constructor(private readonly catalog: CatalogSearchService) {}
 
-  /** GET /admin/catalog/search?q=&supplier=&used=&nonVinyl= — best first, up to 30. */
+  /** GET /catalog/search?q=&supplier=&used=&nonVinyl= — albums, best first, up to 30. */
   @Get('search')
-  search(@Query() query: CatalogSearchQueryDto): Promise<CatalogSearchHit[]> {
-    return this.catalog.search(query);
+  search(
+    @CurrentUser() user: PublicUser,
+    @Query() query: CatalogSearchQueryDto,
+  ): Promise<CatalogAlbum[]> {
+    return this.catalog.search(query, user.id);
   }
 }

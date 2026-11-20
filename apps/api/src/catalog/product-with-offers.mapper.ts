@@ -1,12 +1,16 @@
-import type { Offer as OfferContract, ProductWithOffers } from '@vinyl-order/shared';
+import type {
+  Artist as ArtistContract,
+  Offer as OfferContract,
+  ProductWithOffers,
+} from '@vinyl-order/shared';
 
 import type { Offer, Prisma } from '../generated/prisma/client';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { ParsedOffer } from './supplier-adapter';
 
-/** What the mapper reads: the record, its artist, its offers oldest first. */
+/** What the mapper reads: the record, its artist and aliases, its offers; oldest first. */
 export const productWithOffersInclude = {
-  artistRef: true,
+  artistRef: { include: { aliases: { orderBy: [{ createdAt: 'asc' }, { name: 'asc' }] } } },
   offers: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
 } satisfies Prisma.ProductInclude;
 
@@ -38,8 +42,19 @@ const toProductWithOffers = (
   imageUrl: product.imageUrl,
   format: product.format,
   edition: product.edition,
-  artist: { id: product.artistRef.id, name: product.artistRef.name },
+  artist: toArtistContract(product.artistRef),
   offers: product.offers.map(toOfferContract),
+});
+
+/** An artist with its aliases, as the API returns one. */
+export const toArtistContract = (artist: {
+  id: string;
+  name: string;
+  aliases: { id: string; name: string }[];
+}): ArtistContract => ({
+  id: artist.id,
+  name: artist.name,
+  aliases: artist.aliases.map((alias) => ({ id: alias.id, name: alias.name })),
 });
 
 const toOfferContract = (offer: Offer): OfferContract => ({

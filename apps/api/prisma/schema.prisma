@@ -55,6 +55,8 @@ model User {
   orders                   Order[]
   supplierOrders           SupplierOrder[]
   supplierOrderImportToken SupplierOrderImportToken?
+  /// The records this user tracks: their home page list.
+  watches                  ProductWatch[]
 }
 
 /// A customer's shopping cart. One per user, created lazily on first add.
@@ -283,6 +285,9 @@ model Product {
 
   /// Each shop's listing of this record.
   offers Offer[]
+
+  /// The users tracking it.
+  watches ProductWatch[]
 }
 
 /// A storefront navigation tab.
@@ -567,4 +572,20 @@ model SupplierOrderImportToken {
   createdAt  DateTime  @default(now())
   /// When the script last used it: shows whether the daily import runs.
   lastUsedAt DateTime?
+}
+
+/// A user tracking a record (tracker.md §5.8). Records are shared — one per
+/// album, whoever added it — and each user keeps their own list of them.
+model ProductWatch {
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  /// Once per user and record: tracking twice is the same as once.
+  @@id([userId, productId])
+  /// "Who tracks this record", for deleting or counting.
+  @@index([productId])
 }

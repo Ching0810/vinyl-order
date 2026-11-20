@@ -1,6 +1,7 @@
 import {
   BadGatewayException,
   ConflictException,
+  HttpException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { OfferErrorCode } from '@vinyl-order/shared';
@@ -33,3 +34,18 @@ export const shopPageUnreadable = (reason: string): BadGatewayException =>
     message: "The shop's page couldn't be read.",
     reason,
   });
+
+/**
+ * The code an error made here carries, and the rest of its body — for a
+ * caller that goes on past some refusals, as tracking an album does past a
+ * listing another record has.
+ */
+export const offerErrorBodyOf = (
+  error: unknown,
+): ({ code: OfferErrorCode } & Record<string, unknown>) | null => {
+  if (!(error instanceof HttpException)) return null;
+  const body = error.getResponse();
+  return typeof body === 'object' && 'code' in body
+    ? (body as { code: OfferErrorCode } & Record<string, unknown>)
+    : null;
+};
