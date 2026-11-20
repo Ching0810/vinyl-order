@@ -7,6 +7,7 @@
 // and it comes with the product page once a listing is picked.
 import { z } from 'zod';
 
+import { availabilitySchema } from './offer';
 import { supplierSchema } from './supplier-order';
 
 /**
@@ -44,9 +45,26 @@ export const catalogSearchHitSchema = z.object({
 export type CatalogSearchHit = z.infer<typeof catalogSearchHitSchema>;
 
 /**
- * One album found, with its listing at each shop that carries it (§7.3):
- * listings whose titles name the same artist and the same album, best match
- * first. A shop may list it twice — two pressings — and then has two.
+ * Whether a listing can be bought, as far as search knows. The catalog
+ * carries no stock (§4): a listing on a record has its page's last read
+ * (§5.2); one whose title says pre-order is `pre_order`; any other is
+ * `unknown` — never guessed in stock.
+ */
+export const listingAvailabilitySchema = z.enum([...availabilitySchema.options, 'unknown']);
+export type ListingAvailability = z.infer<typeof listingAvailabilitySchema>;
+
+/** One listing of an album found: a version at a shop, and whether I track it. */
+export const catalogAlbumListingSchema = catalogSearchHitSchema.extend({
+  watched: z.boolean(),
+  availability: listingAvailabilitySchema,
+});
+export type CatalogAlbumListing = z.infer<typeof catalogAlbumListingSchema>;
+
+/**
+ * One album found, with every listing of it (§7.3): listings whose titles
+ * name the same artist and the same album, best match first. Each is one
+ * version at one shop — a shop listing two pressings has two — and is what
+ * a member tracks.
  */
 export const catalogAlbumSchema = z.object({
   /** Stable for the list: the best listing's id. */
@@ -58,10 +76,8 @@ export const catalogAlbumSchema = z.object({
   imageUrl: z.url().nullable(),
   /** The best listing's score. */
   score: z.number(),
-  listings: z.array(catalogSearchHitSchema),
-  /** The record that tracks it already, whoever added it; null if none. */
+  listings: z.array(catalogAlbumListingSchema),
+  /** The record holding the album's listings already, whoever added it; null if none. */
   productId: z.uuid().nullable(),
-  /** Whether the signed-in user tracks that record. */
-  watched: z.boolean(),
 });
 export type CatalogAlbum = z.infer<typeof catalogAlbumSchema>;

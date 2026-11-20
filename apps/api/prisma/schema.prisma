@@ -55,8 +55,8 @@ model User {
   orders                   Order[]
   supplierOrders           SupplierOrder[]
   supplierOrderImportToken SupplierOrderImportToken?
-  /// The records this user tracks: their home page list.
-  watches                  ProductWatch[]
+  /// The listings this user tracks: their home page list.
+  watches                  OfferWatch[]
 }
 
 /// A customer's shopping cart. One per user, created lazily on first add.
@@ -285,9 +285,6 @@ model Product {
 
   /// Each shop's listing of this record.
   offers Offer[]
-
-  /// The users tracking it.
-  watches ProductWatch[]
 }
 
 /// A storefront navigation tab.
@@ -420,6 +417,8 @@ model Offer {
   lastError     String?
 
   snapshots          OfferSnapshot[]
+  /// The users tracking this listing.
+  watches            OfferWatch[]
   cartItems          CartItem[]
   orderItems         OrderItem[]
   supplierOrderItems SupplierOrderItem[]
@@ -574,18 +573,19 @@ model SupplierOrderImportToken {
   lastUsedAt DateTime?
 }
 
-/// A user tracking a record (tracker.md §5.8). Records are shared — one per
-/// album, whoever added it — and each user keeps their own list of them.
-model ProductWatch {
-  userId    String
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+/// A user tracking one listing — one version at one shop (tracker.md §5.8).
+/// Records are shared, one per album with every version's listings; what
+/// each user follows is the versions they want, each its own price.
+model OfferWatch {
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offerId String
+  offer   Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
-  /// Once per user and record: tracking twice is the same as once.
-  @@id([userId, productId])
-  /// "Who tracks this record", for deleting or counting.
-  @@index([productId])
+  /// Once per user and listing: tracking twice is the same as once.
+  @@id([userId, offerId])
+  /// "Who tracks this listing", for deleting or counting.
+  @@index([offerId])
 }

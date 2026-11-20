@@ -6,10 +6,10 @@ import { Test } from '@nestjs/testing';
 import {
   type Artist,
   artistSchema,
-  type TrackAlbumResult,
-  trackAlbumResultSchema,
-  type WatchedProduct,
-  watchedProductSchema,
+  type TrackListingResult,
+  trackListingResultSchema,
+  type WatchedOffer,
+  watchedOfferSchema,
   type AttachOfferResult,
   attachOfferResultSchema,
   type CatalogSearchHit,
@@ -758,91 +758,140 @@ describe('Records from the catalog (e2e)', () => {
     });
   });
 
-  describe('tracking albums', () => {
+  describe('tracking a listing', () => {
     const track = (token: string, body: object) =>
       server().post('/watches').set(auth(token)).send(body);
 
     const tracked = async (token: string, body: object) =>
-      (await track(token, body).expect(201)).body as TrackAlbumResult;
+      (await track(token, body).expect(201)).body as TrackListingResult;
 
     const watchesOf = async (token: string) =>
-      (await server().get('/watches').set(auth(token)).expect(200)).body as WatchedProduct[];
+      (await server().get('/watches').set(auth(token)).expect(200)).body as WatchedOffer[];
 
-    it('makes the record from the first listing, attaches the rest, and lists it as mine', async () => {
-      const member = await createUser('customer');
-      const tht = await listing('tht', { priceCents: 150_000 });
+    /** An album at THT, standard and red, and at Cosmic. */
+    const album = async () => {
+      const thtStandard = await listing('tht', { priceCents: 150_000 });
       const cosmic = await listing('cosmic', { priceCents: 140_000 });
+      const thtRed = await listing('tht', {
+        priceCents: 180_000,
+        sourceTitle: '坂本龍一 Ryuichi Sakamoto - 1996 LP (Red Vinyl)',
+      });
+      return {
+        thtStandard,
+        cosmic,
+        thtRed,
+        ids: [thtStandard.entryId, cosmic.entryId, thtRed.entryId],
+      };
+    };
 
-      const result = await tracked(member, { catalogEntryIds: [tht.entryId, cosmic.entryId] });
+    it('tracks the one version picked; the record holds the whole album', async () => {
+      const member = await createUser('customer');
+      const { thtRed, ids } = await album();
 
-      expect(trackAlbumResultSchema.parse(result)).toEqual(result);
-      expect(result.product.offers.map((offer) => offer.supplier)).toEqual(['tht', 'cosmic']);
+      const result = await tracked(member, {
+        catalogEntryId: thtRed.entryId,
+        catalogEntryIds: ids,
+      });
+
+      expect(trackListingResultSchema.parse(result)).toEqual(result);
+      // Made from the version picked, then the rest attached.
+      expect(result.product.offers.map((offer) => [offer.supplier, offer.priceCents])).toEqual([
+        ['tht', 180_000],
+        ['tht', 150_000],
+        ['cosmic', 140_000],
+      ]);
+      expect(result.offerId).toBe(result.product.offers[0].id);
       expect(result.skipped).toEqual([]);
-      const [watched] = await watchesOf(member);
-      expect(watchedProductSchema.parse(watched)).toEqual(watched);
-      expect(watched).toMatchObject({
+
+      const watches = await watchesOf(member);
+      expect(watches).toHaveLength(1);
+      expect(watchedOfferSchema.parse(watches[0])).toEqual(watches[0]);
+      expect(watches[0]).toMatchObject({
+        offerId: result.offerId,
         productId: result.product.id,
         title: '1996',
         artist: '坂本龍一',
-        lowest: { supplier: 'cosmic', priceCents: 140_000, currency: 'TWD' },
-        shops: 2,
+        sourceTitle: '坂本龍一 Ryuichi Sakamoto - 1996 LP (Red Vinyl)',
+        supplier: 'tht',
+        priceCents: 180_000,
+        cheaperElsewhere: { supplier: 'cosmic', priceCents: 140_000, currency: 'TWD' },
       });
     });
 
-    it('an album someone tracks already: the same record, its missing shops attached', async () => {
+    it('another version of an album held already: the same record, a list of one’s own', async () => {
       const [first, second] = [await createUser('customer'), await createUser('customer')];
-      const tht = await listing('tht');
-      const cosmic = await listing('cosmic');
-      const theirs = await tracked(first, { catalogEntryIds: [tht.entryId] });
-
-      const mine = await tracked(second, { catalogEntryIds: [cosmic.entryId, tht.entryId] });
-
-      expect(mine.product.id).toBe(theirs.product.id);
-      expect(mine.product.offers.map((offer) => offer.supplier)).toEqual(['tht', 'cosmic']);
-      expect(await prisma.product.count({ where: { artistId: { not: null } } })).toBe(1);
-      expect((await watchesOf(first)).map((watch) => watch.productId)).toEqual([theirs.product.id]);
-      expect((await watchesOf(second)).map((watch) => watch.productId)).toEqual([
-        theirs.product.id,
-      ]);
-    });
-
-    it('doesn’t attach a second listing at a shop the record has: another pressing', async () => {
-      const member = await createUser('customer');
-      const thtFirst = await listing('tht');
-      const cosmic = await listing('cosmic');
-      await tracked(member, { catalogEntryIds: [thtFirst.entryId, cosmic.entryId] });
-      const thtOther = await listing('tht');
+      const { thtStandard, cosmic, ids } = await album();
+      const theirs = await tracked(first, {
+        catalogEntryId: thtStandard.entryId,
+        catalogEntryIds: ids,
+      });
       fetched.length = 0;
 
-      const result = await tracked(member, { catalogEntryIds: [cosmic.entryId, thtOther.entryId] });
+      const mine = await tracked(second, { catalogEntryId: cosmic.entryId, catalogEntryIds: ids });
 
-      expect(result.product.offers).toHaveLength(2);
-      expect(result.skipped).toEqual([]);
+      expect(mine.product.id).toBe(theirs.product.id);
       expect(fetched).toEqual([]);
+      expect((await watchesOf(first)).map((watch) => watch.supplier)).toEqual(['tht']);
+      expect((await watchesOf(second)).map((watch) => watch.supplier)).toEqual(['cosmic']);
     });
 
-    it('skips a listing another record tracks, or a page it can’t read, and says so', async () => {
+    it('a version a record lacks is added when anyone tracks the album', async () => {
+      const [first, second] = [await createUser('customer'), await createUser('customer')];
+      const { thtStandard, thtRed } = await album();
+      const before = await tracked(first, {
+        catalogEntryId: thtStandard.entryId,
+        catalogEntryIds: [thtStandard.entryId],
+      });
+
+      const after = await tracked(second, {
+        catalogEntryId: thtRed.entryId,
+        catalogEntryIds: [thtStandard.entryId, thtRed.entryId],
+      });
+
+      expect(after.product.id).toBe(before.product.id);
+      expect(after.product.offers.map((offer) => offer.externalId)).toEqual([
+        thtStandard.offer.externalId,
+        thtRed.offer.externalId,
+      ]);
+      expect(after.offerId).toBe(after.product.offers[1].id);
+    });
+
+    it('skips the album’s other listings another record holds or it can’t read, and says so', async () => {
       const member = await createUser('customer');
       const tht = await listing('tht');
       const cosmic = await listing('cosmic');
       const unreadable = await listing('rotten_blues');
-      // THT's listing is one record's, Cosmic's another's.
       const recordA = await created({ catalogEntryId: tht.entryId });
       const recordB = await created({ catalogEntryId: cosmic.entryId });
       pages.set(unreadable.url, new ShopFetchError('failed', 'answered 503', true));
 
       const result = await tracked(member, {
+        catalogEntryId: tht.entryId,
         catalogEntryIds: [tht.entryId, cosmic.entryId, unreadable.entryId],
       });
 
       expect(result.product.id).toBe(recordA.id);
-      expect(result.product.offers.map((offer) => offer.supplier)).toEqual(['tht']);
       expect(result.skipped).toEqual([
         { catalogEntryId: cosmic.entryId, reason: 'OFFER_ALREADY_TRACKED' },
         { catalogEntryId: unreadable.entryId, reason: 'SHOP_PAGE_UNREADABLE' },
       ]);
-      expect((await watchesOf(member)).map((watch) => watch.productId)).toEqual([recordA.id]);
       expect(recordB.offers.map((offer) => offer.supplier)).toEqual(['cosmic']);
+    });
+
+    it('the listing tracked must be read: its page failing tracks nothing', async () => {
+      const member = await createUser('customer');
+      const { thtStandard, cosmic, ids } = await album();
+      await tracked(member, {
+        catalogEntryId: thtStandard.entryId,
+        catalogEntryIds: [thtStandard.entryId],
+      });
+      pages.set(cosmic.url, new ShopFetchError('failed', 'answered 503', true));
+
+      expect(
+        (await track(member, { catalogEntryId: cosmic.entryId, catalogEntryIds: ids }).expect(502))
+          .body,
+      ).toMatchObject({ code: 'SHOP_PAGE_UNREADABLE' });
+      expect((await watchesOf(member)).map((watch) => watch.supplier)).toEqual(['tht']);
     });
 
     it('asks which artist as creating does, and tracks nothing until told', async () => {
@@ -852,51 +901,67 @@ describe('Records from the catalog (e2e)', () => {
       const tht = await listing('tht');
 
       expect(
-        (await track(member, { catalogEntryIds: [tht.entryId] }).expect(409)).body,
+        (
+          await track(member, {
+            catalogEntryId: tht.entryId,
+            catalogEntryIds: [tht.entryId],
+          }).expect(409)
+        ).body,
       ).toMatchObject({ code: 'ARTIST_AMBIGUOUS' });
       expect(await watchesOf(member)).toEqual([]);
     });
 
-    it('refuses two listings at one shop, none, or one that isn’t there', async () => {
+    it('refuses a listing outside its album, an empty album, or one that isn’t there', async () => {
       const member = await createUser('customer');
-      const [first, second] = [await listing('tht'), await listing('tht')];
+      const [first, second] = [await listing('tht'), await listing('cosmic')];
 
-      await track(member, { catalogEntryIds: [first.entryId, second.entryId] }).expect(400);
-      await track(member, { catalogEntryIds: [] }).expect(400);
-      await track(member, { catalogEntryIds: [randomUUID()] }).expect(404);
+      await track(member, {
+        catalogEntryId: first.entryId,
+        catalogEntryIds: [second.entryId],
+      }).expect(400);
+      await track(member, { catalogEntryId: first.entryId, catalogEntryIds: [] }).expect(400);
+      const missing = randomUUID();
+      await track(member, { catalogEntryId: missing, catalogEntryIds: [missing] }).expect(404);
       await server()
         .post('/watches')
-        .send({ catalogEntryIds: [first.entryId] })
+        .send({ catalogEntryId: first.entryId, catalogEntryIds: [first.entryId] })
         .expect(401);
     });
 
-    it('stops tracking, as often as asked; each list is its owner’s alone', async () => {
+    it('stops tracking one listing, as often as asked; each list is its owner’s alone', async () => {
       const [member, other] = [await createUser('customer'), await createUser('customer')];
-      const tht = await listing('tht');
-      const { product } = await tracked(member, { catalogEntryIds: [tht.entryId] });
+      const { thtStandard, cosmic, ids } = await album();
+      const standard = await tracked(member, {
+        catalogEntryId: thtStandard.entryId,
+        catalogEntryIds: ids,
+      });
+      await tracked(member, { catalogEntryId: cosmic.entryId, catalogEntryIds: ids });
 
       expect(await watchesOf(other)).toEqual([]);
-      await server().delete(`/watches/${product.id}`).set(auth(member)).expect(204);
-      await server().delete(`/watches/${product.id}`).set(auth(member)).expect(204);
-      expect(await watchesOf(member)).toEqual([]);
-      // The record stays: others may track it.
-      expect(await prisma.product.findUnique({ where: { id: product.id } })).not.toBeNull();
+      await server().delete(`/watches/${standard.offerId}`).set(auth(member)).expect(204);
+      await server().delete(`/watches/${standard.offerId}`).set(auth(member)).expect(204);
+      expect((await watchesOf(member)).map((watch) => watch.supplier)).toEqual(['cosmic']);
+      // The record and its offers stay: others may track them.
+      expect(await prisma.offer.count({ where: { productId: standard.product.id } })).toBe(3);
     });
 
-    it('the lowest price counts only what can be bought', async () => {
+    it('cheaper elsewhere counts only what can be bought, and only what is cheaper', async () => {
       const member = await createUser('customer');
       const tht = await listing('tht', { priceCents: 150_000 });
       const cosmic = await listing('cosmic', { priceCents: 90_000, availability: 'sold_out' });
 
-      await tracked(member, { catalogEntryIds: [tht.entryId, cosmic.entryId] });
-      expect((await watchesOf(member))[0].lowest).toMatchObject({
-        supplier: 'tht',
-        priceCents: 150_000,
+      await tracked(member, {
+        catalogEntryId: tht.entryId,
+        catalogEntryIds: [tht.entryId, cosmic.entryId],
       });
+      expect((await watchesOf(member))[0].cheaperElsewhere).toBeNull();
 
-      pages.set(tht.url, { ...tht.offer, availability: 'sold_out' });
+      pages.set(cosmic.url, { ...cosmic.offer, availability: 'in_stock' });
       await refresh((await watchesOf(member))[0].productId).expect(200);
-      expect((await watchesOf(member))[0].lowest).toBeNull();
+      expect((await watchesOf(member))[0].cheaperElsewhere).toMatchObject({
+        supplier: 'cosmic',
+        priceCents: 90_000,
+      });
     });
   });
 });
