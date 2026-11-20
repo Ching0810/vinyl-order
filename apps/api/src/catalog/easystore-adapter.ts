@@ -11,7 +11,9 @@ import {
   handleFromUrl,
   parseJson,
   type ParsedCatalogEntry,
+  MAX_LIST_PAGES,
   type ParsedOffer,
+  type StockBatch,
   type SupplierAdapter,
   ShopPageUnreadable,
   taipeiToday,
@@ -38,8 +40,11 @@ export const COSMIC: EasyStoreShop = {
   hosts: ['www.cosmicmusicrecord.com', 'cosmicmusicrecord.com'],
 };
 
-/** Product pages and product sitemaps: robots.txt allows both (§4). */
-const PATHS = ['/products/', '/sitemap_products'];
+/**
+ * Product pages, product sitemaps and the list of every product: robots.txt
+ * allows all three (§4).
+ */
+const PATHS = ['/products/', '/sitemap_products', '/collections/all'];
 
 /** A product page's path: `/products/<handle>`, nothing below it. */
 const PRODUCT_PATH = /^\/products\/([^/]+)\/?$/;
@@ -79,6 +84,30 @@ const variants = z
 
 const LD_SCRIPT = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g;
 
+/**
+ * A list page's `const collection = {...}`: the theme's own data for the 50
+ * products on the page, stock and price included (§4).
+ */
+const collection = z.object({
+  products: z.array(
+    z.object({
+      handle: z.string().min(1),
+      // The shop's dollars, not cents.
+      price: z.coerce.number().nonnegative(),
+      available: z.boolean(),
+      // Empty for some goods — Cosmic lists a T-shirt with none (2026-11-20).
+      variants: z.array(
+        z.object({
+          inventory_quantity: z.number().int().nullable(),
+          infinite_stock: z.boolean(),
+        }),
+      ),
+    }),
+  ),
+});
+
+const COLLECTION_START = 'const collection = ';
+
 export interface EasyStoreAdapterOptions {
   /** Tests pass one with a fake fetch; the default goes to the shop. */
   fetcher?: Pick<ShopFetcher, 'fetchText'>;
@@ -88,7 +117,8 @@ export interface EasyStoreAdapterOptions {
 
 /**
  * Reads an EasyStore shop (tracker.md §6): its product sitemaps for the
- * catalog, and a product page for an offer.
+ * catalog, its list of every product for price and stock, and a product
+ * page for an offer.
  *
  * The page carries what an offer needs in two scripts: a JSON-LD Product
  * (name, price, availability) and the theme's `variants` array (stock,
@@ -125,11 +155,6 @@ export class EasyStoreAdapter implements SupplierAdapter {
       read.isPreOrder ||
       ld.offers.availability === `${SCHEMA_ORG}PreOrder` ||
       options.some((option) => /預購|預訂/.test(option.title));
-    // Stock is a count only when every option is counted; one untracked or
-    // "infinite" option — THT's pre-orders — means the shop doesn't say.
-    const counted = options.every(
-      (option) => !option.infinite_stock && option.inventory_quantity !== null,
-    );
 
     return {
       externalId: handle,
@@ -141,9 +166,7 @@ export class EasyStoreAdapter implements SupplierAdapter {
         available: options.some((option) => option.available),
         preOrder,
       }),
-      stockQty: counted
-        ? options.reduce((sum, option) => sum + Math.max(option.inventory_quantity ?? 0, 0), 0)
-        : null,
+      stockQty: stockQtyOf(options),
       expectedAt: read.expected?.at ?? null,
       expectedNote: read.expected?.note ?? null,
       barcode: options.map((option) => option.barcode?.trim()).find(Boolean) ?? null,
@@ -215,6 +238,37 @@ export class EasyStoreAdapter implements SupplierAdapter {
     }
   }
 
+  /**
+   * Every product's price and stock, from `/collections/all?page=N`: 50 a
+   * page, ~300 pages a shop. Ends at a page listing none, or the same as the
+   * page before — past the last, a list may answer with the last again —
+   * and at MAX_LIST_PAGES whatever happens.
+   */
+  async *syncStock(): AsyncIterable<StockBatch> {
+    let previous: string | null = null;
+    for (let page = 1; page <= MAX_LIST_PAGES; page += 1) {
+      const products = readCollection(
+        await this.fetcher.fetchText(`${this.shop.origin}/collections/all?page=${page}`),
+      );
+      if (products.length === 0) {
+        if (page === 1) throw new ShopPageUnreadable('the list of products lists nothing');
+        return;
+      }
+      const handles = products.map((product) => product.handle).join('\n');
+      if (handles === previous) return;
+      previous = handles;
+
+      yield {
+        entries: products.map((product) => ({
+          externalId: product.handle,
+          priceCents: Math.round(product.price * 100),
+          available: product.available,
+          stockQty: stockQtyOf(product.variants),
+        })),
+      };
+    }
+  }
+
   private entriesOf(products: SitemapProduct[]): ParsedCatalogEntry[] {
     return catalogEntries(products, this.today(), (loc) => this.handleOf(loc));
   }
@@ -223,6 +277,30 @@ export class EasyStoreAdapter implements SupplierAdapter {
     return handleFromUrl(url, this.shop.hosts, PRODUCT_PATH);
   }
 }
+
+/**
+ * The shop's count, when it keeps one: only when every option is counted.
+ * One untracked or "infinite" option — THT's pre-orders — means it doesn't
+ * say, and so does a product with no options listed.
+ */
+const stockQtyOf = (
+  options: { inventory_quantity: number | null; infinite_stock: boolean }[],
+): number | null =>
+  options.length > 0 &&
+  options.every((option) => !option.infinite_stock && option.inventory_quantity !== null)
+    ? options.reduce((sum, option) => sum + Math.max(option.inventory_quantity ?? 0, 0), 0)
+    : null;
+
+/** A list page's products, from its `const collection`, validated. */
+const readCollection = (html: string): z.infer<typeof collection>['products'] => {
+  const start = html.indexOf(COLLECTION_START);
+  if (start === -1) throw new ShopPageUnreadable('no product list on the page');
+  const parsed = collection.safeParse(
+    parseJson(jsonArrayAt(html, start + COLLECTION_START.length)),
+  );
+  if (!parsed.success) throw new ShopPageUnreadable('the product list not as expected');
+  return parsed.data.products;
+};
 
 /** The page's JSON-LD Product, validated. */
 const readProductLd = (html: string): z.infer<typeof productLd> => {
@@ -243,8 +321,9 @@ const readVariants = (html: string): z.infer<typeof variants> => {
 };
 
 /**
- * The JSON array that starts at `from`, cut where its brackets close —
- * strings and escapes skipped, so a "]" in a title doesn't end it early.
+ * The JSON array or object that starts at `from`, cut where its brackets
+ * close — strings and escapes skipped, so a "]" in a title doesn't end it
+ * early.
  */
 const jsonArrayAt = (text: string, from: number): string => {
   let depth = 0;

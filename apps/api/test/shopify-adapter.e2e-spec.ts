@@ -3,13 +3,17 @@ import { resolve } from 'node:path';
 
 import { ShopFetcher } from '../src/catalog/shop-fetcher';
 import { ROTTEN_BLUES, ShopifyAdapter } from '../src/catalog/shopify-adapter';
-import type { CatalogBatch, ParsedCatalogEntry } from '../src/catalog/supplier-adapter';
+import type {
+  CatalogBatch,
+  ParsedCatalogEntry,
+  ParsedStock,
+} from '../src/catalog/supplier-adapter';
 import { ShopPageUnreadable } from '../src/catalog/supplier-adapter';
 
 /**
  * The Shopify adapter, for Rotten Blues (docs/design/tracker.md §6): a
  * product's storefront JSON into an offer, product sitemaps into catalog
- * entries.
+ * entries, the list of every product's cards into price and stock.
  *
  * The fixtures are the shop's public sitemaps and product JSON (2026-11-19).
  * A fake fetch answers from them, so nothing here reaches the shop. Pure, no
@@ -237,13 +241,70 @@ describe('Shopify adapter (e2e)', () => {
     });
   });
 
-  it('gives the fetcher the shop’s hosts, product pages and sitemaps — not /products.json', async () => {
+  describe('price and stock, from the list of every product', () => {
+    const page = (n: number) => `${ORIGIN}/collections/all?page=${n}`;
+    const LIST = fixture('shopify-collection.html');
+    const EMPTY = '<html><body><ul id="product-grid"></ul></body></html>';
+
+    const stockOf = async (adapter: ShopifyAdapter) => {
+      const pages: ParsedStock[][] = [];
+      for await (const batch of adapter.syncStock()) pages.push(batch.entries);
+      return pages;
+    };
+
+    it('reads each card’s price, and whether the theme marks it sold out', async () => {
+      const { adapter, fetcher } = rottenBlues({ [page(1)]: LIST, [page(2)]: EMPTY });
+
+      expect(await stockOf(adapter)).toEqual([
+        [
+          {
+            externalId: 'bd-cd-milet-the-story-of-us-初回生產限定盤-葬送的芙莉蓮第二季ed',
+            priceCents: 85_000,
+            available: true,
+            stockQty: null,
+          },
+          // Options at more than one price: "從 $420.00 TWD 起", from.
+          {
+            externalId: 'bd-cd-band-maid-spin-初回生産限定盤-通常盤',
+            priceCents: 42_000,
+            available: true,
+            stockQty: null,
+          },
+          // The theme's "售罄" badge.
+          {
+            externalId: 'cd-airiel-winks-kisses-20th-anniversary-deluxe-edition-4cd-box-set',
+            priceCents: 199_000,
+            available: false,
+            stockQty: null,
+          },
+        ],
+      ]);
+      expect(fetcher.asked).toEqual([page(1), page(2)]);
+    });
+
+    it('ends at a page the same as the one before', async () => {
+      const { adapter, fetcher } = rottenBlues({ [page(1)]: LIST, [page(2)]: LIST });
+
+      expect(await stockOf(adapter)).toHaveLength(1);
+      expect(fetcher.asked).toEqual([page(1), page(2)]);
+    });
+
+    it('refuses a first page with no cards: a changed theme, not an empty shop', async () => {
+      const { adapter } = rottenBlues({ [page(1)]: EMPTY });
+
+      await expect(stockOf(adapter)).rejects.toThrow(
+        new ShopPageUnreadable('the list of products lists nothing'),
+      );
+    });
+  });
+
+  it('gives the fetcher the shop’s hosts, product pages, sitemaps and list — not /products.json', async () => {
     const { rules } = new ShopifyAdapter(ROTTEN_BLUES);
     const fetch = jest.fn();
 
     expect(rules).toEqual({
       hosts: ['www.rottenblues.com', 'rottenblues.com'],
-      paths: ['/products/', '/sitemap'],
+      paths: ['/products/', '/sitemap', '/collections/all'],
     });
     // "/products.json" doesn't start with "/products/": refused before sending.
     await expect(

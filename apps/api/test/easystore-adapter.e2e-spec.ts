@@ -3,12 +3,17 @@ import { resolve } from 'node:path';
 
 import { COSMIC, EasyStoreAdapter, THT } from '../src/catalog/easystore-adapter';
 import { ShopFetcher, ShopFetchError } from '../src/catalog/shop-fetcher';
-import type { CatalogBatch, ParsedCatalogEntry } from '../src/catalog/supplier-adapter';
+import type {
+  CatalogBatch,
+  ParsedCatalogEntry,
+  ParsedStock,
+} from '../src/catalog/supplier-adapter';
 import { ShopPageUnreadable } from '../src/catalog/supplier-adapter';
 
 /**
  * The EasyStore adapter, for THT and Cosmic (docs/design/tracker.md §6):
- * product pages into offers, product sitemaps into catalog entries.
+ * product pages into offers, product sitemaps into catalog entries, the list
+ * of every product into price and stock.
  *
  * The fixtures are the shops' public pages and sitemaps (2026-11-19),
  * trimmed to what is read. A fake fetch answers from them, so nothing here
@@ -385,13 +390,91 @@ describe('EasyStore adapter (e2e)', () => {
     });
   });
 
-  it("gives the fetcher the shop's hosts, product pages and sitemaps — nothing else", async () => {
+  describe('price and stock, from the list of every product', () => {
+    const page = (n: number) => `https://www.thtrecords.com/collections/all?page=${n}`;
+    const LIST = fixture('easystore-collection.html');
+    /** The same page, listing nothing: past the last page. */
+    const EMPTY = LIST.replace(/"products":\[.*\]\}/, '"products":[]}');
+
+    const stockOf = async (adapter: EasyStoreAdapter) => {
+      const pages: ParsedStock[][] = [];
+      for await (const batch of adapter.syncStock()) pages.push(batch.entries);
+      return pages;
+    };
+
+    it('reads each product’s price in cents, whether it can be bought, and its count', async () => {
+      const { adapter, fetcher } = tht({ [page(1)]: LIST, [page(2)]: EMPTY });
+
+      expect(await stockOf(adapter)).toEqual([
+        [
+          // Sold out: nothing left of its one option.
+          {
+            externalId: 'globe-lights-2lp',
+            priceCents: 178_000,
+            available: false,
+            stockQty: 0,
+          },
+          // A pre-order: "infinite" stock, so the shop gives no count.
+          {
+            externalId: 'olive-oil-vitamin-o-lp-2027-3-17發行預訂-',
+            priceCents: 138_000,
+            available: true,
+            stockQty: null,
+          },
+          {
+            externalId: 'bloodthirsty-butchers-kocorono-2lp-完全盤-2lp重量盤',
+            priceCents: 158_000,
+            available: true,
+            stockQty: 1,
+          },
+        ],
+      ]);
+      expect(fetcher.asked).toEqual([page(1), page(2)]);
+    });
+
+    it('a product listing no options says no count, and doesn’t stop the walk', async () => {
+      // As Cosmic lists a T-shirt (2026-11-20).
+      const noOptions = LIST.replace(
+        /("handle":"globe-lights-2lp".*?"variants":)\[[^\]]*\]/,
+        '$1[]',
+      );
+      const { adapter } = tht({ [page(1)]: noOptions, [page(2)]: EMPTY });
+
+      const [[first, ...rest]] = await stockOf(adapter);
+
+      expect(first).toMatchObject({ externalId: 'globe-lights-2lp', stockQty: null });
+      expect(rest).toHaveLength(2);
+    });
+
+    it('ends at a page the same as the one before: past the last, the last again', async () => {
+      const { adapter, fetcher } = tht({ [page(1)]: LIST, [page(2)]: LIST });
+
+      expect(await stockOf(adapter)).toHaveLength(1);
+      expect(fetcher.asked).toEqual([page(1), page(2)]);
+    });
+
+    it.each([
+      ['a first page listing nothing', EMPTY, 'the list of products lists nothing'],
+      ['a page with no product list', '<html>maintenance</html>', 'no product list on the page'],
+      [
+        'a list not as expected',
+        LIST.replace(/"available":(true|false),"variants/g, '"variants'),
+        'the product list not as expected',
+      ],
+    ])('refuses %s', async (_case, body, message) => {
+      const { adapter } = tht({ [page(1)]: body });
+
+      await expect(stockOf(adapter)).rejects.toThrow(new ShopPageUnreadable(message));
+    });
+  });
+
+  it("gives the fetcher the shop's hosts, product pages, sitemaps and list — nothing else", async () => {
     const { rules } = new EasyStoreAdapter(THT);
     const fetch = jest.fn();
 
     expect(rules).toEqual({
       hosts: ['www.thtrecords.com', 'thtrecords.com'],
-      paths: ['/products/', '/sitemap_products'],
+      paths: ['/products/', '/sitemap_products', '/collections/all'],
     });
     // robots.txt forbids search; the fetcher refuses it before sending.
     await expect(

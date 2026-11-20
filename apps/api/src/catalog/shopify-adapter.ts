@@ -9,8 +9,11 @@ import {
   type CatalogBatch,
   catalogEntries,
   handleFromUrl,
+  MAX_LIST_PAGES,
   parseJson,
   type ParsedOffer,
+  type ParsedStock,
+  type StockBatch,
   type SupplierAdapter,
   ShopPageUnreadable,
   taipeiToday,
@@ -32,11 +35,11 @@ export const ROTTEN_BLUES: ShopifyShop = {
 };
 
 /**
- * Product pages (and their `.js`) and the sitemaps: robots.txt allows both.
- * The index is `/sitemap.xml`, so the prefix is `/sitemap`, not
- * `/sitemap_products` as on EasyStore.
+ * Product pages (and their `.js`), the sitemaps and the list of every
+ * product: robots.txt allows all three. The index is `/sitemap.xml`, so the
+ * prefix is `/sitemap`, not `/sitemap_products` as on EasyStore.
  */
-const PATHS = ['/products/', '/sitemap'];
+const PATHS = ['/products/', '/sitemap', '/collections/all'];
 
 /**
  * A product's path, as pasted or listed: `/products/<handle>`, also under a
@@ -69,6 +72,22 @@ const productJs = z.object({
     .min(1),
 });
 
+/** Where one product's card begins on a list page (the Dawn theme's). */
+const CARD_START = '<div class="card-wrapper';
+
+/** A card's link to its product: `/products/<handle>`, percent-encoded. */
+const CARD_HANDLE = /href="\/products\/([^"?#/]+)/;
+
+/**
+ * A card's price: the sale price if it has one, else the regular; "從 $420.00
+ * TWD 起" — from — for one with options at more than one price.
+ */
+const CARD_PRICE =
+  /price-item--last">\s*(?:從\s*)?\$([\d,]+(?:\.\d+)?)|price-item--regular">\s*(?:從\s*)?\$([\d,]+(?:\.\d+)?)/;
+
+/** A card the theme marks sold out: its price block's class, or the "售罄" badge. */
+const CARD_SOLD_OUT = /price--sold-out|>\s*售罄\s*</;
+
 /** A product type or tag that says pre-order, as Shopify shops write one. */
 const PRE_ORDER_TAG = /預購|pre-?order/i;
 
@@ -81,7 +100,8 @@ export interface ShopifyAdapterOptions {
 
 /**
  * Reads a Shopify shop (tracker.md §6): its product sitemaps for the catalog,
- * and a product's `.js` for an offer.
+ * its list of every product for price and stock, and a product's `.js` for
+ * an offer.
  *
  * Not `/products.json`: it would give the catalog with prices in one walk,
  * but Rotten Blues rate-limits it for clients like this one (§4), and a
@@ -144,6 +164,30 @@ export class ShopifyAdapter implements SupplierAdapter {
     };
   }
 
+  /**
+   * Every product's price and whether it's sold out, from the cards of
+   * `/collections/all?page=N`: 16 a page, ~230 pages. No JSON there, unlike
+   * EasyStore's: the theme's cards are read. Ends at a page with no cards,
+   * or the same as the page before, and at MAX_LIST_PAGES whatever happens.
+   */
+  async *syncStock(): AsyncIterable<StockBatch> {
+    let previous: string | null = null;
+    for (let page = 1; page <= MAX_LIST_PAGES; page += 1) {
+      const entries = readCards(
+        await this.fetcher.fetchText(`${this.shop.origin}/collections/all?page=${page}`),
+      );
+      if (entries.length === 0) {
+        if (page === 1) throw new ShopPageUnreadable('the list of products lists nothing');
+        return;
+      }
+      const handles = entries.map((entry) => entry.externalId).join('\n');
+      if (handles === previous) return;
+      previous = handles;
+
+      yield { entries };
+    }
+  }
+
   async *syncCatalog(): AsyncIterable<CatalogBatch> {
     const index = await this.fetcher.fetchText(`${this.shop.origin}/sitemap.xml`);
     const files = sitemapIndexLocs(index).filter((loc) => PRODUCT_SITEMAP.test(loc));
@@ -164,6 +208,33 @@ export class ShopifyAdapter implements SupplierAdapter {
     }
   }
 }
+
+/** A list page's cards: each product's handle, price and whether it's sold out. */
+const readCards = (html: string): ParsedStock[] =>
+  html
+    .split(CARD_START)
+    .slice(1)
+    .flatMap((card) => {
+      const handle = CARD_HANDLE.exec(card)?.[1];
+      if (!handle) return [];
+      const price = CARD_PRICE.exec(card);
+      const dollars = price ? (price[1] ?? price[2]).replace(/,/g, '') : null;
+      let externalId: string;
+      try {
+        externalId = decodeURIComponent(handle);
+      } catch {
+        return [];
+      }
+      return [
+        {
+          externalId,
+          priceCents: dollars === null ? null : Math.round(Number(dollars) * 100),
+          available: !CARD_SOLD_OUT.test(card),
+          // Cards give no count; the product's .js doesn't either (§4).
+          stockQty: null,
+        },
+      ];
+    });
 
 /** Shopify writes image URLs without a scheme: `//cdn.shopify.com/…`. */
 const absolute = (url: string): string => (url.startsWith('//') ? `https:${url}` : url);

@@ -117,6 +117,20 @@ on request. And an EasyStore file number past the last is answered with
 the last file again, not a 404 — Cosmic's `sitemap_products_200.xml` is its
 `_49`, 246 products.
 
+**Checked 2026-11-20: the list of every product carries stock and price.**
+robots.txt allows `/collections/` at all three (Rotten Blues forbids only
+its `sort_by` and `+` filters). `/collections/all?page=N`:
+
+| Shop         | A page      | Pages | Gzipped | What it says of each product                                                     |
+| ------------ | ----------- | ----: | ------: | -------------------------------------------------------------------------------- |
+| THT          | 50 products |  ~260 |   49 KB | `const collection` JSON: handle, price, `available`, each option's count         |
+| Cosmic       | 50 products |  ~290 |  146 KB | the same, and barcodes                                                           |
+| Rotten Blues | 16 cards    |  ~230 |   71 KB | HTML cards: handle, price ("從 $420 起" for options at two prices), "售罄" badge |
+
+About 780 requests and 70 MB a night, ~5 minutes a shop at one request a
+second. No shop marks pre-order on a list: the title says it, as on a
+product page.
+
 The worked example is Candlelight's
 [坂本龍一 Ryuichi Sakamoto – 1996](https://www.candlelightrecords.tw/product/detail/2696454):
 1550 TWD, `PreOrder`, `availabilityStarts` 2026-12-31, stock 0, `productID`
@@ -198,8 +212,9 @@ first change has something to be a change from.
 `supplier`, `externalId`, `url`, `title`, `searchTitle` (the title in search
 form, which the trigram index is on: NFKC, lower case, spaces collapsed, as
 a query is too — §7.3; if that changes, the next sync rewrites every row,
-so no migration), `imageUrl`, `priceCents` (when the catalog source has it
-— none of the first three shops' does), `isUsed`, `isVinyl`,
+so no migration), `imageUrl`, `priceCents`, `availability` and `stockQty`
+(from the shop's list pages, §7.2; null until a stock walk reads them),
+`isUsed`, `isVinyl`,
 `sourceUpdatedAt` (`lastmod`), `syncedAt`. Unique on
 `(supplier, externalId)`; a GIN trigram index on `searchTitle`. It is a copy of each shop's catalog, not of my records: thousands
 of rows, rewritten by sync (§7.2), never edited by hand.
@@ -514,6 +529,47 @@ longer lists are deleted.
 Sync runs outside the API: at first a command run by hand, locally and
 then against Neon, so the first runs can be watched — how many entries,
 how much space, how long; then a GitHub Actions schedule (§10, step 12).
+
+**Then price and stock, from the list pages** (2026-11-20). After the
+sitemap walk, `catalog:sync` reads the shop's `/collections/all` a page at
+a time (§4) and writes each listing's price, availability and count:
+
+- **The sitemaps decide what's listed; the pages only fill it in.** A
+  listing a page shows that the catalog hasn't is ignored — the next sync
+  brings it in — and a walk deletes nothing.
+- **One statement a page, writing only what changed**, as the sitemap
+  walk does. The sitemap walk in turn leaves price and stock alone: its
+  null would undo them every night, and rewrite every row.
+- **Pre-order is the title's**, as on a product page: no shop marks it on a
+  list. Not buyable is sold out; buyable, a pre-order if the title says so,
+  else in stock.
+- **"As of" is kept once a shop**, in `CatalogStockRun` — when its last
+  walk finished — not on each listing: writing a time on every row each
+  night would rewrite them all. A walk that stops keeps what it wrote and
+  leaves the last finished time; a listing the pages stopped showing keeps
+  its last values under the newer time, rarely.
+- **The walk ends** at a page with none, or the same as the page before
+  (past the last, EasyStore answers the last again), and at 400 pages.
+
+The first walks, 2026-11-20, locally:
+
+| Shop         | Pages |  Shown | In the catalog | In stock | Pre-order | Sold out |  Time |
+| ------------ | ----: | -----: | -------------: | -------: | --------: | -------: | ----: |
+| THT          |   261 | 13 029 |         13 017 |    8 985 |       664 |    3 368 | 491 s |
+| Cosmic       |   294 | 14 687 |         14 676 |    7 429 |        32 |    7 215 | 725 s |
+| Rotten Blues |   230 |  3 668 |          3 657 |    3 224 |         3 |      430 | 292 s |
+
+- **A second walk writes almost nothing**: Rotten Blues' wrote 5 of 3 657,
+  the ones whose stock had moved; Cosmic's, resumed after a stopped one,
+  wrote only the 5 935 the first hadn't reached.
+- **~25 minutes for the three**, Cosmic's ~1.5 MB pages the slowest;
+  `catalog:sync all` is now ~28 minutes. The table went from 28 to 32 MB.
+- **A product with no options**: Cosmic lists a T-shirt with none, which
+  stopped the first walk at page 176. It now reads as no count given.
+- **Pre-order is undercounted at Rotten Blues**: it often marks one with a
+  tag, which only the product's `.js` carries (§4), not a card. Such a
+  listing reads as in stock — still orderable, so the slip is small; a
+  record's offer, read from the product page, has it right.
 
 **The first runs, 2026-11-19** — `catalog:sync all` into an empty table,
 locally and then on Neon from a laptop:
