@@ -1391,17 +1391,17 @@ The carousel, the hot list and the admin hero page go (step 1).
 
 - **Search (`/search`, any member):** a keyword box, a shop picker,
   "used" and "CDs and other goods" toggles, all kept in the URL so going
-  back keeps them. Results are albums (§7.3): cover, artist and title, the
-  listings of it, and no price: the catalogs carry none (§4), and it comes
-  with the product page. Each listing — a version at a shop, under its own
-  title — has its own "Track", which puts that version on my list and opens
-  the album's product page; an artist the API can't tell asks who. A
-  version I track says so, and opens the page instead.
-  Each listing also says whether it can be bought, as far as search knows:
-  a listing a record holds has its page's last read (in stock, pre-order,
-  sold out); one whose title says pre-order is a pre-order; any other says
-  **"Unknown"** — the catalog carries no stock, and reading every listing's
-  page for each search would be a hundred requests to the shops.
+  back keeps them. Results are albums (§7.3): artist and title, then each
+  listing — a version at a shop — with its own cover, the shop's own
+  title, its price, availability, count when the shop keeps one, and how
+  old they are, and its own "Track", which puts that version on my list
+  and opens the album's product page; an artist the API can't tell asks
+  who. A version I track says so, and opens the page instead.
+  Price and stock are **the newer of a record's offer** — read from the
+  product page — **and the catalog**, read from the list pages as of the
+  shop's last stock walk (§7.2). A listing neither has read (one added
+  since) says **"Unknown"**, or "Pre-order" if its title says so; never a
+  guess.
 - **Product page:** the shared details on top; below, a table of offers —
   supplier, price, availability, stock, expected date, last checked, a link
   to the shop. Cheapest price and earliest date are marked. Admins also see

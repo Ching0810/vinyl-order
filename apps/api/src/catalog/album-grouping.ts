@@ -8,10 +8,10 @@ export interface Listing extends CatalogSearchHit {
 }
 
 /** Listings of one album, best first, and how the best one names it. */
-export interface AlbumGroup {
+export interface AlbumGroup<T extends Listing = Listing> {
   artist: string | null;
   title: string;
-  listings: Listing[];
+  listings: T[];
 }
 
 /**
@@ -28,7 +28,10 @@ export interface AlbumGroup {
  * @param listings - best first; albums keep that order, by their best listing
  * @param today - `YYYY-MM-DD` in Taipei, for reading a title's dates
  */
-export const groupIntoAlbums = (listings: Listing[], today: string): AlbumGroup[] => {
+export const groupIntoAlbums = <T extends Listing>(
+  listings: T[],
+  today: string,
+): AlbumGroup<T>[] => {
   const read = listings.map((listing) => {
     const title = readListingTitle(listing.title, today);
     return {

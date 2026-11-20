@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import type {
   CatalogAlbum,
+  CatalogAlbumListing,
   CatalogSearchHit,
   CatalogSearchQuery,
-  ListingAvailability,
 } from '@vinyl-order/shared';
 
 import { Prisma } from '../generated/prisma/client';
@@ -66,6 +66,10 @@ export class CatalogSearchService {
             externalId: true,
             productId: true,
             availability: true,
+            priceCents: true,
+            currency: true,
+            stockQty: true,
+            lastCheckedAt: true,
             // Whether this user tracks it: one row or none.
             watches: { where: { userId }, select: { userId: true } },
           },
@@ -75,6 +79,9 @@ export class CatalogSearchService {
       tracked.map((offer) => [`${offer.supplier}/${offer.externalId}`, offer]),
     );
     const offerFor = (listing: Listing) => offerOf.get(`${listing.supplier}/${listing.externalId}`);
+    const walkedAt = new Map(
+      (await this.prisma.catalogStockRun.findMany()).map((run) => [run.supplier, run.finishedAt]),
+    );
 
     return groups.map((group) => ({
       key: group.listings[0].id,
@@ -87,7 +94,7 @@ export class CatalogSearchService {
         return {
           ...toHit(listing),
           watched: (offer?.watches.length ?? 0) > 0,
-          availability: availabilityOf(listing, offer?.availability, today),
+          ...stockOf(listing, offer, walkedAt.get(listing.supplier), today),
         };
       }),
       productId:
@@ -95,10 +102,11 @@ export class CatalogSearchService {
     }));
   }
 
-  private listings({ q, supplier, used, nonVinyl }: CatalogSearchQuery): Promise<Listing[]> {
+  private listings({ q, supplier, used, nonVinyl }: CatalogSearchQuery): Promise<CatalogRow[]> {
     const query = searchTitleOf(q);
-    return this.prisma.$queryRaw<Listing[]>`
+    return this.prisma.$queryRaw<CatalogRow[]>`
       SELECT "id", "supplier", "externalId", "url", "title", "imageUrl", "isVinyl", "isUsed",
+             "priceCents", "availability", "stockQty",
              word_similarity(${query}, "searchTitle") AS "score"
       FROM "CatalogEntry"
       WHERE (${query} <% "searchTitle" OR "searchTitle" LIKE ${containsPattern(query)})
@@ -125,16 +133,67 @@ const toHit = (listing: Listing): CatalogSearchHit => ({
   score: listing.score,
 });
 
+/** A listing as the catalog copies it: with price and stock from the list pages. */
+interface CatalogRow extends Listing {
+  priceCents: number | null;
+  availability: Availability | null;
+  stockQty: number | null;
+}
+
+/** What a record's offer last read from the listing's product page. */
+interface OfferRead {
+  availability: Availability;
+  priceCents: number;
+  currency: string;
+  stockQty: number | null;
+  lastCheckedAt: Date;
+}
+
+/** The catalogs' prices are the shops' own, all in TWD (§4). */
+const CATALOG_CURRENCY = 'TWD';
+
 /**
- * As far as search knows (§4): a listing on a record has its page's last
- * read; one whose title says pre-order is a pre-order; any other is unknown —
- * the catalog carries no stock, and a guess would read as a fact.
+ * A listing's price and stock as far as search knows (§7.2, §12.3): the
+ * newer of its record's offer — read from the product page — and the
+ * catalog, read from the shop's list pages as of its last stock walk. A
+ * listing neither has read is a pre-order if its title says so, and
+ * otherwise unknown: a guess would read as a fact.
+ *
+ * @param walkedAt - when the shop's last stock walk finished
  */
-const availabilityOf = (
-  listing: Listing,
-  read: Availability | undefined,
+const stockOf = (
+  row: CatalogRow,
+  offer: OfferRead | undefined,
+  walkedAt: Date | undefined,
   today: string,
-): ListingAvailability => {
-  if (read) return read;
-  return readListingTitle(listing.title, today).isPreOrder ? 'pre_order' : 'unknown';
+): Pick<
+  CatalogAlbumListing,
+  'availability' | 'priceCents' | 'currency' | 'stockQty' | 'checkedAt'
+> => {
+  const catalogAt = row.availability !== null ? (walkedAt ?? null) : null;
+  if (offer && (catalogAt === null || offer.lastCheckedAt >= catalogAt)) {
+    return {
+      availability: offer.availability,
+      priceCents: offer.priceCents,
+      currency: offer.currency,
+      stockQty: offer.stockQty,
+      checkedAt: offer.lastCheckedAt.toISOString(),
+    };
+  }
+  if (row.availability !== null) {
+    return {
+      availability: row.availability,
+      priceCents: row.priceCents,
+      currency: CATALOG_CURRENCY,
+      stockQty: row.stockQty,
+      checkedAt: catalogAt?.toISOString() ?? null,
+    };
+  }
+  return {
+    availability: readListingTitle(row.title, today).isPreOrder ? 'pre_order' : 'unknown',
+    priceCents: null,
+    currency: CATALOG_CURRENCY,
+    stockQty: null,
+    checkedAt: null,
+  };
 };

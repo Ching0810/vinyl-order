@@ -42,6 +42,7 @@ describe('Catalog search (e2e)', () => {
 
   beforeEach(async () => {
     await prisma.catalogEntry.deleteMany();
+    await prisma.catalogStockRun.deleteMany();
   });
 
   afterAll(async () => {
@@ -372,6 +373,111 @@ describe('Catalog search (e2e)', () => {
       const [album] = await albumsFor(member, { q: 'coldplay parachutes' });
 
       expect(availabilityByShop(album)).toEqual({ tht: 'pre_order', cosmic: 'unknown' });
+    });
+
+    describe('price and stock', () => {
+      const WALKED = new Date('2026-11-20T04:00:00Z');
+
+      /** A shop's stock walked at WALKED, its list showing this listing so. */
+      const walked = async (
+        listing: { id: string; supplier: Supplier },
+        stock: {
+          priceCents: number;
+          availability: 'in_stock' | 'sold_out';
+          stockQty: number | null;
+        },
+      ) => {
+        await prisma.catalogEntry.update({ where: { id: listing.id }, data: stock });
+        await prisma.catalogStockRun.upsert({
+          where: { supplier: listing.supplier },
+          create: { supplier: listing.supplier, finishedAt: WALKED, pages: 1, entries: 1 },
+          update: { finishedAt: WALKED },
+        });
+      };
+
+      /** A record holding this listing, its offer read at `checkedAt`. */
+      const offerOn = async (
+        listing: { supplier: Supplier; externalId: string; url: string; title: string },
+        checkedAt: Date,
+      ) => {
+        const artist = await prisma.artist.create({ data: { name: 'Coldplay' } });
+        await prisma.product.create({
+          data: {
+            title: 'Parachutes',
+            artist: 'Coldplay',
+            artistId: artist.id,
+            priceCents: 140_000,
+            offers: {
+              create: {
+                supplier: listing.supplier,
+                externalId: listing.externalId,
+                url: listing.url,
+                sourceTitle: listing.title,
+                priceCents: 140_000,
+                availability: 'in_stock',
+                stockQty: 5,
+                lastCheckedAt: checkedAt,
+              },
+            },
+          },
+        });
+      };
+
+      it('a listing the list pages read: its price, stock and count, as of the walk', async () => {
+        const member = await createUser('customer');
+        const [tht] = await listed('tht', ['Coldplay - Parachutes LP']);
+        await walked(tht, { priceCents: 158_000, availability: 'in_stock', stockQty: 2 });
+
+        const [album] = await albumsFor(member, { q: 'coldplay parachutes' });
+
+        expect(album.listings[0]).toMatchObject({
+          availability: 'in_stock',
+          priceCents: 158_000,
+          currency: 'TWD',
+          stockQty: 2,
+          checkedAt: WALKED.toISOString(),
+        });
+      });
+
+      it('the newer of a record’s offer and the list pages', async () => {
+        const member = await createUser('customer');
+        const [tht] = await listed('tht', ['Coldplay - Parachutes LP']);
+        await walked(tht, { priceCents: 158_000, availability: 'sold_out', stockQty: 0 });
+
+        // Read from its product page after the walk: the offer's.
+        await offerOn(tht, new Date('2026-11-20T06:00:00Z'));
+        expect(
+          (await albumsFor(member, { q: 'coldplay parachutes' }))[0].listings[0],
+        ).toMatchObject({ availability: 'in_stock', priceCents: 140_000, stockQty: 5 });
+
+        // A walk since: the list's.
+        await prisma.catalogStockRun.update({
+          where: { supplier: 'tht' },
+          data: { finishedAt: new Date('2026-11-20T08:00:00Z') },
+        });
+        expect(
+          (await albumsFor(member, { q: 'coldplay parachutes' }))[0].listings[0],
+        ).toMatchObject({
+          availability: 'sold_out',
+          priceCents: 158_000,
+          stockQty: 0,
+          checkedAt: '2026-11-20T08:00:00.000Z',
+        });
+      });
+
+      it('a listing nothing has read: no price, no time', async () => {
+        const member = await createUser('customer');
+        await listed('tht', ['Coldplay - Parachutes LP']);
+
+        const [album] = await albumsFor(member, { q: 'coldplay parachutes' });
+
+        expect(album.listings[0]).toMatchObject({
+          availability: 'unknown',
+          priceCents: null,
+          stockQty: null,
+          checkedAt: null,
+        });
+      });
     });
   });
 });
