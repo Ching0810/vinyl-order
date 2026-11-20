@@ -21,6 +21,8 @@ export const offerSchema = z.object({
   url: z.url(),
   /** The shop's own name for the record, to check a match against. */
   sourceTitle: z.string(),
+  /** This listing's own cover: two pressings look different. */
+  imageUrl: z.url().nullable(),
   priceCents: z.number().int(),
   currency: z.string(),
   availability: availabilitySchema,
@@ -142,6 +144,8 @@ export type AttachOfferResult = z.infer<typeof attachOfferResultSchema>;
  *   instead.
  * - `ARTIST_NAME_ALIAS` (422): the alias that is the artist's name can't be
  *   removed; rename the artist first.
+ * - `REFRESH_TOO_SOON` (429): a record is read again at most every ten
+ *   minutes; the body says in how many seconds (`retryAfterSeconds`).
  */
 export const offerErrorCodeSchema = z.enum([
   'OFFER_ALREADY_TRACKED',
@@ -151,5 +155,6 @@ export const offerErrorCodeSchema = z.enum([
   'SHOP_PAGE_UNREADABLE',
   'LAST_OFFER',
   'ARTIST_NAME_ALIAS',
+  'REFRESH_TOO_SOON',
 ]);
 export type OfferErrorCode = z.infer<typeof offerErrorCodeSchema>;

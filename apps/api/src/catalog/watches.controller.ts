@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Put,
   UseGuards,
   UsePipes,
 } from '@nestjs/common';
@@ -41,6 +42,13 @@ export class WatchesController {
     @Body() dto: TrackListingDto,
   ): Promise<TrackListingResult> {
     return this.watches.track(user.id, dto);
+  }
+
+  /** PUT /watches/:offerId — track a listing a record holds, from its comparison. */
+  @Put(':offerId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  watch(@CurrentUser() user: PublicUser, @Param('offerId') offerId: string): Promise<void> {
+    return this.watches.watchOffer(user.id, offerId);
   }
 
   /** DELETE /watches/:offerId — stop tracking a listing. */

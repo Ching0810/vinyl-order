@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   ConflictException,
   HttpException,
+  HttpStatus,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { OfferErrorCode } from '@vinyl-order/shared';
@@ -34,6 +35,18 @@ export const shopPageUnreadable = (reason: string): BadGatewayException =>
     message: "The shop's page couldn't be read.",
     reason,
   });
+
+/** 429: the record was read again too lately; try in `retryAfterSeconds`. */
+export const refreshTooSoon = (retryAfterSeconds: number): HttpException =>
+  new HttpException(
+    {
+      statusCode: 429,
+      code: 'REFRESH_TOO_SOON' satisfies OfferErrorCode,
+      message: 'This record was refreshed a moment ago.',
+      retryAfterSeconds,
+    },
+    HttpStatus.TOO_MANY_REQUESTS,
+  );
 
 /**
  * The code an error made here carries, and the rest of its body — for a

@@ -5,15 +5,16 @@ import type { Offer } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SUPPLIER_ADAPTERS, type SupplierAdapters } from './adapters';
 import { syncDemoPrice } from './demo-price';
+import { refreshTooSoon } from './offer.errors';
 import { findProductWithOffers, offerValuesOf, snapshotOf } from './product-with-offers.mapper';
 import { ShopFetchError } from './shop-fetcher';
 import { ShopPageUnreadable } from './supplier-adapter';
 
 /**
  * Re-reads a record's offers from the shops' pages (tracker.md §5.2, §5.3),
- * one after another, inside the request: a record has at most four, and the
- * shops' fetchers queue their requests anyway. Scheduled refreshes are
- * step 12's.
+ * one after another, inside the request: a record holds one album's
+ * listings, a handful, and the shops' fetchers queue their requests anyway.
+ * Scheduled refreshes are step 12's.
  */
 @Injectable()
 export class OfferRefreshService {
@@ -22,13 +23,29 @@ export class OfferRefreshService {
     @Inject(SUPPLIER_ADAPTERS) private readonly adapters: SupplierAdapters,
   ) {}
 
-  /** @throws 404 - no such tracked record */
-  async refresh(productId: string): Promise<ProductWithOffers> {
+  /**
+   * @param minInterval - for a member's refresh: the least time, in ms,
+   *   since the record was last read — a read that failed counts — so many
+   *   members pressing it read the shops once
+   * @throws 404 - no such tracked record
+   * @throws 429 REFRESH_TOO_SOON - read again within `minInterval`
+   */
+  async refresh(productId: string, { minInterval = 0 } = {}): Promise<ProductWithOffers> {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
       select: { artistId: true, offers: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } },
     });
     if (!product?.artistId) throw new NotFoundException('Product not found');
+
+    const lastRead = Math.max(
+      0,
+      ...product.offers.flatMap((offer) => [
+        offer.lastCheckedAt.getTime(),
+        offer.lastErrorAt?.getTime() ?? 0,
+      ]),
+    );
+    const wait = lastRead + minInterval - Date.now();
+    if (wait > 0) throw refreshTooSoon(Math.ceil(wait / 1000));
 
     for (const offer of product.offers) await this.refreshOffer(offer);
     await syncDemoPrice(this.prisma, productId);

@@ -94,6 +94,25 @@ export class WatchesService {
     return { product, offerId: offer.id, skipped };
   }
 
+  /**
+   * Tracks a listing a record holds already — from its comparison, where
+   * the album's listings are all there; tracking it again is no error.
+   *
+   * @throws 404 - no such offer
+   */
+  async watchOffer(userId: string, offerId: string): Promise<void> {
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+      select: { id: true },
+    });
+    if (!offer) throw new NotFoundException('Offer not found');
+    await this.prisma.offerWatch.upsert({
+      where: { userId_offerId: { userId, offerId } },
+      create: { userId, offerId },
+      update: {},
+    });
+  }
+
   /** Stops tracking a listing; tracking it no longer is no error. */
   async untrack(userId: string, offerId: string): Promise<void> {
     await this.prisma.offerWatch.deleteMany({ where: { userId, offerId } });
@@ -112,6 +131,7 @@ export class WatchesService {
             supplier: true,
             url: true,
             sourceTitle: true,
+            imageUrl: true,
             priceCents: true,
             currency: true,
             availability: true,
@@ -153,7 +173,7 @@ export class WatchesService {
         productId: product.id,
         title: product.title,
         artist: product.artistRef?.name ?? product.artist,
-        imageUrl: product.imageUrl,
+        imageUrl: offer.imageUrl ?? product.imageUrl,
         sourceTitle: offer.sourceTitle,
         supplier: offer.supplier,
         url: offer.url,

@@ -172,6 +172,7 @@ SupplierOrder      an order I placed at a shop
 | `externalId`             | text                                                | the shop's id; `@@unique([supplier, externalId])`    |
 | `url`                    | text                                                |                                                      |
 | `sourceTitle`            | text                                                | the shop's own name for it, to check a match against |
+| `imageUrl`               | text, null                                          | its own cover: two pressings look different          |
 | `priceCents`, `currency` | int, text                                           |                                                      |
 | `availability`           | enum `in_stock \| pre_order \| sold_out`            |                                                      |
 | `stockQty`               | int, null                                           | the supplier's count; null = the shop doesn't say    |
@@ -1326,7 +1327,10 @@ orders, which any signed-in user has for their own (§12.1).
 | `DELETE /admin/offers/:id`                      | detach a wrong match                                                 |
 | `POST /admin/products/:id/refresh`              | re-fetch the product's offers                                        |
 | `PATCH /admin/artists/:id`                      | rename; add or remove aliases                                        |
-| `GET /products/:id`                             | now includes its offers                                              |
+| `GET /products/:id/offers`                      | a tracked record and every offer; public, 404 if not tracked         |
+| `GET /catalog/new`                              | the shops' newest listings that can be bought; public                |
+| `POST /products/:id/refresh`                    | any member; a record at most every ten minutes (429)                 |
+| `PUT /watches/:offerId`                         | track a version from its record's comparison                         |
 | `GET /admin/dashboard`                          | the home page's three sections (§12.2)                               |
 | `GET /products/hot`, `GET /products/slides`     | removed, with the carousel                                           |
 | `POST /cart/items`                              | takes `offerId`                                                      |
@@ -1343,7 +1347,7 @@ Shapes go in `packages/shared` as now.
 
 | Page               | Admin (me)                               | Visitor                             |
 | ------------------ | ---------------------------------------- | ----------------------------------- |
-| `/`                | the dashboard (§12.2)                    | tracked records, lowest price each  |
+| `/`                | the dashboard (§12.2)                    | the shops' new arrivals             |
 | `/` (signed in)    | my tracked versions                      | their own tracked versions          |
 | `/products/[id]`   | comparison, candidates, refresh, aliases | comparison, "add to cart" per offer |
 | `/search`          | search by album; track one               | the same, once signed in            |
@@ -1406,15 +1410,35 @@ The carousel, the hot list and the admin hero page go (step 1).
   shop's last stock walk (§7.2). A listing neither has read (one added
   since) says **"Unknown"**, or "Pre-order" if its title says so; never a
   guess.
-- **Product page:** the shared details on top; below, a table of offers —
-  supplier, price, availability, stock, expected date, last checked, a link
-  to the shop. Cheapest price and earliest date are marked. Admins also see
-  the candidate list, the refresh button, the artist's aliases to edit, a
-  "record an order" action per offer (prefilling §9.2's form with that
-  supplier and offer), and "ordered at THT · preparing" when a supplier
-  order already holds it.
-- **Visitors' list and cards** show "from NT$ …", the lowest price among
-  offers in stock or on pre-order.
+- **Product page (`/products/:id`):** for a tracked record, the album on
+  top — cover, artist, title, how many versions at how many shops — then
+  its comparison: **a row for each version at each shop**, with its own
+  cover and the shop's own title (a link there), price, availability,
+  count, expected date and how old they are. Buyable first, cheapest
+  first, then sold out; the lowest price that can be bought is marked.
+  The versions I track are highlighted, tracked or let go from here.
+  **Anyone signed in refreshes it** — every offer read again, live — but a
+  record at most every ten minutes, so many pressing it read the shops once;
+  a read that failed counts. The admin also takes a wrong match off ("Not
+  this album"). No "add to cart" here: the demo store's cart works off one
+  price a record, and comes back with checkout on offers (step 5). The demo
+  store's own records, with no offers, show as before. Later: the
+  candidates and aliases for the admin, "record an order" per offer, and
+  "ordered at THT · preparing" when a supplier order holds it.
+- **Home (`/`):** signed in, **"Tracking"** — each version I track a tile
+  with its own price, availability and shop, and "NT$1,350 at CM唱片" when
+  the album is cheaper elsewhere; nothing tracked yet says so and leads to
+  search. A tile opens the album's comparison. Not signed in, **"New at
+  the shops"** — the newest listings the nightly sync copied that can be
+  bought, at their price; a tile searches for its album.
+
+  **⚖️ Decision (2026-11-20): a visitor sees the shops, not the members.**
+  First built as "Tracked lately", the records members track: that shows
+  strangers what other people follow. The shops' new arrivals come from
+  their public catalogs alone. Ordered by `CatalogEntry.createdAt`, when a
+  sync first copied the listing; rows copied before the column share its
+  migration's time, so the order means something from the next sync on.
+
 - **Supplier orders (`/supplier-orders`):** §9.2.
 
 ## 13. Testing

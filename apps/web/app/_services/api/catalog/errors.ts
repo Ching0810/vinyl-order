@@ -9,7 +9,7 @@ const bodyOf = (error: unknown): Record<string, unknown> | null =>
     : null;
 
 /**
- * The code a refusal to track an album carries, or undefined for any other
+ * The code a refusal to track, refresh or detach carries, or undefined for any other
  * error — a network failure, a 400, a code this page doesn't know. Parsed
  * with the shared schema, so a typo can't match.
  */
@@ -23,3 +23,9 @@ export const ambiguousArtistsOf = (error: unknown): { id: string; name: string }
   offerErrorCode(error) === 'ARTIST_AMBIGUOUS'
     ? (artistChoicesSchema.safeParse(bodyOf(error)?.artists).data ?? [])
     : [];
+
+/** The seconds a REFRESH_TOO_SOON says to wait, or undefined for any other error. */
+export const retryAfterSecondsOf = (error: unknown): number | undefined =>
+  offerErrorCode(error) === 'REFRESH_TOO_SOON'
+    ? z.number().int().nonnegative().safeParse(bodyOf(error)?.retryAfterSeconds).data
+    : undefined;
