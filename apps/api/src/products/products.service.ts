@@ -56,7 +56,7 @@ const toContract = (product: ProductRow): ProductContract => {
 
 /**
  * Data-access layer for the Product entity. The public storefront reads through
- * paginate/search/findById; admin writes go through update/remove (wired to
+ * paginate/findById; admin writes go through update/remove (wired to
  * admin-guarded routes in the controller). Records are made from a shop's
  * listing (catalog/), never here.
  */
@@ -91,24 +91,6 @@ export class ProductsService {
       toContract,
       () => this.prisma.product.count({ where }),
     );
-  }
-
-  /**
-   * Search the whole catalog by title, or by any of its artist's names
-   * (case-insensitive): "Ryuichi Sakamoto" finds 坂本龍一's records (§5.7).
-   */
-  async search(q: string): Promise<ProductContract[]> {
-    const products = await this.prisma.product.findMany({
-      where: {
-        OR: [
-          { title: { contains: q, mode: 'insensitive' } },
-          { artist: { aliases: { some: { name: { contains: q, mode: 'insensitive' } } } } },
-        ],
-      },
-      orderBy: { createdAt: 'desc' },
-      include: withCard,
-    });
-    return products.map(toContract);
   }
 
   /**

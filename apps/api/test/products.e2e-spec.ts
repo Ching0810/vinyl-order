@@ -138,28 +138,14 @@ describe('Products (e2e)', () => {
   });
 
   describe('a record as the catalogue reads it', () => {
-    /**
-     * A record by an artist with two names, and an offer per given shop
-     * price and availability.
-     */
-    const createRecord = async (offers: { priceCents: number; availability: Availability }[]) => {
-      const name = `坂本龍一 ${randomUUID()}`;
-      return prisma.product.create({
+    /** A record, and an offer per given shop price and availability. */
+    const createRecord = async (offers: { priceCents: number; availability: Availability }[]) =>
+      prisma.product.create({
         data: {
           title: `1996 ${randomUUID()}`,
           releaseDate: new Date('1996-06-21T00:00:00Z'),
           edition: '日版',
-          artist: {
-            create: {
-              name,
-              aliases: {
-                create: [
-                  { name, normalized: name },
-                  { name: `Ryuichi Sakamoto ${name}`, normalized: `ryuichisakamoto${name}` },
-                ],
-              },
-            },
-          },
+          artist: { create: { name: '坂本龍一' } },
           offers: {
             create: offers.map((offer) => ({
               ...offer,
@@ -173,7 +159,6 @@ describe('Products (e2e)', () => {
         },
         include: { artist: true },
       });
-    };
 
     const read = async (id: string) =>
       (await request(app.getHttpServer()).get(`/products/${id}`).expect(200)).body as Product;
@@ -200,19 +185,6 @@ describe('Products (e2e)', () => {
       const record = await createRecord([{ priceCents: 90_000, availability: 'sold_out' }]);
 
       expect((await read(record.id)).fromPriceCents).toBeNull();
-    });
-
-    /** "Ryuichi Sakamoto" finds 坂本龍一's records (§5.7). */
-    it('is found by any of its artist’s names', async () => {
-      const record = await createRecord([{ priceCents: 140_000, availability: 'in_stock' }]);
-      const alias = `Ryuichi Sakamoto ${record.artist.name}`;
-
-      const res = await request(app.getHttpServer())
-        .get('/products/search')
-        .query({ q: alias.toLowerCase() })
-        .expect(200);
-
-      expect((res.body as Product[]).map((product) => product.id)).toEqual([record.id]);
     });
   });
 });
