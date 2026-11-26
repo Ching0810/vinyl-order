@@ -795,16 +795,20 @@ The rest of the cart follows the same rules as checkout:
 - **One currency an order**, now the offers' `currency`.
 - **Lock order:** checkout and cancel lock offer rows sorted by `offerId`,
   as they sorted products before.
-- **Orders from before the switch** have lines with no `offerId`; a cancel
-  skips them. There were none on Neon at the switch (2026-11-26: no orders,
-  no cart lines; 3 records, all with an artist and offers; 5 offers, 2 in
-  stock, 1 of them with no count).
+- **A line whose offer is gone is skipped by a cancel**: orders from before
+  the switch, which have no `offerId`; and an offer the admin took off as a
+  wrong match while a pending order held it — its holds went with the row,
+  the line's `offerId` is nulled (SetNull), and the order can still be
+  paid. Neon had no orders at the switch (2026-11-26: no cart lines either;
+  3 records, all with an artist and offers; 5 offers, 2 in stock, 1 of them
+  with no count).
 
 **Records without a price of their own.** `Product` loses `priceCents`,
 `currency`, `stock`, `year` and the `artist` string in step 5. A storefront
 card shows "from NT$…", the lowest price among its `in_stock` offers, or no
-price when none can be bought. A record with no offers — every offer taken
-off as a wrong match — is shown, not sold.
+price when none can be bought; its page then shows the record and no cart.
+Every record has an offer to price it from: it is made from a listing, and
+it keeps at least one (`LAST_OFFER`, §7.3).
 
 **⚖️ Decision (2026-11-26): the admin edits records, doesn't create them.**
 Records come from the catalog (§12.1); one made by hand would have no offer
