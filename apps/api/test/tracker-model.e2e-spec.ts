@@ -46,11 +46,11 @@ describe('Tracker data model (e2e)', () => {
 
   const createProduct = () =>
     prisma.product.create({
-      data: { title: `Album ${randomUUID()}`, artist: 'Test Artist', priceCents: 1_000 },
+      data: { title: `Album ${randomUUID()}`, artist: { create: { name: 'Test Artist' } } },
     });
 
   /** An offer on a new product, with a fresh external id so runs don't clash. */
-  const createOffer = async (data: { stockQty?: number | null; reservedQty?: number } = {}) => {
+  const createOffer = async (data: { stockQty?: number | null } = {}) => {
     const product = await createProduct();
     return prisma.offer.create({
       data: {
@@ -72,24 +72,12 @@ describe('Tracker data model (e2e)', () => {
       const offer = await createOffer({ stockQty: null });
 
       expect(offer.stockQty).toBeNull();
-      expect(offer.reservedQty).toBe(0);
     });
 
     // The CHECK's name is in Postgres's message; matching it proves this CHECK
     // refused the write, not some other rule.
     it('refuses a negative stockQty', async () => {
       await expect(createOffer({ stockQty: -1 })).rejects.toThrow('Offer_stockQty_non_negative');
-    });
-
-    it('refuses a reservedQty taken below zero', async () => {
-      const offer = await createOffer({ stockQty: 2 });
-
-      await expect(
-        prisma.offer.update({
-          where: { id: offer.id },
-          data: { reservedQty: { decrement: 1 } },
-        }),
-      ).rejects.toThrow('Offer_reservedQty_non_negative');
     });
   });
 
@@ -296,7 +284,7 @@ describe('Tracker data model (e2e)', () => {
     it('refuses to delete an artist that still has records', async () => {
       const artist = await prisma.artist.create({ data: { name: '坂本龍一' } });
       await prisma.product.create({
-        data: { title: '1996', artist: '坂本龍一', priceCents: 1_550, artistId: artist.id },
+        data: { title: '1996', artistId: artist.id },
       });
 
       await expect(prisma.artist.delete({ where: { id: artist.id } })).rejects.toThrow();

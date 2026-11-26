@@ -4,7 +4,6 @@ import type { ProductWithOffers } from '@vinyl-order/shared';
 import type { Offer } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SUPPLIER_ADAPTERS, type SupplierAdapters } from './adapters';
-import { syncDemoPrice } from './demo-price';
 import { refreshTooSoon } from './offer.errors';
 import { findProductWithOffers, offerValuesOf, snapshotOf } from './product-with-offers.mapper';
 import { ShopFetchError } from './shop-fetcher';
@@ -33,9 +32,9 @@ export class OfferRefreshService {
   async refresh(productId: string, { minInterval = 0 } = {}): Promise<ProductWithOffers> {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
-      select: { artistId: true, offers: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } },
+      select: { offers: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } },
     });
-    if (!product?.artistId) throw new NotFoundException('Product not found');
+    if (!product) throw new NotFoundException('Product not found');
 
     const lastRead = Math.max(
       0,
@@ -48,7 +47,6 @@ export class OfferRefreshService {
     if (wait > 0) throw refreshTooSoon(Math.ceil(wait / 1000));
 
     for (const offer of product.offers) await this.refreshOffer(offer);
-    await syncDemoPrice(this.prisma, productId);
 
     const refreshed = await findProductWithOffers(this.prisma, productId);
     if (!refreshed) throw new NotFoundException('Product not found');

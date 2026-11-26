@@ -1,21 +1,64 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type {
   Connection,
-  CreateProductInput,
   PageArgs,
   Product as ProductContract,
   UpdateProductInput,
 } from '@vinyl-order/shared';
 
-import type { Prisma, Product } from '../generated/prisma/client';
+import { CATALOG_CURRENCY } from '../catalog/catalog-currency';
+import type { Prisma } from '../generated/prisma/client';
 import { paginate } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { isRecordNotFound } from '../prisma/record-not-found';
 
 /**
+ * What a product read joins: its artist's name, and its offers in stock,
+ * cheapest first — the first is a card's "from NT$…" (tracker.md §8).
+ */
+const withCard = {
+  artist: { select: { name: true } },
+  offers: {
+    where: { availability: 'in_stock' },
+    select: { priceCents: true, currency: true },
+    orderBy: { priceCents: 'asc' },
+    take: 1,
+  },
+} satisfies Prisma.ProductInclude;
+
+/** The single-product read adds its categories. */
+const withDetail = {
+  ...withCard,
+  categories: { orderBy: { sortOrder: 'asc' } },
+} satisfies Prisma.ProductInclude;
+
+type ProductRow = Prisma.ProductGetPayload<{ include: typeof withCard }> & {
+  categories?: Prisma.CategoryGetPayload<object>[];
+};
+
+/** Shape a product row for the wire. */
+const toContract = (product: ProductRow): ProductContract => {
+  const [cheapest] = product.offers;
+  return {
+    id: product.id,
+    title: product.title,
+    artist: product.artist.name,
+    // A `@db.Date` reads back as midnight UTC: the day is its first ten characters.
+    releaseDate: product.releaseDate ? product.releaseDate.toISOString().slice(0, 10) : null,
+    format: product.format,
+    edition: product.edition,
+    imageUrl: product.imageUrl,
+    fromPriceCents: cheapest?.priceCents ?? null,
+    currency: cheapest?.currency ?? CATALOG_CURRENCY,
+    ...(product.categories ? { categories: product.categories } : {}),
+  };
+};
+
+/**
  * Data-access layer for the Product entity. The public storefront reads through
- * paginate/search/findById; admin writes go through create/update/remove
- * (wired to admin-guarded routes in the controller).
+ * paginate/search/findById; admin writes go through update/remove (wired to
+ * admin-guarded routes in the controller). Records are made from a shop's
+ * listing (catalog/), never here.
  */
 @Injectable()
 export class ProductsService {
@@ -38,23 +81,34 @@ export class ProductsService {
 
     return paginate(
       args,
-      (window) => this.prisma.product.findMany({ where, orderBy: this.pageOrder, ...window }),
-      (product) => product,
+      (window) =>
+        this.prisma.product.findMany({
+          where,
+          orderBy: this.pageOrder,
+          include: withCard,
+          ...window,
+        }),
+      toContract,
       () => this.prisma.product.count({ where }),
     );
   }
 
-  /** Search the whole catalog by title or artist (case-insensitive). */
-  search(q: string): Promise<Product[]> {
-    return this.prisma.product.findMany({
+  /**
+   * Search the whole catalog by title, or by any of its artist's names
+   * (case-insensitive): "Ryuichi Sakamoto" finds 坂本龍一's records (§5.7).
+   */
+  async search(q: string): Promise<ProductContract[]> {
+    const products = await this.prisma.product.findMany({
       where: {
         OR: [
           { title: { contains: q, mode: 'insensitive' } },
-          { artist: { contains: q, mode: 'insensitive' } },
+          { artist: { aliases: { some: { name: { contains: q, mode: 'insensitive' } } } } },
         ],
       },
       orderBy: { createdAt: 'desc' },
+      include: withCard,
     });
+    return products.map(toContract);
   }
 
   /**
@@ -62,40 +116,35 @@ export class ProductsService {
    * would pay for the join on every page to render something the grid doesn't
    * show.
    */
-  findById(id: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({
-      where: { id },
-      include: { categories: { orderBy: { sortOrder: 'asc' } } },
-    });
+  async findById(id: string): Promise<ProductContract | null> {
+    const product = await this.prisma.product.findUnique({ where: { id }, include: withDetail });
+    return product ? toContract(product) : null;
   }
 
-  create(data: CreateProductInput): Promise<Product> {
-    // categoryIds is a relation, not a column — it has to come out of the
-    // spread or Prisma rejects it as an unknown field.
-    const { categoryIds, ...fields } = data;
-
-    return this.prisma.product.create({
-      data: {
-        ...fields,
-        ...(categoryIds ? { categories: { connect: categoryIds.map((id) => ({ id })) } } : {}),
-      },
-    });
-  }
-
-  async update(id: string, data: UpdateProductInput): Promise<Product> {
-    const { categoryIds, ...fields } = data;
+  async update(id: string, data: UpdateProductInput): Promise<ProductContract> {
+    const { categoryIds, releaseDate, ...fields } = data;
     // `set` replaces the whole membership rather than adding to it, so an
     // absent categoryIds must leave the existing assignments alone — sending
     // an empty array is how a caller clears them.
     const categories = categoryIds
-      ? { categories: { set: categoryIds.map((id) => ({ id })) } }
+      ? { categories: { set: categoryIds.map((categoryId) => ({ id: categoryId })) } }
       : {};
 
     try {
-      return await this.prisma.product.update({
+      const product = await this.prisma.product.update({
         where: { id },
-        data: { ...fields, ...categories },
+        data: {
+          ...fields,
+          ...categories,
+          // Absent leaves it alone; null clears it. A `@db.Date` takes
+          // midnight UTC, so the day stays the one written.
+          ...(releaseDate === undefined
+            ? {}
+            : { releaseDate: releaseDate ? new Date(`${releaseDate}T00:00:00Z`) : null }),
+        },
+        include: withDetail,
       });
+      return toContract(product);
     } catch (error) {
       // P2025 = record to update not found.
       if (isRecordNotFound(error)) throw new NotFoundException('Product not found');

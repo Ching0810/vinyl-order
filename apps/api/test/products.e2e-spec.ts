@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import type { Connection, Product } from '@vinyl-order/shared';
+import type { Availability, Connection, Product } from '@vinyl-order/shared';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
@@ -10,7 +10,8 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 /**
- * GET /products paging, through the shared cursor helper in common/pagination.
+ * GET /products paging, through the shared cursor helper in common/pagination;
+ * and what a record reads as, now its price is its offers' (tracker.md §8).
  *
  * The catalogue is shared by every spec in the run, so each test pages through
  * a category of its own and never assumes it sees the whole table.
@@ -37,14 +38,14 @@ describe('Products (e2e)', () => {
   const createCategory = async (createdAts: Date[]) => {
     const slug = `test-${randomUUID()}`;
     const category = await prisma.category.create({ data: { slug, name: slug } });
+    const artist = await prisma.artist.create({ data: { name: 'Test Artist' } });
     const products: { id: string; createdAt: Date }[] = [];
     for (const createdAt of createdAts) {
       products.push(
         await prisma.product.create({
           data: {
             title: `Album ${randomUUID()}`,
-            artist: 'Test Artist',
-            priceCents: 1_000,
+            artistId: artist.id,
             createdAt,
             categories: { connect: { id: category.id } },
           },
@@ -67,7 +68,11 @@ describe('Products (e2e)', () => {
     const { slug, newestFirst } = await createCategory([at(1), at(2), at(2), at(3), at(4)]);
     // Outside the category: must never appear.
     await prisma.product.create({
-      data: { title: 'Elsewhere', artist: 'Test Artist', priceCents: 1_000, createdAt: at(3) },
+      data: {
+        title: 'Elsewhere',
+        artist: { create: { name: 'Test Artist' } },
+        createdAt: at(3),
+      },
     });
 
     const forward: string[] = [];
@@ -130,5 +135,84 @@ describe('Products (e2e)', () => {
       expect(page.edges.map((edge) => edge.node.id)).toEqual(newestFirst.slice(0, 10));
       expect(page.pageInfo.hasNextPage).toBe(true);
     }
+  });
+
+  describe('a record as the catalogue reads it', () => {
+    /**
+     * A record by an artist with two names, and an offer per given shop
+     * price and availability.
+     */
+    const createRecord = async (offers: { priceCents: number; availability: Availability }[]) => {
+      const name = `坂本龍一 ${randomUUID()}`;
+      return prisma.product.create({
+        data: {
+          title: `1996 ${randomUUID()}`,
+          releaseDate: new Date('1996-06-21T00:00:00Z'),
+          edition: '日版',
+          artist: {
+            create: {
+              name,
+              aliases: {
+                create: [
+                  { name, normalized: name },
+                  { name: `Ryuichi Sakamoto ${name}`, normalized: `ryuichisakamoto${name}` },
+                ],
+              },
+            },
+          },
+          offers: {
+            create: offers.map((offer) => ({
+              ...offer,
+              supplier: 'tht' as const,
+              externalId: randomUUID(),
+              url: 'https://www.thtrecords.com/products/test',
+              sourceTitle: 'Test Album',
+              lastCheckedAt: new Date(),
+            })),
+          },
+        },
+        include: { artist: true },
+      });
+    };
+
+    const read = async (id: string) =>
+      (await request(app.getHttpServer()).get(`/products/${id}`).expect(200)).body as Product;
+
+    it('is priced from its cheapest offer in stock, with its artist’s name', async () => {
+      const record = await createRecord([
+        { priceCents: 160_000, availability: 'in_stock' },
+        { priceCents: 140_000, availability: 'in_stock' },
+        // Cheaper, but can't be bought: not a "from" price.
+        { priceCents: 90_000, availability: 'sold_out' },
+        { priceCents: 100_000, availability: 'pre_order' },
+      ]);
+
+      expect(await read(record.id)).toMatchObject({
+        artist: record.artist.name,
+        releaseDate: '1996-06-21',
+        edition: '日版',
+        fromPriceCents: 140_000,
+        currency: 'TWD',
+      });
+    });
+
+    it('has no price when none of its offers can be bought', async () => {
+      const record = await createRecord([{ priceCents: 90_000, availability: 'sold_out' }]);
+
+      expect((await read(record.id)).fromPriceCents).toBeNull();
+    });
+
+    /** "Ryuichi Sakamoto" finds 坂本龍一's records (§5.7). */
+    it('is found by any of its artist’s names', async () => {
+      const record = await createRecord([{ priceCents: 140_000, availability: 'in_stock' }]);
+      const alias = `Ryuichi Sakamoto ${record.artist.name}`;
+
+      const res = await request(app.getHttpServer())
+        .get('/products/search')
+        .query({ q: alias.toLowerCase() })
+        .expect(200);
+
+      expect((res.body as Product[]).map((product) => product.id)).toEqual([record.id]);
+    });
   });
 });

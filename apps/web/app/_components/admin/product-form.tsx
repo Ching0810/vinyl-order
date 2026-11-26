@@ -1,7 +1,7 @@
 'use client';
 
 import { Button, Stack, Text } from '@chakra-ui/react';
-import type { CreateProductInput } from '@vinyl-order/shared';
+import type { UpdateProductInput } from '@vinyl-order/shared';
 import { type ChangeEvent } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 
@@ -15,24 +15,19 @@ const splitCsv = (text: string): string[] =>
     .filter(Boolean);
 
 interface Props {
-  /** Values the form starts with — blank for create, the product for edit. */
+  /** Values the form starts with: the product's. */
   initialValues: ProductFormValues;
   submitLabel: string;
   submitting: boolean;
   errorMessage: string | null;
-  /**
-   * Receives a fully-built payload plus a `reset` helper (clears the form back to
-   * its initial values). The payload is CreateProductInput-shaped (all fields
-   * present); the update flow sends the same body to PATCH (which ignores
-   * unchanged fields), so one builder serves both create and edit. The create
-   * page calls `reset` on success to add another; edit ignores it and redirects.
-   */
-  onSubmit: (payload: CreateProductInput, helpers: { reset: () => void }) => void;
+  /** Receives the fully-built PATCH body: every field, the unchanged too. */
+  onSubmit: (payload: UpdateProductInput) => void;
 }
 /**
- * Shared add/edit product form. Owns the react-hook-form instance and image
- * upload; maps the UI-friendly ProductFormValues to the API
- * contract on submit. The page wires the actual create/update mutation via props.
+ * The product edit form. Owns the react-hook-form instance and image upload;
+ * maps the UI-friendly ProductFormValues to the API contract on submit. The
+ * page wires the update mutation via props. Records are made from a shop's
+ * listing, never here (tracker.md §8).
  */
 export default function ProductForm({
   initialValues,
@@ -48,7 +43,6 @@ export default function ProductForm({
     control,
     handleSubmit,
     setValue,
-    reset,
     formState: { errors },
   } = useForm<ProductFormValues>({ defaultValues: initialValues });
 
@@ -64,20 +58,14 @@ export default function ProductForm({
   };
 
   const submit = handleSubmit((values) => {
-    onSubmit(
-      {
-        title: values.title,
-        artist: values.artist,
-        year: values.year ?? undefined,
-        format: splitCsv(values.formatText),
-        imageUrl: values.imageUrl ?? undefined,
-        priceCents: Math.round(values.price * 100),
-        currency: values.currency,
-        stock: values.stock,
-        categoryIds: values.categoryIds,
-      },
-      { reset: () => reset() },
-    );
+    onSubmit({
+      title: values.title,
+      releaseDate: values.releaseDate || null,
+      edition: values.edition.trim() || null,
+      format: splitCsv(values.formatText),
+      imageUrl: values.imageUrl,
+      categoryIds: values.categoryIds,
+    });
   });
 
   return (
@@ -101,16 +89,3 @@ export default function ProductForm({
     </form>
   );
 }
-
-/** Empty form state for the create page. */
-export const blankProductForm: ProductFormValues = {
-  title: '',
-  artist: '',
-  year: null,
-  formatText: '',
-  imageUrl: null,
-  price: 0,
-  currency: 'TWD',
-  stock: 0,
-  categoryIds: [],
-};

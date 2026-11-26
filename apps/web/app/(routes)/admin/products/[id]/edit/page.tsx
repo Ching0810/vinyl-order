@@ -11,17 +11,14 @@ import SectionHeading from '@/components/ui/section-heading';
 import { useProduct } from '@/services/queries/products/useProduct';
 import { useUpdateProduct } from '@/services/queries/products/useUpdateProduct';
 
-/** Map a saved Product into the UI-friendly form shape (cents→major, arrays→csv). */
+/** Map a saved Product into the UI-friendly form shape (arrays→csv, null→''). */
 const toFormValues = (product: Product): ProductFormValues => {
   return {
     title: product.title,
-    artist: product.artist,
-    year: product.year,
+    releaseDate: product.releaseDate ?? '',
+    edition: product.edition ?? '',
     formatText: product.format.join(', '),
     imageUrl: product.imageUrl,
-    price: product.priceCents / 100,
-    currency: product.currency,
-    stock: product.stock,
     // The detail read embeds categories; list reads don't, which is why the
     // edit form loads from GET /products/:id rather than a cached list row.
     categoryIds: (product.categories ?? []).map((category) => category.id),

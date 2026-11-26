@@ -2,7 +2,9 @@
 // (DB persistence + request validation). One source of truth so storefront and
 // API can't drift.
 //
-// A product is a vinyl record the store sells. Money is integer cents to avoid
+// A product is a record, tracked from a shop's listing (tracker.md §5.1). It
+// has no price of its own: each shop's offer of it has one, and the demo
+// store sells the shops' listings (§8). Money is integer cents to avoid
 // floating-point rounding.
 //
 // Zod v4: string formats are top-level validators (`z.url()`, `z.uuid()`).
@@ -14,15 +16,21 @@ import { categorySchema } from './category';
 export const productSchema = z.object({
   id: z.uuid(),
   title: z.string(),
+  /** The artist's display name (§5.7). */
   artist: z.string(),
-  year: z.number().int().nullable(),
+  /** `YYYY-MM-DD`; often unknown — shops give a date mostly for pre-orders. */
+  releaseDate: z.iso.date().nullable(),
   format: z.array(z.string()),
+  /** What tells pressings of one album apart, e.g. "日版", "限量彩膠". */
+  edition: z.string().nullable(),
   imageUrl: z.url().nullable(),
-  /** Price in minor units (e.g. cents). Divide by 100 to display. */
-  priceCents: z.number().int(),
-  /** ISO 4217 currency code, e.g. "TWD". */
+  /**
+   * The lowest price among its offers in stock, in minor units, for a card's
+   * "from NT$…" (§8); null when none can be bought.
+   */
+  fromPriceCents: z.number().int().nullable(),
+  /** ISO 4217 currency code of `fromPriceCents`, e.g. "TWD". */
   currency: z.string(),
-  stock: z.number().int(),
   /**
    * Navigation tabs this record sits under. Present on the single-product read
    * and omitted from list reads, which would otherwise pay for a join on every
@@ -33,40 +41,19 @@ export const productSchema = z.object({
 export type Product = z.infer<typeof productSchema>;
 
 /**
- * Admin "create product" body. Defaults fill the fields a sparse form may
- * omit. `priceCents` is required — the store must price it.
- */
-export const createProductSchema = z.object({
-  title: z.string().min(1),
-  artist: z.string().min(1),
-  year: z.number().int().nullable().optional(),
-  format: z.array(z.string()).default([]),
-  imageUrl: z.url().nullable().optional(),
-  priceCents: z.number().int().nonnegative(),
-  currency: z.string().min(1).default('TWD'),
-  stock: z.number().int().nonnegative().default(0),
-  /**
-   * Category ids to file this record under. Optional, and when sent it
-   * replaces the whole set — so a client that doesn't manage categories must
-   * omit it rather than send an empty array, which would clear them.
-   */
-  categoryIds: z.array(z.uuid()).optional(),
-});
-export type CreateProductInput = z.infer<typeof createProductSchema>;
-
-/**
  * Admin "update product" body — every field optional, NO defaults (so a PATCH
- * only changes what's sent; an absent field is left untouched).
+ * only changes what's sent; an absent field is left untouched). Records are
+ * made from a shop's listing, never by hand (§8): the admin corrects what was
+ * read and files the record under categories. Price, stock and artist aren't
+ * here: a price belongs to an offer, an artist is edited as an artist.
  */
 export const updateProductSchema = z.object({
   title: z.string().min(1).optional(),
-  artist: z.string().min(1).optional(),
-  year: z.number().int().nullable().optional(),
   format: z.array(z.string()).optional(),
+  edition: z.string().min(1).nullable().optional(),
+  /** `YYYY-MM-DD`, or null when unknown. */
+  releaseDate: z.iso.date().nullable().optional(),
   imageUrl: z.url().nullable().optional(),
-  priceCents: z.number().int().nonnegative().optional(),
-  currency: z.string().min(1).optional(),
-  stock: z.number().int().nonnegative().optional(),
   /** Category ids to file this record under; replaces the full set when sent. */
   categoryIds: z.array(z.uuid()).optional(),
 });

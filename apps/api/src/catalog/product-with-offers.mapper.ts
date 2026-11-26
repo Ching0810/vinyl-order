@@ -10,17 +10,13 @@ import type { ParsedOffer } from './supplier-adapter';
 
 /** What the mapper reads: the record, its artist and aliases, its offers; oldest first. */
 export const productWithOffersInclude = {
-  artistRef: { include: { aliases: { orderBy: [{ createdAt: 'asc' }, { name: 'asc' }] } } },
+  artist: { include: { aliases: { orderBy: [{ createdAt: 'asc' }, { name: 'asc' }] } } },
   offers: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
 } satisfies Prisma.ProductInclude;
 
 type ProductRow = Prisma.ProductGetPayload<{ include: typeof productWithOffersInclude }>;
 
-/**
- * A tracked record with its offers, or null. Only records created from a
- * shop have an artist row; the demo store's older ones aren't tracked, and
- * read as not found.
- */
+/** A tracked record with its offers, or null. */
 export const findProductWithOffers = async (
   prisma: Pick<PrismaService, 'product' | 'catalogEntry'>,
   id: string,
@@ -29,7 +25,7 @@ export const findProductWithOffers = async (
     where: { id },
     include: productWithOffersInclude,
   });
-  if (!product?.artistRef) return null;
+  if (!product) return null;
 
   // Each offer's listing in the copied catalog, which the demo cart buys
   // (tracker.md §8): the same (supplier, externalId).
@@ -44,11 +40,11 @@ export const findProductWithOffers = async (
       (entry) => entry.supplier === offer.supplier && entry.externalId === offer.externalId,
     )?.id ?? null;
 
-  return toProductWithOffers({ ...product, artistRef: product.artistRef }, entryIdOf);
+  return toProductWithOffers(product, entryIdOf);
 };
 
 const toProductWithOffers = (
-  product: ProductRow & { artistRef: NonNullable<ProductRow['artistRef']> },
+  product: ProductRow,
   entryIdOf: (offer: Offer) => string | null,
 ): ProductWithOffers => ({
   id: product.id,
@@ -56,7 +52,7 @@ const toProductWithOffers = (
   imageUrl: product.imageUrl,
   format: product.format,
   edition: product.edition,
-  artist: toArtistContract(product.artistRef),
+  artist: toArtistContract(product.artist),
   offers: product.offers.map((offer) => toOfferContract(offer, entryIdOf(offer))),
 });
 

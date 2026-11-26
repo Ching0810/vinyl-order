@@ -1,7 +1,6 @@
 'use client';
 
-import { Button, Container, Spinner, Text } from '@chakra-ui/react';
-import NextLink from 'next/link';
+import { Container, Spinner, Text } from '@chakra-ui/react';
 
 import ProductTable from '@/components/admin/product-table';
 import Paginator from '@/components/ui/paginator';
@@ -50,12 +49,7 @@ export default function AdminProductList() {
       <SectionHeading
         eyebrow="Catalogue"
         title="Products"
-        description="Everything in the shop. Edit pricing, stock and categories."
-        action={
-          <Button asChild size="sm" colorPalette="brand" borderRadius="full">
-            <NextLink href="/admin/products/new">Add product</NextLink>
-          </Button>
-        }
+        description="Every tracked record. Correct what was read from the shops, and file it under categories."
       />
 
       {renderBody()}

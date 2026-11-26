@@ -330,9 +330,7 @@ describe('Catalog search (e2e)', () => {
         include: { offers: true },
         data: {
           title: 'Parachutes',
-          artist: 'Coldplay',
           artistId: artist.id,
-          priceCents: 100_000,
           offers: {
             create: {
               supplier: 'tht',
@@ -404,9 +402,7 @@ describe('Catalog search (e2e)', () => {
         await prisma.product.create({
           data: {
             title: 'Parachutes',
-            artist: 'Coldplay',
             artistId: artist.id,
-            priceCents: 140_000,
             offers: {
               create: {
                 supplier: listing.supplier,

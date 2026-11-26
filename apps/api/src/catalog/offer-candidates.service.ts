@@ -39,13 +39,13 @@ export class OfferCandidatesService {
       where: { id: productId },
       select: {
         title: true,
-        artistRef: { select: { aliases: { select: { name: true } } } },
+        artist: { select: { aliases: { select: { name: true } } } },
         offers: { select: { supplier: true, sourceTitle: true } },
       },
     });
-    if (!product?.artistRef) throw new NotFoundException('Product not found');
+    if (!product) throw new NotFoundException('Product not found');
 
-    const aliases = distinct(product.artistRef.aliases.map((alias) => searchTitleOf(alias.name)));
+    const aliases = distinct(product.artist.aliases.map((alias) => searchTitleOf(alias.name)));
     if (aliases.length === 0) return [];
     const today = taipeiToday();
     const titles = distinct([
