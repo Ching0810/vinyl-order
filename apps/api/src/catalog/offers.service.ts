@@ -4,12 +4,12 @@ import type { AttachOfferInput, AttachOfferResult } from '@vinyl-order/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { uniqueByNormalized } from './artist-resolver';
 import { ListingReader, offerCreateOf } from './listing-reader';
-import { offerConflict } from './offer.errors';
 import { findProductWithOffers } from './product-with-offers.mapper';
 
 /**
- * A record's offers attached and detached by hand (tracker.md §7.3, step 4):
- * a candidate confirmed, a link pasted, a wrong match taken off.
+ * A record's offers attached by hand (tracker.md §7.3, step 4): a candidate
+ * confirmed, or a link pasted. A wrong match is split out in search instead
+ * (album-splits.service.ts), which keeps its history.
  */
 @Injectable()
 export class OffersService {
@@ -54,26 +54,6 @@ export class OffersService {
         .filter((name) => !known.has(name.normalized))
         .map((name) => name.name),
     };
-  }
-
-  /**
-   * A wrong match taken off, its history with it.
-   *
-   * @throws 404 - no such offer
-   * @throws 409 LAST_OFFER - a record keeps at least one; delete the record instead
-   */
-  async detach(offerId: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const offer = await tx.offer.findUnique({
-        where: { id: offerId },
-        select: { productId: true },
-      });
-      if (!offer) throw new NotFoundException('Offer not found');
-      if ((await tx.offer.count({ where: { productId: offer.productId } })) <= 1) {
-        throw offerConflict('LAST_OFFER', 'A record keeps at least one offer.');
-      }
-      await tx.offer.delete({ where: { id: offerId } });
-    });
   }
 
   private async listingToRead(input: AttachOfferInput) {

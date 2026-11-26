@@ -43,6 +43,7 @@ describe('Catalog search (e2e)', () => {
   beforeEach(async () => {
     await prisma.catalogEntry.deleteMany();
     await prisma.catalogStockRun.deleteMany();
+    await prisma.albumSplit.deleteMany();
   });
 
   afterAll(async () => {
@@ -319,6 +320,28 @@ describe('Catalog search (e2e)', () => {
       await listed('tht', ['Coldplay - Greatest Hits LP', 'Queen - Greatest Hits LP']);
 
       expect(await albumsFor(member, { q: 'greatest hits' })).toHaveLength(2);
+    });
+
+    /** The admin's correction, for everyone (§7.3, §5.9). */
+    it('keeps a listing the admin split out as an album of its own, and says so', async () => {
+      const member = await createUser('customer');
+      await listed('tht', ['Coldplay - Parachutes LP']);
+      const [reissue] = await listed('cosmic', ['Coldplay - Parachutes（黑膠唱片 LP）']);
+      await listed('rotten_blues', ['【歐版黑膠】Coldplay《Parachutes》']);
+      await prisma.albumSplit.create({
+        data: { supplier: 'cosmic', externalId: reissue.externalId },
+      });
+
+      const albums = await albumsFor(member, { q: 'coldplay parachutes' });
+
+      const suppliersOf = (album: CatalogAlbum) =>
+        album.listings.map((listing) => listing.supplier).sort();
+      expect(albums.map(suppliersOf).sort()).toEqual([['cosmic'], ['rotten_blues', 'tht']]);
+      const alone = albums.find((album) => album.listings[0].supplier === 'cosmic');
+      expect(alone?.listings[0].split).toBe(true);
+      expect(albums.flatMap((album) => album.listings).filter((each) => each.split)).toHaveLength(
+        1,
+      );
     });
 
     it('names the record holding an album, and which of its listings this user tracks', async () => {

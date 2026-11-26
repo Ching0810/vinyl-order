@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 
 import { createSupplierAdapters, SUPPLIER_ADAPTERS } from './adapters';
+import { AlbumSplitsController } from './album-splits.controller';
+import { AlbumSplitsService } from './album-splits.service';
 import { ArtistsController } from './artists.controller';
 import { ArtistsService } from './artists.service';
 import { CatalogProductsController } from './catalog-products.controller';
@@ -13,14 +15,14 @@ import { PopularController } from './popular.controller';
 import { OffersService } from './offers.service';
 import { ProductFromCatalogService } from './product-from-catalog.service';
 import { ProductOffersController } from './product-offers.controller';
-
 import { WatchesController } from './watches.controller';
 import { WatchesService } from './watches.service';
 
 /**
  * Search over the shops' copied catalogs, records made from them with their
- * offers and their artists' names, and each user's tracked records. The sync that fills the catalogs isn't here: it runs as a
- * command (sync-cli.ts), not in the API.
+ * offers and their artists' names, each user's tracked records, and the
+ * admin's corrections to albums. The sync that fills the catalogs isn't
+ * here: it runs as a command (sync-cli.ts), not in the API.
  */
 @Module({
   controllers: [
@@ -30,6 +32,7 @@ import { WatchesService } from './watches.service';
     WatchesController,
     ProductOffersController,
     PopularController,
+    AlbumSplitsController,
   ],
   providers: [
     CatalogSearchService,
@@ -40,6 +43,7 @@ import { WatchesService } from './watches.service';
     OffersService,
     OfferRefreshService,
     WatchesService,
+    AlbumSplitsService,
     { provide: SUPPLIER_ADAPTERS, useFactory: createSupplierAdapters },
   ],
 })

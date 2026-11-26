@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -25,7 +24,8 @@ import { ProductFromCatalogService } from './product-from-catalog.service';
 
 /**
  * Records made from the shops' listings, and their offers: found at the
- * other shops, attached, detached, read again (tracker.md §7.3, §11).
+ * other shops, attached, read again (tracker.md §7.3, §11). A wrong match is
+ * corrected in search, by splitting the listing out (album-splits.ts).
  * Admin-only. Creating, attaching and refreshing read the shops' pages live,
  * so an answer can take seconds.
  */
@@ -64,12 +64,5 @@ export class CatalogProductsController {
   @HttpCode(HttpStatus.OK)
   refresh(@Param('id') id: string): Promise<ProductWithOffers> {
     return this.refreshes.refresh(id);
-  }
-
-  /** DELETE /admin/offers/:id — a wrong match taken off. */
-  @Delete('offers/:id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  detach(@Param('id') id: string): Promise<void> {
-    return this.offers.detach(id);
   }
 }

@@ -278,6 +278,9 @@ model Product {
 
   /// Each shop's listing of this record.
   offers Offer[]
+
+  /// Listings split out of this record's album, whose offers it gave up.
+  splitsFrom AlbumSplit[]
 }
 
 /// A storefront navigation tab.
@@ -600,6 +603,29 @@ model OfferWatch {
   @@id([userId, offerId])
   /// "Who tracks this listing", for deleting or counting.
   @@index([offerId])
+}
+
+/// A listing the admin took out of its album, for everyone (tracker.md §5.9,
+/// §7.3): search never groups it with another, nor another with it.
+///
+/// Keyed by the listing as both CatalogEntry and Offer know it, not by an
+/// entry's id: a listing the shop takes down and puts back is copied again
+/// under a new id, and the correction should outlast that.
+model AlbumSplit {
+  supplier   Supplier
+  externalId String
+
+  /// The record its offer was moved out of, for putting it back. Null when
+  /// it had no offer to move, or that record is gone (SetNull).
+  fromProductId String?
+  fromProduct   Product? @relation(fields: [fromProductId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@id([supplier, externalId])
+  /// Postgres doesn't index foreign keys itself; deleting a record looks up
+  /// the splits naming it by this.
+  @@index([fromProductId])
 }
 
 /// When a shop's list pages were last walked for stock and price (§7.2):

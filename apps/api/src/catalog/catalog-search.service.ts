@@ -10,6 +10,7 @@ import { Prisma } from '../generated/prisma/client';
 import type { Availability } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { groupIntoAlbums, type Listing } from './album-grouping';
+import { splitsAmong } from './album-splits';
 import { CATALOG_CURRENCY } from './catalog-currency';
 import { containsPattern, readListingTitle, searchTitleOf } from './listing-title';
 import { taipeiToday } from './supplier-adapter';
@@ -29,8 +30,8 @@ const ALBUMS = 30;
 /**
  * Searches the shops' copied catalogs (tracker.md §7.3), answering with
  * albums: each listing found, grouped with the same album's listings at the
- * other shops (album-grouping.ts), the record holding them if any, and which
- * of them the searcher tracks.
+ * other shops (album-grouping.ts) unless the admin split it out (§5.9), the
+ * record holding them if any, and which of them the searcher tracks.
  *
  * `q <% searchTitle` — pg_trgm's word similarity: how much of the query is
  * found in one stretch of the title, not in the title as a whole, so a short
@@ -54,7 +55,9 @@ export class CatalogSearchService {
    */
   async search(query: CatalogSearchQuery, userId: string): Promise<CatalogAlbum[]> {
     const today = taipeiToday();
-    const groups = groupIntoAlbums(await this.listings(query), today).slice(0, ALBUMS);
+    const found = await this.listings(query);
+    const isSplit = await splitsAmong(this.prisma, found);
+    const groups = groupIntoAlbums<CatalogRow>(found, today, isSplit).slice(0, ALBUMS);
     const listings = groups.flatMap((group) => group.listings);
 
     const tracked = listings.length
@@ -96,6 +99,7 @@ export class CatalogSearchService {
           ...toHit(listing),
           watched: (offer?.watches.length ?? 0) > 0,
           ...stockOf(listing, offer, walkedAt.get(listing.supplier), today),
+          split: isSplit(listing),
         };
       }),
       productId:
