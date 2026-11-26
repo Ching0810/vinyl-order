@@ -768,6 +768,51 @@ refresh overwrites it, so a cancel would "return" stock that was never taken
 from the number now there; **dropping the stock guard** — simpler, but loses
 the concurrency exercise the checkout was built around.
 
+**⚖️ Decision (2026-11-26): sell at the values last read, and say when.**
+Cart and checkout price and stock a line from the offer as stored — real
+numbers, read from the shop's page — and the cart shows each line's
+`lastCheckedAt` ("read 3 hours ago"). Nothing reads a shop during a cart
+write or a checkout. Until step 12b re-reads tracked offers nightly, they are
+as fresh as the last refresh someone pressed (on 2026-11-26 the oldest on
+Neon was 20 hours old).
+
+Weighed and not chosen: **reading the shop at add-to-cart or checkout** — the
+freshest numbers, but every checkout as slow as the slowest shop, a shop
+that is down failing a checkout, and the read can't go inside the
+transaction (checkout-orders.md §7: nothing slow while rows are locked),
+so it would be stale again by the guard anyway.
+
+The rest of the cart follows the same rules as checkout:
+
+- **A line is an offer.** Adding the same offer again raises the quantity;
+  the same record from two shops is two lines (§5.6).
+- **Only `in_stock` can be added.** Sold out and pre-order are refused with
+  409 `OUT_OF_STOCK`; pre-orders aren't sold by the demo.
+- **The quantity is capped at what's left to sell**,
+  `max(stockQty − reservedQty, 0)`, as the cart capped at `Product.stock`
+  before. With no `stockQty` there's no count to cap at, only the 99 a line
+  allows. The cap is tidiness; checkout's guard decides.
+- **One currency an order**, now the offers' `currency`.
+- **Lock order:** checkout and cancel lock offer rows sorted by `offerId`,
+  as they sorted products before.
+- **Orders from before the switch** have lines with no `offerId`; a cancel
+  skips them. There were none on Neon at the switch (2026-11-26: no orders,
+  no cart lines; 3 records, all with an artist and offers; 5 offers, 2 in
+  stock, 1 of them with no count).
+
+**Records without a price of their own.** `Product` loses `priceCents`,
+`currency`, `stock`, `year` and the `artist` string in step 5. A storefront
+card shows "from NT$…", the lowest price among its `in_stock` offers, or no
+price when none can be bought. A record with no offers — every offer taken
+off as a wrong match — is shown, not sold.
+
+**⚖️ Decision (2026-11-26): the admin edits records, doesn't create them.**
+Records come from the catalog (§12.1); one made by hand would have no offer
+and so nothing to sell. "New product" goes; the edit form keeps title,
+format, edition, release date and categories, and loses price, stock, artist
+and year. Weighed and not chosen: **removing the edit form too** — then
+nothing would file records under categories.
+
 ## 9. My supplier orders
 
 ### 9.1 Statuses
@@ -1519,6 +1564,16 @@ Each step is its own PR.
    lines, the reservation guard, restock on cancel and expiry. `Product`'s
    `priceCents`, `currency`, `stock`, `artist` (the string) and `year`, and
    `CartItem.productId`, are dropped here, and `artistId` becomes required.
+   **One PR**, a commit a sub-step: the shared contracts change for the API
+   and the web at once, so they ship together rather than leave the demo
+   cart broken between two deploys. 5.0 the data on Neon checked
+   (2026-11-26, §8); 5.1 this section and §8; 5.2 the shared contracts;
+   5.3 the cart on offers; 5.4 checkout's guard on `reservedQty`; 5.5 cancel
+   and expiry releasing it; 5.6 the e2e tests; 5.7 the contract migration
+   (the columns above, `CartItem` unique on `(cartId, offerId)`,
+   `syncDemoPrice` removed); 5.8 the web — "add to cart" per offer, the
+   cart's shop and read time, "from NT$" cards, the admin edit form; 5.9
+   progress here.
 6. EasyStore and Shopify adapters, with fixtures — THT, Cosmic and Rotten
    Blues:
    - **6a.** One fetcher for every adapter, with §6.4's guard (https, the
