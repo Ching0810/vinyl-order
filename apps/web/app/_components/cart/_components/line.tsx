@@ -1,15 +1,36 @@
 'use client';
 
-import { Box, Button, HStack, IconButton, Stack, Text } from '@chakra-ui/react';
+import { Button, HStack, IconButton, Stack, Text } from '@chakra-ui/react';
 import type { CartItem } from '@vinyl-order/shared';
-import Image from 'next/image';
 import NextLink from 'next/link';
 
+import SupplierBadge from '@/components/supplier-order/supplier-badge';
+import Cover from '@/components/ui/cover';
 import { CloseIcon } from '@/components/ui/icons';
 import { formatPrice } from '@/lib/utils/currency';
+import { formatTimeAgo } from '@/lib/utils/date';
+
+/** The cart's own per-line ceiling (quantitySchema). */
+const MAX_PER_LINE = 99;
+
 /**
- * One line in the cart: cover, release, unit price, a quantity stepper and the
- * line total.
+ * Why the line can't be ordered as it stands, if so: the shop no longer has
+ * it in stock, nothing is left to sell, or less is left than the line holds.
+ */
+const stockWarningOf = ({ offer, quantity }: CartItem): string | null => {
+  if (offer.availability !== 'in_stock' || offer.available === 0) {
+    return 'No longer in stock — this line can’t be ordered.';
+  }
+  if (offer.available !== null && quantity > offer.available) {
+    return `Only ${offer.available} left to sell.`;
+  }
+  return null;
+};
+
+/**
+ * One line in the cart: one shop's version of a record — its cover, the
+ * record, the shop and its own title, the unit price and when it was read,
+ * a quantity stepper and the line total.
  *
  * The stepper sends an absolute quantity rather than a delta, matching the
  * API — a retried request then lands on the same number instead of adding
@@ -31,12 +52,11 @@ export default function Line({
   onQuantityChange: (quantity: number) => void;
   onRemove: () => void;
 }) {
-  const { product, quantity } = item;
-  const outOfStock = product.stock === 0;
-  const overStock = quantity > product.stock;
-  // + stops at the stock shown (and the cart's per-line limit of 99), the same
-  // ceiling as the product page; a line already over it can only come down.
-  const maxQuantity = Math.min(product.stock, 99);
+  const { offer, product, quantity } = item;
+  const warning = stockWarningOf(item);
+  // + stops at what's left to sell (and the cart's per-line limit of 99), the
+  // API's own cap; a line already over it can only come down.
+  const maxQuantity = Math.min(offer.available ?? MAX_PER_LINE, MAX_PER_LINE);
 
   return (
     <HStack
@@ -48,18 +68,7 @@ export default function Line({
       bg="bg.panel"
       align="start"
     >
-      <Box
-        position="relative"
-        boxSize={{ base: '16', md: '20' }}
-        flexShrink="0"
-        borderRadius="md"
-        overflow="hidden"
-        bg="bg.muted"
-      >
-        {product.imageUrl ? (
-          <Image src={product.imageUrl} alt="" fill sizes="80px" style={{ objectFit: 'cover' }} />
-        ) : null}
-      </Box>
+      <Cover src={offer.imageUrl ?? product.imageUrl} size={{ base: '16', md: '20' }} px={80} />
 
       <Stack gap="1" flex="1" minW="0">
         <NextLink href={`/products/${product.id}`}>
@@ -70,17 +79,20 @@ export default function Line({
         <Text fontSize="sm" color="fg.muted" lineClamp={1}>
           {product.artist}
         </Text>
+        <HStack gap="1.5" minW="0">
+          <SupplierBadge supplier={offer.supplier} />
+          <Text fontSize="xs" color="fg.muted" truncate>
+            {offer.sourceTitle}
+          </Text>
+        </HStack>
         <Text fontSize="xs" color="fg.subtle">
-          {formatPrice(product.priceCents, product.currency)} each
+          {formatPrice(offer.priceCents, offer.currency)} each · read{' '}
+          {formatTimeAgo(offer.lastCheckedAt)}
         </Text>
 
-        {outOfStock ? (
+        {warning ? (
           <Text fontSize="xs" color="fg.error">
-            Out of stock — this line can&apos;t be ordered.
-          </Text>
-        ) : overStock ? (
-          <Text fontSize="xs" color="fg.error">
-            Only {product.stock} left in stock.
+            {warning}
           </Text>
         ) : null}
       </Stack>
@@ -121,7 +133,7 @@ export default function Line({
           </IconButton>
         </HStack>
 
-        <Text fontWeight="bold">{formatPrice(item.lineTotalCents, product.currency)}</Text>
+        <Text fontWeight="bold">{formatPrice(item.lineTotalCents, offer.currency)}</Text>
       </Stack>
     </HStack>
   );

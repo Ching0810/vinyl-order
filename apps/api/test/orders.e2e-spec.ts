@@ -48,10 +48,29 @@ describe('Orders (e2e)', () => {
     await app.close();
   });
 
-  /** A product with the given stock. Everything else is filler. */
+  /**
+   * A product with the given stock, and one offer for cart lines to point
+   * at. Everything else is filler.
+   */
   const createProduct = (stock: number, priceCents = 1_000) =>
     prisma.product.create({
-      data: { title: `Album ${randomUUID()}`, artist: 'Test Artist', priceCents, stock },
+      data: {
+        title: `Album ${randomUUID()}`,
+        artist: 'Test Artist',
+        priceCents,
+        stock,
+        offers: {
+          create: {
+            supplier: 'tht',
+            externalId: randomUUID(),
+            url: 'https://www.thtrecords.com/products/test',
+            sourceTitle: 'Test Album',
+            priceCents,
+            availability: 'in_stock',
+            lastCheckedAt: new Date(),
+          },
+        },
+      },
     });
 
   /**
@@ -62,12 +81,25 @@ describe('Orders (e2e)', () => {
    * make a checkout test fail for reasons that have nothing to do with checkout.
    */
   const createBuyer = async (lines: { productId: string; quantity: number }[]) => {
+    // Each product's one offer: a cart line is an offer.
+    const offers = await prisma.offer.findMany({
+      where: { productId: { in: lines.map((line) => line.productId) } },
+      select: { id: true, productId: true },
+    });
+    const offerOf = (productId: string) =>
+      offers.find((offer) => offer.productId === productId)!.id;
     const user = await prisma.user.create({
       data: {
         email: `buyer-${randomUUID()}@test.local`,
         // Never logged into with a password; the token below is the session.
         passwordHash: 'unused',
-        cart: { create: { items: { create: lines } } },
+        cart: {
+          create: {
+            items: {
+              create: lines.map((line) => ({ ...line, offerId: offerOf(line.productId) })),
+            },
+          },
+        },
       },
     });
     const payload: JwtPayload = { sub: user.id, email: user.email, role: user.role };

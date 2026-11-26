@@ -24,7 +24,7 @@ import PlaceOrder from './_components/place-order';
  *
  * Stock is surfaced per line but never blocks: reserving stock when something
  * enters a cart is its own problem (expiry, abandonment), and the real check
- * belongs in the transactional decrement at checkout. The warning here is so
+ * belongs in checkout's transactional hold on the offer. The warning here is so
  * the shopper isn't surprised there — and for the same reason it doesn't
  * disable Place order: the cart's stock may be stale, and only checkout knows.
  */
@@ -81,20 +81,20 @@ export default function CartView() {
     );
   }
 
-  const currency = cart.items[0].product.currency;
+  const currency = cart.items[0].offer.currency;
 
   return (
     <Stack gap="6">
       <Stack gap="3">
         {cart.items.map((item) => (
           <Line
-            key={item.productId}
+            key={item.offerId}
             item={item}
             busy={busy}
             onQuantityChange={(quantity) =>
-              updateMutation.mutate({ productId: item.productId, quantity })
+              updateMutation.mutate({ offerId: item.offerId, quantity })
             }
-            onRemove={() => removeMutation.mutate(item.productId)}
+            onRemove={() => removeMutation.mutate(item.offerId)}
           />
         ))}
       </Stack>

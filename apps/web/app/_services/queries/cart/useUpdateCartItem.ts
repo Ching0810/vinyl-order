@@ -5,6 +5,6 @@ import { useCartWrite } from '@/services/queries/cart/useCartWrite';
 
 /** Set a line's quantity — absolute, so a retry lands on the same number. */
 export const useUpdateCartItem = () =>
-  useCartWrite(({ productId, quantity }: { productId: string; quantity: number }) =>
-    updateCartItem(productId, quantity),
+  useCartWrite(({ offerId, quantity }: { offerId: string; quantity: number }) =>
+    updateCartItem(offerId, quantity),
   );
