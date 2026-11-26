@@ -7,6 +7,7 @@ import { useCallback, useState } from 'react';
 
 import StatusDialog, { type StatusNotice } from '@/components/ui/status-dialog';
 import { HttpError } from '@/lib/core/http';
+import { useMe } from '@/services/queries/auth/useMe';
 import { useAddCartItem } from '@/services/queries/cart/useAddCartItem';
 import { useCart } from '@/services/queries/cart/useCart';
 
@@ -16,7 +17,7 @@ const failureMessage = (error: unknown): string => {
   if (error.status === 401) {
     return 'Your session ended. Sign in again to add this to your cart.';
   }
-  // The API refuses what it can't sell; the comparison's read can be old.
+  // The API refuses what it can't sell; the page's read can be newer or older.
   if (cartErrorCodeSchema.safeParse((error.body as { code?: unknown } | null)?.code).data) {
     return 'This version can’t be bought right now.';
   }
@@ -24,19 +25,20 @@ const failureMessage = (error: unknown): string => {
 };
 
 /**
- * One copy of this version into the cart; the cart's stepper sets how many.
+ * One copy of a shop's listing into the cart, from search or a comparison;
+ * the cart's stepper sets how many.
  *
- * The comparison shows the shop's count, not what's left after the demo's
- * holds (tracker.md §8), so the API caps the line and the answer says
- * whether a copy went in. Every click ends in a StatusDialog over the page,
- * so the shopper always hears back.
+ * Those pages show the shop's count, not what's left after the demo's holds
+ * (tracker.md §8), so the API caps the line and the answer says whether a
+ * copy went in. Every click ends in a StatusDialog over the page, so the
+ * shopper always hears back.
  *
  * A signed-out visitor is sent to sign in, since there is no guest cart.
  *
- * @param offerId - the offer, in stock
- * @param signedIn - whether there is a cart to add to
+ * @param catalogEntryId - the listing in the shop's copied catalog
  */
-export default function AddToCart({ offerId, signedIn }: { offerId: string; signedIn: boolean }) {
+export default function AddToCart({ catalogEntryId }: { catalogEntryId: string }) {
+  const { data: user } = useMe();
   const router = useRouter();
   const { data: cart } = useCart();
   const addMutation = useAddCartItem();
@@ -45,7 +47,7 @@ export default function AddToCart({ offerId, signedIn }: { offerId: string; sign
   const closeDialog = useCallback(() => setDialogOpen(false), []);
 
   const quantityIn = (of: Cart | undefined) =>
-    of?.items.find((item) => item.offerId === offerId)?.quantity ?? 0;
+    of?.items.find((item) => item.catalogEntryId === catalogEntryId)?.quantity ?? 0;
 
   const show = (next: StatusNotice) => {
     setNotice(next);
@@ -53,13 +55,13 @@ export default function AddToCart({ offerId, signedIn }: { offerId: string; sign
   };
 
   const add = () => {
-    if (!signedIn) {
+    if (!user) {
       router.push('/login');
       return;
     }
     const before = quantityIn(cart);
     addMutation.mutate(
-      { offerId, quantity: 1 },
+      { catalogEntryId, quantity: 1 },
       {
         onSuccess: (next) =>
           show(

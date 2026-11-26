@@ -38,11 +38,12 @@ const describeProblem = (error: unknown): CheckoutProblem => {
     return {
       title: 'Some records don’t have enough stock',
       description: 'Lower these quantities or remove the records, then place your order again.',
-      lines: stock?.items.map(({ title, requested, available }) =>
-        available === 0
-          ? `${title}: sold out`
-          : `${title}: you asked for ${requested}, only ${available} left`,
-      ),
+      lines: stock?.items.map(({ title, requested, available }) => {
+        if (available === 0) return `${title}: sold out`;
+        // No count to fall short of: it couldn't be held this time.
+        if (available === null) return `${title}: couldn’t be held — try again`;
+        return `${title}: you asked for ${requested}, only ${available} left`;
+      }),
     };
   }
   if (code === 'CHECKOUT_IN_PROGRESS') {
@@ -61,12 +62,6 @@ const describeProblem = (error: unknown): CheckoutProblem => {
   }
   if (code === 'CART_EMPTY') {
     return { title: 'Your cart is empty', description: 'There’s nothing left to order.' };
-  }
-  if (code === 'MIXED_CURRENCY') {
-    return {
-      title: 'Records are priced in different currencies',
-      description: 'One order can only have one currency. Remove the records that differ.',
-    };
   }
   return {
     title: 'Couldn’t place your order',

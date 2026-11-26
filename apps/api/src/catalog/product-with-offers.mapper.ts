@@ -22,20 +22,34 @@ type ProductRow = Prisma.ProductGetPayload<{ include: typeof productWithOffersIn
  * read as not found.
  */
 export const findProductWithOffers = async (
-  prisma: Pick<PrismaService, 'product'>,
+  prisma: Pick<PrismaService, 'product' | 'catalogEntry'>,
   id: string,
 ): Promise<ProductWithOffers | null> => {
   const product = await prisma.product.findUnique({
     where: { id },
     include: productWithOffersInclude,
   });
-  return product?.artistRef
-    ? toProductWithOffers({ ...product, artistRef: product.artistRef })
-    : null;
+  if (!product?.artistRef) return null;
+
+  // Each offer's listing in the copied catalog, which the demo cart buys
+  // (tracker.md §8): the same (supplier, externalId).
+  const entries = await prisma.catalogEntry.findMany({
+    where: {
+      OR: product.offers.map(({ supplier, externalId }) => ({ supplier, externalId })),
+    },
+    select: { id: true, supplier: true, externalId: true },
+  });
+  const entryIdOf = (offer: Offer): string | null =>
+    entries.find(
+      (entry) => entry.supplier === offer.supplier && entry.externalId === offer.externalId,
+    )?.id ?? null;
+
+  return toProductWithOffers({ ...product, artistRef: product.artistRef }, entryIdOf);
 };
 
 const toProductWithOffers = (
   product: ProductRow & { artistRef: NonNullable<ProductRow['artistRef']> },
+  entryIdOf: (offer: Offer) => string | null,
 ): ProductWithOffers => ({
   id: product.id,
   title: product.title,
@@ -43,7 +57,7 @@ const toProductWithOffers = (
   format: product.format,
   edition: product.edition,
   artist: toArtistContract(product.artistRef),
-  offers: product.offers.map(toOfferContract),
+  offers: product.offers.map((offer) => toOfferContract(offer, entryIdOf(offer))),
 });
 
 /** An artist with its aliases, as the API returns one. */
@@ -57,10 +71,11 @@ export const toArtistContract = (artist: {
   aliases: artist.aliases.map((alias) => ({ id: alias.id, name: alias.name })),
 });
 
-const toOfferContract = (offer: Offer): OfferContract => ({
+const toOfferContract = (offer: Offer, catalogEntryId: string | null): OfferContract => ({
   id: offer.id,
   supplier: offer.supplier,
   externalId: offer.externalId,
+  catalogEntryId,
   url: offer.url,
   sourceTitle: offer.sourceTitle,
   imageUrl: offer.imageUrl,

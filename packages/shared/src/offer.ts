@@ -18,6 +18,11 @@ export const offerSchema = z.object({
   supplier: supplierSchema,
   /** The shop's own id for the listing, the last part of its URL. */
   externalId: z.string(),
+  /**
+   * The same listing in the shop's copied catalog — what the demo cart buys
+   * (§8). Null when the catalog no longer lists it.
+   */
+  catalogEntryId: z.uuid().nullable(),
   url: z.url(),
   /** The shop's own name for the record, to check a match against. */
   sourceTitle: z.string(),

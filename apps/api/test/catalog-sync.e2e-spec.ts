@@ -389,6 +389,18 @@ describe('Catalog sync (e2e)', () => {
       });
     });
 
+    /** The demo checkout's holds are its own (tracker.md §8): no sync writes them. */
+    it('leaves the demo’s holds alone, in the sitemap sync and the stock walk', async () => {
+      await sync.sync(adapter([[entry('a')]]));
+      const { id } = await rowOf('a');
+      await prisma.catalogEntry.update({ where: { id }, data: { reservedQty: 2 } });
+
+      await stock.sync(adapter([], { stock: [[shown('a', { stockQty: 1, priceCents: 1 })]] }));
+      await sync.sync(adapter([[entry('a', { title: 'A new title' })]]));
+
+      expect(await rowOf('a')).toMatchObject({ stockQty: 1, priceCents: 1, reservedQty: 2 });
+    });
+
     it("never touches another shop's listings", async () => {
       await sync.sync(adapter([[entry('same')]], { supplier: 'cosmic' }));
       await sync.sync(adapter([[entry('same')]]));

@@ -3,22 +3,21 @@
 import { Button, Stack, Text } from '@chakra-ui/react';
 import { useState } from 'react';
 
+import AddToCart from '@/components/cart/add-to-cart';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { offerErrorCode } from '@/services/api/catalog/errors';
 import { useDetachOffer } from '@/services/queries/offers/useDetachOffer';
 import { useToggleWatch } from '@/services/queries/watches/useToggleWatch';
 
-import AddToCart from './add-to-cart';
-
 /**
- * An offer's buttons: "Add to cart" when it's in stock, for the demo store
- * (tracker.md §8); "Track", or "Tracking" to let it go, for anyone signed
+ * An offer's buttons: "Add to cart" when it's in stock and still in the
+ * shop's catalog, which the demo store sells (tracker.md §8); "Track", or "Tracking" to let it go, for anyone signed
  * in; and for the admin, "Not this album" — a wrong match taken off the
  * record, once confirmed, its history with it.
  *
  * @param productId - the record, for detaching
  * @param offerId - the offer
- * @param buyable - in stock, so the demo sells it
+ * @param catalogEntryId - its listing in the copied catalog, when the demo sells it
  * @param watched - the user tracks it
  * @param signedIn - whether tracking is offered
  * @param isAdmin - whether detaching is offered
@@ -26,14 +25,14 @@ import AddToCart from './add-to-cart';
 export default function OfferActions({
   productId,
   offerId,
-  buyable,
+  catalogEntryId,
   watched,
   signedIn,
   isAdmin,
 }: {
   productId: string;
   offerId: string;
-  buyable: boolean;
+  catalogEntryId: string | null;
   watched: boolean;
   signedIn: boolean;
   isAdmin: boolean;
@@ -44,7 +43,7 @@ export default function OfferActions({
 
   return (
     <Stack gap="2" flexShrink="0" align="end">
-      {buyable ? <AddToCart offerId={offerId} signedIn={signedIn} /> : null}
+      {catalogEntryId ? <AddToCart catalogEntryId={catalogEntryId} /> : null}
       {signedIn ? (
         <Button
           size="xs"

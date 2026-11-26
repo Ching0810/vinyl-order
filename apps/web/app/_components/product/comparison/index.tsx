@@ -27,8 +27,8 @@ const byBestBuy = (a: Offer, b: Offer): number =>
  * price that can be bought is marked; the versions the user tracks are
  * highlighted, and tracked or let go from here. Anyone signed in reads the
  * record again; the admin also takes a wrong match off. A version in stock
- * goes into the demo store's cart from its row: a cart line is an offer
- * (tracker.md §8).
+ * goes into the demo store's cart from its row, as from search: the cart
+ * buys the shop's listing (tracker.md §8).
  *
  * @param product - the record and its offers
  */

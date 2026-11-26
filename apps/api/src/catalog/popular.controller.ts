@@ -2,14 +2,12 @@ import { Controller, Get } from '@nestjs/common';
 import type { PopularListing } from '@vinyl-order/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { CATALOG_CURRENCY } from './catalog-currency';
 import { readListingTitle } from './listing-title';
 import { taipeiToday } from './supplier-adapter';
 
 /** Listings in the home page's popular section. */
 const POPULAR = 12;
-
-/** The catalogs' prices are the shops' own, all in TWD (§4). */
-const CATALOG_CURRENCY = 'TWD';
 
 /**
  * What's popular at the shops — what their home pages feature (tracker.md

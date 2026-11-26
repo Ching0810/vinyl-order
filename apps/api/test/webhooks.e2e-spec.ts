@@ -41,15 +41,29 @@ describe('Payment webhooks (e2e)', () => {
   });
 
   /**
-   * A pending NT$17.50 order for one copy, with that copy already taken from
-   * stock (5 → 4) as checkout would, and one pending payment on it.
+   * A pending NT$17.50 order for one copy of a listing, with that copy
+   * already held (1 of 5) as checkout would, and one pending payment on it.
    */
   const placeOrderWithPayment = async (orderFields: Record<string, unknown> = {}) => {
     const user = await prisma.user.create({
       data: { email: `payer-${randomUUID()}@test.local`, passwordHash: 'unused' },
     });
-    const product = await prisma.product.create({
-      data: { title: `Album ${randomUUID()}`, artist: 'Test Artist', priceCents: 1_750, stock: 4 },
+    const title = `Test Artist - Album ${randomUUID()}`;
+    const entry = await prisma.catalogEntry.create({
+      data: {
+        supplier: 'tht',
+        externalId: randomUUID(),
+        url: 'https://www.thtrecords.com/products/test',
+        title,
+        searchTitle: title.toLowerCase(),
+        priceCents: 1_750,
+        availability: 'in_stock',
+        stockQty: 5,
+        reservedQty: 1,
+        isVinyl: true,
+        isUsed: false,
+        syncedAt: new Date(),
+      },
     });
     const order = await prisma.order.create({
       data: {
@@ -60,11 +74,12 @@ describe('Payment webhooks (e2e)', () => {
         items: {
           create: [
             {
-              productId: product.id,
+              catalogEntryId: entry.id,
+              supplier: 'tht',
               quantity: 1,
               unitPriceCents: 1_750,
-              title: product.title,
-              artist: product.artist,
+              title,
+              artist: 'Test Artist',
             },
           ],
         },
@@ -80,7 +95,7 @@ describe('Payment webhooks (e2e)', () => {
         redirectUrl: 'https://pay.test/checkout',
       },
     });
-    return { order, payment, product };
+    return { order, payment, entry };
   };
 
   /** A webhook body in MockPay's format. */
@@ -292,9 +307,9 @@ describe('Payment webhooks (e2e)', () => {
      * because a race that loses once proves little.
      */
     it.each([1, 2, 3, 4, 5])(
-      'ends either paid with the stock taken or cancelled with it returned (round %i)',
+      'ends either paid with the copy held or cancelled with it released (round %i)',
       async () => {
-        const { order, payment, product } = await placeOrderWithPayment({
+        const { order, payment, entry } = await placeOrderWithPayment({
           expiresAt: new Date(Date.now() - 1_000),
         });
 
@@ -304,10 +319,12 @@ describe('Payment webhooks (e2e)', () => {
         ]);
 
         const after = await statusOf(order.id, payment.id);
-        const { stock } = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+        const { reservedQty } = await prisma.catalogEntry.findUniqueOrThrow({
+          where: { id: entry.id },
+        });
         // Never both, never neither.
         expect(['paid', 'cancelled']).toContain(after.order.status);
-        expect(stock).toBe(after.order.status === 'paid' ? 4 : 5);
+        expect(reservedQty).toBe(after.order.status === 'paid' ? 1 : 0);
         // Either way the money was taken, and that is recorded.
         expect(after.payment.status).toBe('succeeded');
       },

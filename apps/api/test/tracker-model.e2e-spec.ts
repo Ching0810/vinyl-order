@@ -192,7 +192,7 @@ describe('Tracker data model (e2e)', () => {
   });
 
   describe('deleting an offer', () => {
-    it('keeps order lines, unlinked, and drops cart lines and history', async () => {
+    it('keeps supplier order lines, unlinked, and drops history', async () => {
       const offer = await createOffer({ stockQty: 3 });
       await prisma.offerSnapshot.create({
         data: { offerId: offer.id, priceCents: 1_200, availability: 'in_stock', stockQty: 3 },
@@ -210,31 +210,6 @@ describe('Tracker data model (e2e)', () => {
         include: { items: true },
       });
 
-      const cart = await prisma.cart.create({ data: { userId: user.id } });
-      await prisma.cartItem.create({
-        data: { cartId: cart.id, productId: offer.productId, offerId: offer.id },
-      });
-      const order = await prisma.order.create({
-        data: {
-          userId: user.id,
-          subtotalCents: 1_200,
-          currency: 'TWD',
-          expiresAt: new Date(),
-          items: {
-            create: {
-              productId: offer.productId,
-              offerId: offer.id,
-              supplier: 'tht',
-              quantity: 1,
-              unitPriceCents: 1_200,
-              title: 'Test Album',
-              artist: 'Test Artist',
-            },
-          },
-        },
-        include: { items: true },
-      });
-
       await prisma.offer.delete({ where: { id: offer.id } });
 
       // A supplier order is a note of a real purchase: its line outlives the
@@ -243,16 +218,77 @@ describe('Tracker data model (e2e)', () => {
         where: { id: supplierOrder.items[0].id },
       });
       expect(supplierLine).toMatchObject({ offerId: null, title: 'Test Album' });
+      expect(await prisma.offerSnapshot.count({ where: { offerId: offer.id } })).toBe(0);
+    });
+  });
+
+  describe('a listing the demo store sells', () => {
+    /** A listing in a shop's copied catalog, as the sync writes one. */
+    const createEntry = () => {
+      const title = `Test Artist - Album ${randomUUID()}`;
+      return prisma.catalogEntry.create({
+        data: {
+          supplier: 'tht',
+          externalId: randomUUID(),
+          url: 'https://www.thtrecords.com/products/test',
+          title,
+          searchTitle: title.toLowerCase(),
+          priceCents: 1_200,
+          availability: 'in_stock',
+          stockQty: 2,
+          isVinyl: true,
+          isUsed: false,
+          syncedAt: new Date(),
+        },
+      });
+    };
+
+    it('refuses a reservedQty taken below zero', async () => {
+      const entry = await createEntry();
+
+      await expect(
+        prisma.catalogEntry.update({
+          where: { id: entry.id },
+          data: { reservedQty: { decrement: 1 } },
+        }),
+      ).rejects.toThrow('CatalogEntry_reservedQty_non_negative');
+    });
+
+    /** The sync deletes a listing the shop took down (tracker.md §7.2, §8). */
+    it('once deleted, keeps order lines, unlinked, and drops cart lines', async () => {
+      const entry = await createEntry();
+      const user = await createUser();
+      const cart = await prisma.cart.create({ data: { userId: user.id } });
+      await prisma.cartItem.create({ data: { cartId: cart.id, catalogEntryId: entry.id } });
+      const order = await prisma.order.create({
+        data: {
+          userId: user.id,
+          subtotalCents: 1_200,
+          currency: 'TWD',
+          expiresAt: new Date(),
+          items: {
+            create: {
+              catalogEntryId: entry.id,
+              supplier: 'tht',
+              quantity: 1,
+              unitPriceCents: 1_200,
+              title: 'Album',
+              artist: 'Test Artist',
+            },
+          },
+        },
+        include: { items: true },
+      });
+
+      await prisma.catalogEntry.delete({ where: { id: entry.id } });
 
       // The demo order's line keeps which shop it was "bought" from.
       const orderLine = await prisma.orderItem.findUniqueOrThrow({
         where: { id: order.items[0].id },
       });
-      expect(orderLine).toMatchObject({ offerId: null, supplier: 'tht' });
-
-      // A cart line for an offer that's gone can't be bought.
+      expect(orderLine).toMatchObject({ catalogEntryId: null, supplier: 'tht' });
+      // A cart line for a listing that's gone can't be bought.
       expect(await prisma.cartItem.count({ where: { cartId: cart.id } })).toBe(0);
-      expect(await prisma.offerSnapshot.count({ where: { offerId: offer.id } })).toBe(0);
     });
   });
 

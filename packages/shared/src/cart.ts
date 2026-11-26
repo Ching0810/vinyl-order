@@ -2,12 +2,13 @@
 // persistence + request validation). One source of truth so storefront and API
 // can't drift.
 //
-// A line is one shop's version of a record — an offer (tracker.md §5.6, §8):
-// the same record from two shops is two lines. The cart stores no prices. It
-// records what was chosen; what it costs is read from the offer each time, as
-// the shop's page was last read, so the total always reflects that read. The
-// amount actually paid is snapshotted onto the order at checkout — that is
-// where a frozen price belongs.
+// A line is a listing in one shop's copied catalog (tracker.md §5.6, §8):
+// whatever search finds can be bought, and the same album from two shops is
+// two lines. The cart stores no prices. It records what was chosen; what it
+// costs is read from the listing each time, as the shop's list pages were
+// last read, so the total always reflects that read. The amount actually
+// paid is snapshotted onto the order at checkout — that is where a frozen
+// price belongs.
 //
 // Zod v4: string formats are top-level validators (`z.uuid()`).
 import { z } from 'zod';
@@ -19,51 +20,46 @@ import { supplierSchema } from './supplier-order';
 const quantitySchema = z.number().int().min(1).max(99);
 
 /**
- * The offer a line buys: what the cart shows of it, and what it's priced and
- * capped by. Not the whole offer — the comparison's refresh errors and the
- * shop's raw count are the comparison's business.
+ * The listing a line buys: what the cart shows of it, and what it's priced
+ * and capped by — as the shop's last stock walk read them.
  */
-export const cartOfferSchema = z.object({
+export const cartListingSchema = z.object({
   id: z.uuid(),
   supplier: supplierSchema,
-  /** The shop's own name for this version. */
-  sourceTitle: z.string(),
+  /** The shop's own name for it, as written. */
+  title: z.string(),
+  /** The album, read from that title, without artist, format or notes. */
+  album: z.string(),
+  /** The artist, read from that title; null when it names none. */
+  artist: z.string().nullable(),
   url: z.url(),
-  /** This version's own cover; null until a read finds one. */
   imageUrl: z.url().nullable(),
-  priceCents: z.number().int(),
+  /** Null when the list pages showed none: it can't be ordered then. */
+  priceCents: z.number().int().nullable(),
   currency: z.string(),
-  availability: availabilitySchema,
+  /** Null until a stock walk has read it. */
+  availability: availabilitySchema.nullable(),
   /**
    * Copies left to sell: the shop's count less what the demo's pending
    * orders hold, never below 0. Null when the shop gives no count — then
    * only the line's own limit caps it.
    */
   available: z.number().int().nullable(),
-  /** When the price and stock were read from the shop's page. */
-  lastCheckedAt: z.iso.datetime(),
+  /** When the shop's list pages were last read: the price and stock are as of this. */
+  checkedAt: z.iso.datetime().nullable(),
 });
-export type CartOffer = z.infer<typeof cartOfferSchema>;
+export type CartListing = z.infer<typeof cartListingSchema>;
 
 /**
- * One line in the cart. The offer and its record are embedded because a line
- * is unusable without them — a row can't be rendered from an id and a
- * quantity alone.
+ * One line in the cart. The listing is embedded because a line is unusable
+ * without it — a row can't be rendered from an id and a quantity alone.
  */
 export const cartItemSchema = z.object({
   id: z.uuid(),
-  offerId: z.uuid(),
+  catalogEntryId: z.uuid(),
   quantity: quantitySchema,
-  offer: cartOfferSchema,
-  /** The record, for its page's link and its name. */
-  product: z.object({
-    id: z.uuid(),
-    title: z.string(),
-    /** The artist's display name. */
-    artist: z.string(),
-    imageUrl: z.url().nullable(),
-  }),
-  /** quantity × the offer's price, for this line. */
+  listing: cartListingSchema,
+  /** quantity × the listing's price, for this line; 0 while it has none. */
   lineTotalCents: z.number().int(),
 });
 export type CartItem = z.infer<typeof cartItemSchema>;
@@ -90,17 +86,17 @@ export const cartSchema = z.object({
 export type Cart = z.infer<typeof cartSchema>;
 
 /**
- * POST /cart/items. Adding an offer already in the cart increments the
+ * POST /cart/items. Adding a listing already in the cart increments the
  * existing line rather than creating a second one.
  */
 export const addCartItemSchema = z.object({
-  offerId: z.uuid(),
+  catalogEntryId: z.uuid(),
   quantity: quantitySchema.default(1),
 });
 export type AddCartItemInput = z.infer<typeof addCartItemSchema>;
 
 /**
- * PATCH /cart/items/:offerId. Sets an absolute quantity rather than a
+ * PATCH /cart/items/:catalogEntryId. Sets an absolute quantity rather than a
  * delta, so a retried request is idempotent. Removing a line is DELETE, not a
  * quantity of zero — "none of this" and "remove this" are the same intent, and
  * one way to express it is enough.
@@ -113,9 +109,9 @@ export type UpdateCartItemInput = z.infer<typeof updateCartItemSchema>;
 /**
  * Why a cart write was refused (409).
  *
- * - OUT_OF_STOCK: the offer can't be bought — sold out, or a pre-order, which
- *   the demo doesn't sell — or has no copies left to sell, so there is no
- *   quantity that could be put in the cart. A request for more copies than
+ * - OUT_OF_STOCK: the listing can't be bought — sold out, a pre-order, which
+ *   the demo doesn't sell, or not yet read, with no price — or has no copies
+ *   left to sell, so there is no quantity that could be put in the cart. A request for more copies than
  *   remain isn't an error: the line is capped at what's left, and the
  *   response carries the quantity that was actually set.
  *

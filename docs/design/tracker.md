@@ -773,13 +773,18 @@ available to sell  = max(stockQty − reservedQty, 0)
 
 - **Checkout** keeps checkout-orders.md §7's guard, on the entry's row:
   `UPDATE "CatalogEntry" SET "reservedQty" = "reservedQty" + n WHERE id = ?
-AND availability = 'in_stock' AND "priceCents" IS NOT NULL AND
-"stockQty" - "reservedQty" >= n` — lines sorted by `catalogEntryId`. The
-  concurrency argument is unchanged; the stock walk's `UPDATE` of the same
-  row waits on the same lock.
+AND availability = 'in_stock' AND "priceCents" IS NOT NULL AND ("stockQty"
+IS NULL OR "stockQty" - "reservedQty" >= n) RETURNING "priceCents"` — lines
+  sorted by `catalogEntryId`. The concurrency argument is unchanged; the
+  stock walk's `UPDATE` of the same row waits on the same lock. The price
+  charged is the one returned, read under that lock, so a walk repricing
+  the listing mid-checkout can't split the total from the hold.
 - **When `stockQty` is null** (Rotten Blues) there is no count to hold
-  against: the guard is `availability = 'in_stock'` with a price, and
-  `reservedQty` isn't touched. Pre-orders aren't sold by the demo.
+  against: nothing caps the guard but availability and a price. **The hold
+  is still taken**, so a cancel always has one to release — had it been
+  skipped, a walk that later found a count would make the cancel release
+  a hold that was never taken, someone else's. Pre-orders aren't sold by
+  the demo.
 - **When the walk drops `stockQty` below `reservedQty`,** available reads 0;
   the holds stand until their orders are cancelled or expire. They are
   practice orders; there's nothing to take back.

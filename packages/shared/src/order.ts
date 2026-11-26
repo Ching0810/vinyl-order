@@ -3,15 +3,17 @@
 // storefront and API can't drift.
 //
 // An order is a fact, not an intention. Where the cart reads prices from the
-// live product on every request, an order carries the price, title and artist
+// listing on every request, an order carries the price, title and artist
 // copied at checkout, and renders from those alone — so it reads the same after
-// the product is repriced or deleted.
+// the listing is repriced or taken down.
 //
 // Dates are ISO strings, not `Date`: that is what actually crosses JSON, so the
 // type matches what the browser receives. The API converts with toISOString().
 //
 // Zod v4: string formats are top-level validators (`z.uuid()`, `z.iso.datetime()`).
 import { z } from 'zod';
+
+import { supplierSchema } from './supplier-order';
 
 /**
  * Where an order is in its life. Must stay in sync with the `OrderStatus` enum
@@ -34,16 +36,19 @@ export type CancelReason = z.infer<typeof cancelReasonSchema>;
 /**
  * One line of an order, built only from what was copied at checkout.
  *
- * No embedded product, unlike a cart line: the live product has the current
+ * No embedded listing, unlike a cart line: the live listing has the current
  * price, and handing it to the UI invites rendering the wrong one.
  */
 export const orderItemSchema = z.object({
   id: z.uuid(),
   /**
-   * The product this line came from, or null if it has since been deleted.
-   * For linking to the product page only — never for display data.
+   * The product this line came from, on orders from before checkout sold
+   * the shops' catalogs; null on later ones, and once it is deleted. For
+   * linking to the product page only — never for display data.
    */
   productId: z.uuid().nullable(),
+  /** The shop it was "bought" from; null on orders from before. */
+  supplier: supplierSchema.nullable(),
   quantity: z.number().int().min(1),
   /** Price per copy at checkout, in minor units. */
   unitPriceCents: z.number().int(),
@@ -113,9 +118,8 @@ export type Order = z.infer<typeof orderSchema>;
  * failure it got without matching on text.
  *
  * - CART_EMPTY: nothing to order.
- * - INSUFFICIENT_STOCK: at least one line wants more copies than remain.
- * - MIXED_CURRENCY: lines are priced in different currencies, which a single
- *   order total can't represent.
+ * - INSUFFICIENT_STOCK: at least one line wants more copies than remain, or
+ *   can't be bought at all any more.
  * - CART_CHANGED: the cart was consumed or edited by another request while
  *   this checkout ran — typically a second tab or a double submit. Nothing was
  *   ordered; reload the cart and look again.
@@ -132,7 +136,6 @@ export type Order = z.infer<typeof orderSchema>;
 export const orderErrorCodeSchema = z.enum([
   'CART_EMPTY',
   'INSUFFICIENT_STOCK',
-  'MIXED_CURRENCY',
   'CART_CHANGED',
   'CHECKOUT_IN_PROGRESS',
   'ORDER_NOT_PENDING',
@@ -163,15 +166,16 @@ export const idempotencyKeySchema = z.string().trim().min(1).max(IDEMPOTENCY_KEY
 
 /** One line that couldn't be fulfilled. */
 export const insufficientStockItemSchema = z.object({
-  productId: z.uuid(),
+  catalogEntryId: z.uuid(),
   title: z.string(),
   /** Copies the cart asked for. */
   requested: z.number().int(),
   /**
-   * Copies left, read after the checkout rolled back. Informational only — it
-   * may already have changed by the time the user sees it.
+   * Copies left to sell, read after the checkout rolled back: 0 when it
+   * can't be bought at all; null when the shop gives no count. Informational
+   * only — it may already have changed by the time the user sees it.
    */
-  available: z.number().int(),
+  available: z.number().int().nullable(),
 });
 export type InsufficientStockItem = z.infer<typeof insufficientStockItemSchema>;
 
