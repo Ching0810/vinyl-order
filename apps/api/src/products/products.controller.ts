@@ -47,16 +47,6 @@ export class ProductsController {
     return this.products.paginate(toPageArgs({ first, after, last, before }), category);
   }
 
-  /**
-   * GET /products/search?q= — search the catalog by title/artist. Public.
-   * Declared above `:id` so the literal path wins the route match.
-   */
-  @Get('search')
-  search(@Query('q') q?: string): Promise<Product[]> {
-    // Empty query → no results (avoids returning the whole catalog by accident).
-    return q && q.trim() ? this.products.search(q.trim()) : Promise.resolve([]);
-  }
-
   /** GET /products/:id — a single product, 404 if not found. Public. */
   @Get(':id')
   async detail(@Param('id') id: string): Promise<Product> {
