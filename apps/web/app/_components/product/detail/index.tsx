@@ -7,18 +7,18 @@ import Image from 'next/image';
 import { formatPrice } from '@/lib/utils/currency';
 import { useMe } from '@/services/queries/auth/useMe';
 
-import AddToCart from './_components/add-to-cart';
 import AdminPanel from './_components/admin-panel';
 import Related from './_components/related';
 /**
- * Public product detail: cover on one side, release details and the buy action
- * on the other, with the artist's other releases below.
+ * Public product detail: cover on one side, release details on the other,
+ * with the artist's other releases below.
  *
  * The same route serves everyone. Admins additionally get the operational panel
  * (stock, feature flags, edit link); customers see only retail information. The
  * split is presentational — the API is what actually enforces it.
  *
- * Buying goes through AddToCart: a quantity capped by stock, then the add.
+ * Not sold here: the demo store sells a shop's version of a record, from its
+ * comparison (tracker.md §8).
  *
  * @param product - the product to display
  */
@@ -83,8 +83,6 @@ export default function Detail({ product }: { product: Product }) {
               {inStock ? `${product.stock} in stock` : 'Out of stock'}
             </Text>
           </Box>
-
-          <AddToCart product={product} />
 
           {isAdmin ? <AdminPanel product={product} /> : null}
         </Stack>

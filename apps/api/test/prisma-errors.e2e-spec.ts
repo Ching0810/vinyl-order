@@ -107,19 +107,31 @@ describe('Prisma errors as HTTP answers (e2e)', () => {
       await server().delete(`/products/${randomUUID()}`).set(auth(token)).expect(404);
     });
 
-    it('changing the quantity of a record that is not in the cart', async () => {
+    it('changing the quantity of an offer that is not in the cart', async () => {
       const { token } = await createUser('customer');
-      const inCart = await prisma.product.create({
-        data: { title: `In ${randomUUID()}`, artist: 'A', priceCents: 1_000, stock: 5 },
+      const product = await prisma.product.create({
+        data: { title: `Album ${randomUUID()}`, artist: 'A', priceCents: 1_000 },
       });
-      const notInCart = await prisma.product.create({
-        data: { title: `Out ${randomUUID()}`, artist: 'A', priceCents: 1_000, stock: 5 },
-      });
+      const offerOf = (shop: 'tht' | 'cosmic') =>
+        prisma.offer.create({
+          data: {
+            productId: product.id,
+            supplier: shop,
+            externalId: randomUUID(),
+            url: 'https://www.thtrecords.com/products/test',
+            sourceTitle: 'Test Album',
+            priceCents: 1_000,
+            availability: 'in_stock',
+            stockQty: 5,
+            lastCheckedAt: new Date(),
+          },
+        });
+      const [inCart, notInCart] = await Promise.all([offerOf('tht'), offerOf('cosmic')]);
       // Gives the user a cart, so the 404 is about the line, not the cart.
       await server()
         .post('/cart/items')
         .set(auth(token))
-        .send({ productId: inCart.id, quantity: 1 })
+        .send({ offerId: inCart.id, quantity: 1 })
         .expect(201);
 
       await server()

@@ -9,13 +9,13 @@ import { http } from '@/lib/core/http';
 export const addCartItem = (input: AddCartItemInput): Promise<Cart> =>
   http.post<Cart>('/cart/items', input);
 
-/** PATCH /cart/items/:productId — sets an absolute quantity. */
-export const updateCartItem = (productId: string, quantity: number): Promise<Cart> =>
-  http.patch<Cart>(`/cart/items/${productId}`, { quantity });
+/** PATCH /cart/items/:offerId — sets an absolute quantity. */
+export const updateCartItem = (offerId: string, quantity: number): Promise<Cart> =>
+  http.patch<Cart>(`/cart/items/${offerId}`, { quantity });
 
-/** DELETE /cart/items/:productId — removes a line. */
-export const removeCartItem = (productId: string): Promise<Cart> =>
-  http.delete<Cart>(`/cart/items/${productId}`);
+/** DELETE /cart/items/:offerId — removes a line. */
+export const removeCartItem = (offerId: string): Promise<Cart> =>
+  http.delete<Cart>(`/cart/items/${offerId}`);
 
 /** DELETE /cart — empties the cart. */
 export const clearCart = (): Promise<Cart> => http.delete<Cart>('/cart');

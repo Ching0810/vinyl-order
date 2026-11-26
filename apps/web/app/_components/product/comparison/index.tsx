@@ -26,10 +26,9 @@ const byBestBuy = (a: Offer, b: Offer): number =>
  * availability, count and expected date, and how old they are. The lowest
  * price that can be bought is marked; the versions the user tracks are
  * highlighted, and tracked or let go from here. Anyone signed in reads the
- * record again; the admin also takes a wrong match off.
- *
- * No "add to cart": the demo store's cart works off one price a record, not
- * a version at a shop — it comes back with checkout on offers (step 5).
+ * record again; the admin also takes a wrong match off. A version in stock
+ * goes into the demo store's cart from its row: a cart line is an offer
+ * (tracker.md §8).
  *
  * @param product - the record and its offers
  */

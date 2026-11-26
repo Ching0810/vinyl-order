@@ -8,13 +8,17 @@ import { offerErrorCode } from '@/services/api/catalog/errors';
 import { useDetachOffer } from '@/services/queries/offers/useDetachOffer';
 import { useToggleWatch } from '@/services/queries/watches/useToggleWatch';
 
+import AddToCart from './add-to-cart';
+
 /**
- * An offer's buttons: "Track", or "Tracking" to let it go, for anyone signed
+ * An offer's buttons: "Add to cart" when it's in stock, for the demo store
+ * (tracker.md §8); "Track", or "Tracking" to let it go, for anyone signed
  * in; and for the admin, "Not this album" — a wrong match taken off the
  * record, once confirmed, its history with it.
  *
  * @param productId - the record, for detaching
  * @param offerId - the offer
+ * @param buyable - in stock, so the demo sells it
  * @param watched - the user tracks it
  * @param signedIn - whether tracking is offered
  * @param isAdmin - whether detaching is offered
@@ -22,12 +26,14 @@ import { useToggleWatch } from '@/services/queries/watches/useToggleWatch';
 export default function OfferActions({
   productId,
   offerId,
+  buyable,
   watched,
   signedIn,
   isAdmin,
 }: {
   productId: string;
   offerId: string;
+  buyable: boolean;
   watched: boolean;
   signedIn: boolean;
   isAdmin: boolean;
@@ -38,6 +44,7 @@ export default function OfferActions({
 
   return (
     <Stack gap="2" flexShrink="0" align="end">
+      {buyable ? <AddToCart offerId={offerId} signedIn={signedIn} /> : null}
       {signedIn ? (
         <Button
           size="xs"

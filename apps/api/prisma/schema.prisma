@@ -82,23 +82,25 @@ model CartItem {
   cartId String
   cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
 
+  /// The offer's record, written alongside it until step 5's contract
+  /// migration drops the column (tracker.md §14); nothing reads it.
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  /// The shop's offer this line buys. Null until checkout moves onto offers
-  /// (tracker.md step 5), which drops productId and makes this required.
-  /// Cascade: a line for an offer that's gone can't be bought.
-  offerId String?
-  offer   Offer?  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  /// The shop's offer this line buys (tracker.md §5.6). Cascade: a line for
+  /// an offer that's gone can't be bought.
+  offerId String
+  offer   Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
 
   quantity Int @default(1)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// Adding a record already in the cart must bump its quantity rather than
-  /// create a second line, so the pair is unique.
-  @@unique([cartId, productId])
+  /// Adding an offer already in the cart must bump its quantity rather than
+  /// create a second line, so the pair is unique. The same record from two
+  /// shops is two lines.
+  @@unique([cartId, offerId])
   @@index([cartId])
   /// Postgres doesn't index foreign keys itself; deleting an offer looks up
   /// its cart lines by this.

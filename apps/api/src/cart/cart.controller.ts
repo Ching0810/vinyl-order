@@ -45,21 +45,18 @@ export class CartController {
     return this.cart.addItem(user.id, dto);
   }
 
-  @Patch('items/:productId')
+  @Patch('items/:offerId')
   updateItem(
     @CurrentUser() user: PublicUser,
-    @Param('productId') productId: string,
+    @Param('offerId') offerId: string,
     @Body() dto: UpdateCartItemDto,
   ): Promise<Cart> {
-    return this.cart.updateItem(user.id, productId, dto.quantity);
+    return this.cart.updateItem(user.id, offerId, dto.quantity);
   }
 
-  @Delete('items/:productId')
-  removeItem(
-    @CurrentUser() user: PublicUser,
-    @Param('productId') productId: string,
-  ): Promise<Cart> {
-    return this.cart.removeItem(user.id, productId);
+  @Delete('items/:offerId')
+  removeItem(@CurrentUser() user: PublicUser, @Param('offerId') offerId: string): Promise<Cart> {
+    return this.cart.removeItem(user.id, offerId);
   }
 
   @Delete()
