@@ -1,8 +1,7 @@
 'use client';
 
-import { Button, HStack, IconButton, Stack, Text } from '@chakra-ui/react';
+import { Button, HStack, IconButton, Link, Stack, Text } from '@chakra-ui/react';
 import type { CartItem } from '@vinyl-order/shared';
-import NextLink from 'next/link';
 
 import SupplierBadge from '@/components/supplier-order/supplier-badge';
 import Cover from '@/components/ui/cover';
@@ -15,22 +14,28 @@ const MAX_PER_LINE = 99;
 
 /**
  * Why the line can't be ordered as it stands, if so: the shop no longer has
- * it in stock, nothing is left to sell, or less is left than the line holds.
+ * it in stock or shows no price, nothing is left to sell, or less is left
+ * than the line holds.
  */
-const stockWarningOf = ({ offer, quantity }: CartItem): string | null => {
-  if (offer.availability !== 'in_stock' || offer.available === 0) {
+const stockWarningOf = ({ listing, quantity }: CartItem): string | null => {
+  if (
+    listing.availability !== 'in_stock' ||
+    listing.priceCents === null ||
+    listing.available === 0
+  ) {
     return 'No longer in stock — this line can’t be ordered.';
   }
-  if (offer.available !== null && quantity > offer.available) {
-    return `Only ${offer.available} left to sell.`;
+  if (listing.available !== null && quantity > listing.available) {
+    return `Only ${listing.available} left to sell.`;
   }
   return null;
 };
 
 /**
- * One line in the cart: one shop's version of a record — its cover, the
- * record, the shop and its own title, the unit price and when it was read,
- * a quantity stepper and the line total.
+ * One line in the cart: one shop's listing — its cover, the album and
+ * artist read from its title, the shop and its own title (a link there),
+ * the unit price and when it was read, a quantity stepper and the line
+ * total.
  *
  * The stepper sends an absolute quantity rather than a delta, matching the
  * API — a retried request then lands on the same number instead of adding
@@ -52,11 +57,11 @@ export default function Line({
   onQuantityChange: (quantity: number) => void;
   onRemove: () => void;
 }) {
-  const { offer, product, quantity } = item;
+  const { listing, quantity } = item;
   const warning = stockWarningOf(item);
   // + stops at what's left to sell (and the cart's per-line limit of 99), the
   // API's own cap; a line already over it can only come down.
-  const maxQuantity = Math.min(offer.available ?? MAX_PER_LINE, MAX_PER_LINE);
+  const maxQuantity = Math.min(listing.available ?? MAX_PER_LINE, MAX_PER_LINE);
 
   return (
     <HStack
@@ -68,27 +73,29 @@ export default function Line({
       bg="bg.panel"
       align="start"
     >
-      <Cover src={offer.imageUrl ?? product.imageUrl} size={{ base: '16', md: '20' }} px={80} />
+      <Cover src={listing.imageUrl} size={{ base: '16', md: '20' }} px={80} />
 
       <Stack gap="1" flex="1" minW="0">
-        <NextLink href={`/products/${product.id}`}>
-          <Text fontWeight="semibold" truncate _hover={{ color: 'brand.fg' }}>
-            {product.title}
-          </Text>
-        </NextLink>
-        <Text fontSize="sm" color="fg.muted" lineClamp={1}>
-          {product.artist}
+        <Text fontWeight="semibold" truncate>
+          {listing.album}
         </Text>
+        {listing.artist ? (
+          <Text fontSize="sm" color="fg.muted" lineClamp={1}>
+            {listing.artist}
+          </Text>
+        ) : null}
         <HStack gap="1.5" minW="0">
-          <SupplierBadge supplier={offer.supplier} />
-          <Text fontSize="xs" color="fg.muted" truncate>
-            {offer.sourceTitle}
-          </Text>
+          <SupplierBadge supplier={listing.supplier} />
+          <Link href={listing.url} target="_blank" rel="noreferrer" fontSize="xs" truncate>
+            {listing.title} ↗
+          </Link>
         </HStack>
-        <Text fontSize="xs" color="fg.subtle">
-          {formatPrice(offer.priceCents, offer.currency)} each · read{' '}
-          {formatTimeAgo(offer.lastCheckedAt)}
-        </Text>
+        {listing.priceCents === null ? null : (
+          <Text fontSize="xs" color="fg.subtle">
+            {formatPrice(listing.priceCents, listing.currency)} each
+            {listing.checkedAt === null ? null : ` · read ${formatTimeAgo(listing.checkedAt)}`}
+          </Text>
+        )}
 
         {warning ? (
           <Text fontSize="xs" color="fg.error">
@@ -124,7 +131,7 @@ export default function Line({
             size="xs"
             variant="outline"
             colorPalette="red"
-            aria-label={`Remove ${product.title} from cart`}
+            aria-label={`Remove ${listing.album} from cart`}
             disabled={busy}
             onClick={onRemove}
             ms="1"
@@ -133,7 +140,7 @@ export default function Line({
           </IconButton>
         </HStack>
 
-        <Text fontWeight="bold">{formatPrice(item.lineTotalCents, offer.currency)}</Text>
+        <Text fontWeight="bold">{formatPrice(item.lineTotalCents, listing.currency)}</Text>
       </Stack>
     </HStack>
   );

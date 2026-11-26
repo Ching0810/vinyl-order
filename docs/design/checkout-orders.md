@@ -4,9 +4,10 @@
 - **Date:** 2026-09-14
 - **Scope:** turning a cart into an order, with stock that can't oversell
 - **Changed 2026-11-26:** the cart and the stock guard move from `Product`
-  to a supplier's offer — [tracker.md §8](./tracker.md#8-the-demo-checkout-on-offers).
-  The guard below is the same idea on `Offer.reservedQty`; where this
-  document says `Product.stock`, read the offer's stock left to sell.
+  to a listing in a shop's copied catalog —
+  [tracker.md §8](./tracker.md#8-the-demo-checkout-on-the-shops-catalogs).
+  The guard below is the same idea on `CatalogEntry.reservedQty`; where this
+  document says `Product.stock`, read the listing's stock left to sell.
 
 ## 1. Why this feature
 

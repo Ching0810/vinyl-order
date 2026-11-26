@@ -5,7 +5,7 @@
 - **Scope:** comparing what four Taiwanese record shops charge for the same
   record, and tracking the orders placed with them; the Discogs import goes
 - **Changes:** [checkout-orders.md](./checkout-orders.md) (the cart and the
-  stock guard move from `Product` to a supplier's offer)
+  stock guard move from `Product` to a listing in a shop's catalog)
 
 ## 1. Why this feature
 
@@ -60,7 +60,7 @@ stay, as a demo of the order flow, but sell from the suppliers' real data.
 - A product page that shows, per supplier: price, availability, stock,
   pre-order, expected date, and when it was last checked.
 - A page of every order I placed with a supplier and where each stands.
-- The demo checkout keeps working, priced and stocked from a supplier's offer.
+- The demo checkout keeps working, priced and stocked from a shop's listing.
 
 **Non-goals**
 
@@ -176,7 +176,6 @@ SupplierOrder      an order I placed at a shop
 | `priceCents`, `currency` | int, text                                           |                                                      |
 | `availability`           | enum `in_stock \| pre_order \| sold_out`            |                                                      |
 | `stockQty`               | int, null                                           | the supplier's count; null = the shop doesn't say    |
-| `reservedQty`            | int, default 0                                      | the demo checkout's holds (§8)                       |
 | `expectedAt`             | date, null                                          | expected release or shipping date                    |
 | `lastCheckedAt`          | timestamp                                           | shown on the page: data is only as fresh as this     |
 
@@ -195,8 +194,8 @@ product's handful of offers and comparing them is cheap. If a list ever
 needs "where is each of my records cheapest", that is a query (or an index)
 then, not a column now.
 
-`CHECK (stockQty IS NULL OR stockQty >= 0)` and `CHECK (reservedQty >= 0)`
-back the rules in §8 the way checkout-orders.md's CHECK backs its stock.
+`CHECK (stockQty IS NULL OR stockQty >= 0)`. (`reservedQty` was here for the
+demo checkout until it moved to `CatalogEntry`, §8; dropped in step 5.)
 
 ### 5.3 `OfferSnapshot`: history
 
@@ -215,7 +214,8 @@ form, which the trigram index is on: NFKC, lower case, spaces collapsed, as
 a query is too — §7.3; if that changes, the next sync rewrites every row,
 so no migration), `imageUrl`, `priceCents`, `availability` and `stockQty`
 (from the shop's list pages, §7.2; null until a stock walk reads them),
-`isUsed`, `isVinyl`,
+`reservedQty` (the demo checkout's holds, §8; `CHECK >= 0`; never written
+by the sync), `isUsed`, `isVinyl`,
 `sourceUpdatedAt` (`lastmod`), `syncedAt`. Unique on
 `(supplier, externalId)`; a GIN trigram index on `searchTitle`. It is a copy of each shop's catalog, not of my records: thousands
 of rows, rewritten by sync (§7.2), never edited by hand.
@@ -268,11 +268,14 @@ status per line, left for later.
 
 ### 5.6 Cart and order
 
-- **`CartItem`** points at an `offerId` instead of a `productId`: buying "this
-  record from Rotten Blues" is a different line from "this record from THT".
-  Unique on `(cartId, offerId)`.
-- **`OrderItem`** keeps its `productId` and copies, and adds `offerId`
-  (SetNull) and `supplier`, so a past order still says where it was "bought".
+- **`CartItem`** points at a `catalogEntryId` (Cascade) instead of a
+  `productId`: buying "this album from Rotten Blues" is a different line from
+  "this album from THT". Unique on `(cartId, catalogEntryId)` (§8; changed
+  2026-11-26 from `offerId`).
+- **`OrderItem`** keeps its copies and its `productId` (for orders from
+  before), and adds `catalogEntryId` (SetNull) and `supplier`, so a past
+  order still says where it was "bought". The `offerId` step 3 added for it
+  is dropped in step 5.
 
 ### 5.7 `Artist` and `ArtistAlias`: one artist, many names
 
@@ -734,47 +737,73 @@ hard ones: "歐美版" against "日版", a colour variant, a reissue. Similar
 names are exactly what makes them dangerous. A barcode would decide it, but
 only Cosmic fills it reliably.
 
-## 8. The demo checkout on offers
+## 8. The demo checkout on the shops' catalogs
 
-The storefront and checkout stay as a demo, now selling a supplier's offer at
-its real price.
+The storefront and checkout stay as a demo, now selling a shop's listing at
+its real price and stock.
+
+**⚖️ Decision (2026-11-26): the demo sells `CatalogEntry`, not `Offer`.**
+A cart line is a listing in a shop's copied catalog (§5.4): whatever search
+finds, at any shop, can be bought from the search results — tracking is its
+own feature, not a step before buying. The comparison's "add to cart" adds
+the same listing, found by its offer's `(supplier, externalId)`, so a
+listing is one cart line wherever it was added from, at one price.
+
+Weighed and not chosen: **a line an `Offer`** (this section's first
+design, built in 5.2, #112, and replaced) — only tracked listings
+could be bought, so buying waited on tracking; **making an offer when a
+search result is added** — every first add reads the shop's page live, as
+slow as the shop and failing when it's down, asks for an artist when the
+title names none or several, and leaves a record behind for every cart.
+
+The catalog is also the fresher of the two: the nightly sync (§7.2, step
+12a) reads every listing's price and stock, while an offer is read again
+only when someone refreshes its record, until step 12b.
 
 **⚖️ Decision: hold stock in `reservedQty`, apart from `stockQty`.**
-`stockQty` is the supplier's number and only a refresh writes it. Checkout,
-cancel and expiry touch only `reservedQty`:
+`stockQty` is the shop's number and only the sync's stock walk writes it.
+Checkout, cancel and expiry touch only `reservedQty`, on the same row:
 
 ```
-refresh            → stockQty                (the supplier's)
-checkout           → reservedQty + n         (ours)
+stock walk         → priceCents, availability, stockQty   (the shop's)
+checkout           → reservedQty + n                       (ours)
 cancel / expiry    → reservedQty − n, once
 available to sell  = max(stockQty − reservedQty, 0)
 ```
 
-- **Checkout** keeps checkout-orders.md §7's guard, on the offer row:
-  `UPDATE "Offer" SET "reservedQty" = "reservedQty" + n WHERE id = ? AND
-availability = 'in_stock' AND "stockQty" - "reservedQty" >= n` — lines
-  sorted by `offerId`. The concurrency argument is unchanged.
-- **When `stockQty` is null** (Rotten Blues, THT's pre-orders) there is no
-  count to hold against: the guard is `availability = 'in_stock'` alone and
-  `reservedQty` isn't touched. Pre-orders aren't sold by the demo.
-- **When a refresh drops `stockQty` below `reservedQty`,** available reads 0;
+- **Checkout** keeps checkout-orders.md §7's guard, on the entry's row:
+  `UPDATE "CatalogEntry" SET "reservedQty" = "reservedQty" + n WHERE id = ?
+AND availability = 'in_stock' AND "priceCents" IS NOT NULL AND ("stockQty"
+IS NULL OR "stockQty" - "reservedQty" >= n) RETURNING "priceCents"` — lines
+  sorted by `catalogEntryId`. The concurrency argument is unchanged; the
+  stock walk's `UPDATE` of the same row waits on the same lock. The price
+  charged is the one returned, read under that lock, so a walk repricing
+  the listing mid-checkout can't split the total from the hold.
+- **When `stockQty` is null** (Rotten Blues) there is no count to hold
+  against: nothing caps the guard but availability and a price. **The hold
+  is still taken**, so a cancel always has one to release — had it been
+  skipped, a walk that later found a count would make the cancel release
+  a hold that was never taken, someone else's. Pre-orders aren't sold by
+  the demo.
+- **When the walk drops `stockQty` below `reservedQty`,** available reads 0;
   the holds stand until their orders are cancelled or expire. They are
   practice orders; there's nothing to take back.
-- **The comparison shows `stockQty` unchanged.** What I need there is what
-  the shop has, not what the demo has pretended to sell.
+- **The sync never writes `reservedQty`**: its upsert names the columns it
+  sets (§7.2), and the stock walk sets price, availability and count only.
+- **Search and the comparison show `stockQty` unchanged.** What I need
+  there is what the shop has, not what the demo has pretended to sell.
 
 Weighed and not chosen: **decrementing `stockQty` directly** — the next
-refresh overwrites it, so a cancel would "return" stock that was never taken
+walk overwrites it, so a cancel would "return" stock that was never taken
 from the number now there; **dropping the stock guard** — simpler, but loses
 the concurrency exercise the checkout was built around.
 
 **⚖️ Decision (2026-11-26): sell at the values last read, and say when.**
-Cart and checkout price and stock a line from the offer as stored — real
-numbers, read from the shop's page — and the cart shows each line's
-`lastCheckedAt` ("read 3 hours ago"). Nothing reads a shop during a cart
-write or a checkout. Until step 12b re-reads tracked offers nightly, they are
-as fresh as the last refresh someone pressed (on 2026-11-26 the oldest on
-Neon was 20 hours old).
+Cart and checkout price and stock a line from the entry as stored — real
+numbers, read from the shop's list pages — and the cart shows when: the
+shop's last finished stock walk (`CatalogStockRun.finishedAt`, the time
+every listing's stock is as of). Nothing reads a shop during a cart write
+or a checkout.
 
 Weighed and not chosen: **reading the shop at add-to-cart or checkout** — the
 freshest numbers, but every checkout as slow as the slowest shop, a shop
@@ -782,37 +811,45 @@ that is down failing a checkout, and the read can't go inside the
 transaction (checkout-orders.md §7: nothing slow while rows are locked),
 so it would be stale again by the guard anyway.
 
+**Known gap: search can show a newer price than the cart.** Search shows
+the newer of a listing's catalog read and its offer's (§12.3), so a record
+refreshed after the night's walk shows its fresh price there, while the
+cart keeps the walk's until the next night. The cart says which read it
+uses. Weighed and not chosen for now: **a refresh writing its values into
+the entry** — one source for both, but the entry's "as of" is the shop's,
+kept once a shop, and would no longer be true of every row.
+
 The rest of the cart follows the same rules as checkout:
 
-- **A line is an offer.** Adding the same offer again raises the quantity;
-  the same record from two shops is two lines (§5.6).
-- **Only `in_stock` can be added.** Sold out and pre-order are refused with
-  409 `OUT_OF_STOCK`; pre-orders aren't sold by the demo.
+- **A line is a listing.** Adding the same listing again raises the
+  quantity; the same album from two shops is two lines (§5.6).
+- **Only `in_stock` with a price can be added.** Sold out, pre-order and
+  unread are refused with 409 `OUT_OF_STOCK`.
 - **The quantity is capped at what's left to sell**,
   `max(stockQty − reservedQty, 0)`, as the cart capped at `Product.stock`
   before. With no `stockQty` there's no count to cap at, only the 99 a line
   allows. The cap is tidiness; checkout's guard decides.
-- **One currency an order**, now the offers' `currency`.
-- **Lock order:** checkout and cancel lock offer rows sorted by `offerId`,
-  as they sorted products before.
-- **A line whose offer is gone is skipped by a cancel**: orders from before
-  the switch, which have no `offerId`; and an offer the admin took off as a
-  wrong match while a pending order held it — its holds went with the row,
-  the line's `offerId` is nulled (SetNull), and the order can still be
-  paid. Neon had no orders at the switch (2026-11-26: no cart lines either;
-  3 records, all with an artist and offers; 5 offers, 2 in stock, 1 of them
-  with no count).
+- **One currency**: every shop sells in TWD, which the order carries.
+- **Lock order:** checkout and cancel lock entry rows sorted by
+  `catalogEntryId`, as they sorted products before.
+- **A line whose listing is gone is skipped by a cancel**: orders from
+  before the switch, which have none; and a listing the shop took down
+  while a pending order held it — the sync deleted the entry and its holds
+  with it, the line's `catalogEntryId` is nulled (SetNull), and the order
+  can still be paid. A cart line for it is deleted with it (Cascade). Neon
+  had no orders at the switch (2026-11-26: no cart lines either).
+- **What a line shows** is read from the listing's title (§6.2) — the
+  album and the artist, when it names one — with its cover and the shop;
+  an order line copies them at checkout.
 
 **Records without a price of their own.** `Product` loses `priceCents`,
-`currency`, `stock`, `year` and the `artist` string in step 5. A storefront
-card shows "from NT$…", the lowest price among its `in_stock` offers, or no
-price when none can be bought; its page then shows the record and no cart.
-Every record has an offer to price it from: it is made from a listing, and
-it keeps at least one (`LAST_OFFER`, §7.3).
+`currency`, `stock`, `year` and the `artist` string in step 5, and `Offer`
+loses `reservedQty`. A storefront card shows "from NT$…", the lowest price
+among its `in_stock` offers, or no price when none can be bought.
 
 **⚖️ Decision (2026-11-26): the admin edits records, doesn't create them.**
 Records come from the catalog (§12.1); one made by hand would have no offer
-and so nothing to sell. "New product" goes; the edit form keeps title,
+and nothing to compare. "New product" goes; the edit form keeps title,
 format, edition, release date and categories, and loses price, stock, artist
 and year. Weighed and not chosen: **removing the edit form too** — then
 nothing would file records under categories.
@@ -1416,14 +1453,14 @@ Shapes go in `packages/shared` as now.
 
 ### 12.1 Who sees what
 
-| Page               | Admin (me)                               | Visitor                             |
-| ------------------ | ---------------------------------------- | ----------------------------------- |
-| `/`                | search; popular at the shops till then   | the same; searching asks to sign in |
-| `/tracking`        | my tracked versions                      | their own tracked versions          |
-| `/products/[id]`   | comparison, candidates, refresh, aliases | comparison, "add to cart" per offer |
-| `/search`          | redirects to `/`, keeping the search     | the same                            |
-| `/supplier-orders` | my orders at the suppliers (§9.2)        | their own, once signed in           |
-| `/cart`, `/orders` | the demo store, as today                 | the demo store, as today            |
+| Page               | Admin (me)                                                                      | Visitor                             |
+| ------------------ | ------------------------------------------------------------------------------- | ----------------------------------- |
+| `/`                | search, "add to cart" per listing in stock (§8); popular at the shops till then | the same; searching asks to sign in |
+| `/tracking`        | my tracked versions                                                             | their own tracked versions          |
+| `/products/[id]`   | comparison, "add to cart", candidates, refresh, aliases                         | comparison, "add to cart"           |
+| `/search`          | redirects to `/`, keeping the search                                            | the same                            |
+| `/supplier-orders` | my orders at the suppliers (§9.2)                                               | their own, once signed in           |
+| `/cart`, `/orders` | the demo store, as today                                                        | the demo store, as today            |
 
 **Changed 2026-11-20: searching and tracking are every member's.** Rather
 than the admin alone adding records, anyone signed in searches the shops by
@@ -1491,9 +1528,8 @@ The carousel, the hot list and the admin hero page go (step 1).
   **Anyone signed in refreshes it** — every offer read again, live — but a
   record at most every ten minutes, so many pressing it read the shops once;
   a read that failed counts. The admin also takes a wrong match off ("Not
-  this album"). No "add to cart" here: the demo store's cart works off one
-  price a record, and comes back with checkout on offers (step 5). The demo
-  store's own records, with no offers, show as before. Later: the
+  this album"). A version in stock goes into the demo store's cart from
+  its row, as from search (§8). Later: the
   candidates and aliases for the admin, "record an order" per offer, and
   "ordered at THT · preparing" when a supplier order holds it.
 - **Home (`/`) is the search** (2026-11-20): the search box on top; before
@@ -1530,10 +1566,11 @@ The carousel, the hot list and the admin hero page go (step 1).
 - **Artist names:** splitting "坂本龍一 Ryuichi Sakamoto" into two aliases;
   a new product reusing the artist that owns one of its names; full- and
   half-width forms normalising to the same alias.
-- **Checkout on offers:** the existing concurrency tests re-pointed at
-  offers, plus: a null `stockQty` sells on availability alone; a refresh
-  lowering `stockQty` below `reservedQty` blocks new sales and doesn't break
-  a later cancel.
+- **Checkout on the catalogs:** the existing concurrency tests re-pointed
+  at catalog entries, plus: a null `stockQty` sells on availability alone; a
+  stock walk lowering `stockQty` below `reservedQty` blocks new sales and
+  doesn't break a later cancel; a listing the sync deleted is skipped by a
+  cancel.
 - **Adapters' network side** is checked by hand against the live shops before
   each adapter merges.
 
@@ -1564,20 +1601,23 @@ Each step is its own PR.
    next-step hints (§9.1, §9.5), #76–#78; each order's own page #83; the
    notices (§9.5): THT's payment and shipping and Rotten Blues' shipping
    #87–#89, hourly; then Rotten Blues' arrival and Cosmic's payment, #90.)_
-5. Checkout on offers (§8) — **moved after step 9** (below): cart and order
+5. Checkout on the shops' catalogs (§8) — **moved after step 9** (below): cart and order
    lines, the reservation guard, restock on cancel and expiry. `Product`'s
    `priceCents`, `currency`, `stock`, `artist` (the string) and `year`, and
    `CartItem.productId`, are dropped here, and `artistId` becomes required.
-   **One PR**, a commit a sub-step: the shared contracts change for the API
-   and the web at once, so they ship together rather than leave the demo
-   cart broken between two deploys. 5.0 the data on Neon checked
-   (2026-11-26, §8); 5.1 this section and §8; 5.2 the shared contracts;
-   5.3 the cart on offers; 5.4 checkout's guard on `reservedQty`; 5.5 cancel
-   and expiry releasing it; 5.6 the e2e tests; 5.7 the contract migration
-   (the columns above, `CartItem` unique on `(cartId, offerId)`,
-   `syncDemoPrice` removed); 5.8 the web — "add to cart" per offer, the
-   cart's shop and read time, "from NT$" cards, the admin edit form; 5.9
-   progress here.
+   A commit a sub-step, each changing shared, the API and the web
+   together: the pre-commit hook typechecks both apps on a shared change.
+   Done: the data on Neon checked, and this section and §8 (#110–#111); 5.2
+   the cart on offers (#112, merged while checkout still read
+   `Product.stock`, so the demo couldn't place an order until 5.3).
+   **Changed 2026-11-26**: the demo sells catalog entries, not offers (§8),
+   so 5.2b replaces 5.2 — the cart on `CatalogEntry`, from the search
+   results and the comparison. Then 5.3 checkout's guard on
+   `CatalogEntry.reservedQty`, and cancel and expiry releasing it; 5.4 the
+   e2e tests; 5.5 the contract migration (the columns above,
+   `Offer.reservedQty`, `OrderItem.offerId`, `syncDemoPrice`), "from NT$"
+   cards and the admin edit form; 5.6 progress here. 5.2b–5.3 go in one PR,
+   so the demo can order again when it merges.
 6. EasyStore and Shopify adapters, with fixtures — THT, Cosmic and Rotten
    Blues:
    - **6a.** One fetcher for every adapter, with §6.4's guard (https, the

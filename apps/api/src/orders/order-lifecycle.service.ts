@@ -3,7 +3,7 @@ import type { CancelReason } from '@vinyl-order/shared';
 
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { byProductId } from './stock-locks';
+import { byCatalogEntryId } from './stock-locks';
 
 /**
  * Moves an order from one status to the next (docs/design/payments.md §4).
@@ -22,12 +22,12 @@ export class OrderLifecycleService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Move a pending order to `cancelled` and return its stock — exactly once.
+   * Move a pending order to `cancelled` and release its holds — exactly once.
    *
    * Of any number of concurrent cancellers (the customer, the expiry sweeper,
    * a second tab), only the one that still finds the order `pending` changes a
-   * row, and only that one restocks. Restocking unconditionally would return
-   * the same copies twice.
+   * row, and only that one releases. Releasing unconditionally would free the
+   * same copies twice.
    *
    * @param order - the order to cancel, scoped to its owner when a customer acts
    * @param reason - who ended it: the customer, or the payment deadline
@@ -70,28 +70,32 @@ export class OrderLifecycleService {
   }
 
   /**
-   * Put a cancelled order's copies back on sale.
+   * Put a cancelled order's copies back on sale: its holds on the listings
+   * released (tracker.md §8).
    *
-   * Lines whose product has since been deleted are skipped: there is nothing
-   * to put them back on. Products are locked in checkout's order (see
-   * byProductId), so a cancel and a checkout over the same records queue
-   * instead of deadlocking.
+   * Lines whose listing is gone are skipped: orders from before checkout sold
+   * the catalogs, and listings the shop has taken down since — the sync
+   * deleted the row, and its holds with it. Listings are locked in
+   * checkout's order (see byCatalogEntryId), so a cancel and a checkout over
+   * the same listings queue instead of deadlocking.
    */
   private async returnStock(transaction: Prisma.TransactionClient, orderId: string): Promise<void> {
     const items = await transaction.orderItem.findMany({
       where: { orderId },
-      select: { productId: true, quantity: true },
+      select: { catalogEntryId: true, quantity: true },
     });
     const lines = items
-      .flatMap(({ productId, quantity }) => (productId ? [{ productId, quantity }] : []))
-      .sort(byProductId);
+      .flatMap(({ catalogEntryId, quantity }) =>
+        catalogEntryId ? [{ catalogEntryId, quantity }] : [],
+      )
+      .sort(byCatalogEntryId);
 
     for (const line of lines) {
-      // updateMany, not update: a product deleted since the read above is
+      // updateMany, not update: a listing deleted since the read above is
       // skipped rather than failing the cancel.
-      await transaction.product.updateMany({
-        where: { id: line.productId },
-        data: { stock: { increment: line.quantity } },
+      await transaction.catalogEntry.updateMany({
+        where: { id: line.catalogEntryId },
+        data: { reservedQty: { decrement: line.quantity } },
       });
     }
   }

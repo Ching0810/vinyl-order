@@ -75,7 +75,7 @@ export default function OfferRow({
         <OfferActions
           productId={productId}
           offerId={offer.id}
-          buyable={offer.availability === 'in_stock'}
+          catalogEntryId={offer.availability === 'in_stock' ? offer.catalogEntryId : null}
           watched={watched}
           signedIn={signedIn}
           isAdmin={isAdmin}

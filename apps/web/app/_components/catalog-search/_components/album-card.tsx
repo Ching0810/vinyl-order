@@ -1,7 +1,8 @@
-import { Badge, Box, Button, HStack, Link, Stack, Text } from '@chakra-ui/react';
+import { Badge, Button, HStack, Link, Stack, Text } from '@chakra-ui/react';
 import type { CatalogAlbum, CatalogAlbumListing } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 
+import AddToCart from '@/components/cart/add-to-cart';
 import SupplierBadge from '@/components/supplier-order/supplier-badge';
 import Cover from '@/components/ui/cover';
 import { AVAILABILITY_BADGE } from '@/lib/utils/catalog-search';
@@ -10,8 +11,8 @@ import { formatTimeAgo } from '@/lib/utils/date';
 
 /**
  * One album: artist and title, then each listing of it — a version at a
- * shop, with its own cover and the shop's own title, a link there and its
- * own "Track". Two pressings at a shop are two rows: different records,
+ * shop, with its own cover and the shop's own title, a link there, "Add to
+ * cart" when it's in stock, and its own "Track". Two pressings at a shop are two rows: different records,
  * different covers and prices, tracked one at a time.
  *
  * @param album - the album
@@ -64,7 +65,9 @@ export default function AlbumCard({
 
 /**
  * One version at one shop: its cover, shop, whether it can be bought as far
- * as search knows, its own title, and "Track" or "Tracking".
+ * as search knows, its own title, "Add to cart" when it's in stock and
+ * priced — the demo store sells the shop's listing (tracker.md §8) — and
+ * "Track" or "Tracking".
  */
 const ListingRow = ({
   listing,
@@ -100,7 +103,10 @@ const ListingRow = ({
         </Link>
         <StockLine listing={listing} />
       </Stack>
-      <Box flexShrink="0">
+      <Stack gap="2" flexShrink="0" align="end">
+        {listing.availability === 'in_stock' && listing.priceCents !== null ? (
+          <AddToCart catalogEntryId={listing.id} />
+        ) : null}
         {listing.watched && productId ? (
           <Button asChild size="xs" variant="subtle" colorPalette="brand" borderRadius="full">
             <NextLink href={`/products/${productId}`}>Tracking</NextLink>
@@ -118,7 +124,7 @@ const ListingRow = ({
             Track
           </Button>
         )}
-      </Box>
+      </Stack>
     </HStack>
     {failure ? (
       <Text fontSize="sm" color="fg.error">

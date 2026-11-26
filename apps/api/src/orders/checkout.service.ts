@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import type { InsufficientStockItem, Order as OrderContract } from '@vinyl-order/shared';
 
+import { CATALOG_CURRENCY } from '../catalog/catalog-currency';
+import { readListingTitle } from '../catalog/listing-title';
+import { taipeiToday } from '../catalog/supplier-adapter';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { violatesUniqueIndex } from '../prisma/unique-violation';
 import { conflict } from './order.errors';
 import { toOrderContract, withItems } from './order.mapper';
-import { byProductId } from './stock-locks';
+import { byCatalogEntryId } from './stock-locks';
 
 /**
  * How long a pending order holds its stock before it expires. Applied once,
@@ -15,15 +18,15 @@ import { byProductId } from './stock-locks';
  */
 export const PAYMENT_WINDOW_MS = 15 * 60 * 1000;
 
-/** A cart item joined to the product it copies into the order. */
-type CartItemWithProduct = Prisma.CartItemGetPayload<{ include: { product: true } }>;
+/** A cart item joined to the listing it copies into the order. */
+type CartItemWithEntry = Prisma.CartItemGetPayload<{ include: { catalogEntry: true } }>;
 
 /**
  * Thrown inside the transaction when a cart item can't be fulfilled.
  *
  * A private error rather than a ConflictException because the response needs
  * `available`, the stock actually left — and reading it inside the transaction
- * would report our own about-to-be-rolled-back numbers. So it carries only what
+ * would report our own about-to-be-rolled-back holds. So it carries only what
  * is known inside, and the handler reads the real stock after the rollback.
  */
 class ShortStockError extends Error {
@@ -54,8 +57,9 @@ const isDuplicateKey = (error: unknown): boolean =>
  * own condition and reports how many rows it touched, so there is no gap
  * between checking and acting for a concurrent checkout to race through.
  *
- * - Overselling is prevented by `UPDATE ... WHERE stock >= qty`, checked via
- *   the affected-row count.
+ * - Overselling is prevented by `UPDATE "CatalogEntry" SET "reservedQty" =
+ *   "reservedQty" + qty WHERE "stockQty" - "reservedQty" >= qty`, checked by
+ *   whether it returned the row (tracker.md §8).
  * - Duplicate orders are prevented by deleting the cart items *first* and
  *   checking the delete count: whoever removes the rows owns them.
  */
@@ -105,40 +109,34 @@ export class CheckoutService {
    * Turn the cart into an order, or throw.
    *
    * Nothing slow may go in here. The transaction holds a row lock on every
-   * product it decrements until it commits, so anything waiting on those
-   * records waits for us — payment and email belong after the commit, against
-   * a `pending` order.
+   * listing it holds stock on until it commits, so anything waiting on those
+   * rows — another checkout, the nightly stock walk — waits for us. Payment
+   * and email belong after the commit, against a `pending` order.
    */
   private async placeOrder(userId: string, idempotencyKey?: string): Promise<OrderContract> {
     const order = await this.prisma.$transaction(
       async (transaction) => {
         const cartItems = await transaction.cartItem.findMany({
           where: { cart: { userId } },
-          include: { product: true },
+          include: { catalogEntry: true },
         });
         if (cartItems.length === 0) {
           throw conflict('CART_EMPTY', 'Your cart is empty.');
         }
 
-        // One order carries one total, so it can only carry one currency.
-        // The storefront already assumes a single currency; this enforces it
-        // rather than inventing multi-currency totals nobody needs yet.
-        const currency = cartItems[0].product.currency;
-        if (cartItems.some((cartItem) => cartItem.product.currency !== currency)) {
-          throw conflict('MIXED_CURRENCY', 'All records in an order must share one currency.');
-        }
-
         await this.claimCartItems(transaction, cartItems);
-        await this.takeStock(transaction, cartItems);
+        const priceOf = await this.holdStock(transaction, cartItems);
+        const today = taipeiToday();
 
         return transaction.order.create({
           data: {
             userId,
-            currency,
+            // Every shop's catalog is priced in TWD (tracker.md §4, §8).
+            currency: CATALOG_CURRENCY,
             // Stored, not derived: an order's total must not move if a
-            // product is repriced later.
+            // listing is repriced later.
             subtotalCents: cartItems.reduce(
-              (sum, cartItem) => sum + cartItem.product.priceCents * cartItem.quantity,
+              (sum, cartItem) => sum + priceOf(cartItem) * cartItem.quantity,
               0,
             ),
             // Null when the client sent no key. Nulls don't collide in a
@@ -148,16 +146,21 @@ export class CheckoutService {
             // status defaults to `pending` in the database — the one place
             // "a new order starts pending" is defined.
             items: {
-              create: cartItems.map((cartItem) => ({
-                productId: cartItem.productId,
-                quantity: cartItem.quantity,
-                // Copied at purchase and never read from Product again. This
-                // is what lets an order survive a reprice or a delete.
-                unitPriceCents: cartItem.product.priceCents,
-                title: cartItem.product.title,
-                artist: cartItem.product.artist,
-                imageUrl: cartItem.product.imageUrl,
-              })),
+              create: cartItems.map(({ catalogEntryId, catalogEntry: entry, ...cartItem }) => {
+                const read = readListingTitle(entry.title, today);
+                return {
+                  catalogEntryId,
+                  supplier: entry.supplier,
+                  quantity: cartItem.quantity,
+                  // Copied at purchase and never read from the listing
+                  // again. This is what lets an order survive a reprice or
+                  // the shop taking it down.
+                  unitPriceCents: priceOf({ catalogEntryId }),
+                  title: read.title,
+                  artist: read.artist ?? '',
+                  imageUrl: entry.imageUrl,
+                };
+              }),
             },
           },
           include: withItems,
@@ -210,14 +213,25 @@ export class CheckoutService {
   private async toClientError(error: unknown): Promise<unknown> {
     if (!(error instanceof ShortStockError)) return error;
 
-    // The transaction has rolled back, so this reads the real current stock
-    // rather than our own reverted decrements. It is informational only: by
-    // the time the customer reads it, someone else may have taken more.
-    const products = await this.prisma.product.findMany({
-      where: { id: { in: error.shortItems.map((item) => item.productId) } },
-      select: { id: true, stock: true },
+    // The transaction has rolled back, so this reads the real current holds
+    // rather than our own reverted ones. It is informational only: by the
+    // time the customer reads it, someone else may have taken more.
+    const entries = await this.prisma.catalogEntry.findMany({
+      where: { id: { in: error.shortItems.map((item) => item.catalogEntryId) } },
+      select: {
+        id: true,
+        availability: true,
+        priceCents: true,
+        stockQty: true,
+        reservedQty: true,
+      },
     });
-    const stockById = new Map(products.map((product) => [product.id, product.stock]));
+    const availableOf = (id: string): number | null => {
+      const entry = entries.find((candidate) => candidate.id === id);
+      // Gone, or no longer something the demo sells: nothing to order.
+      if (!entry || entry.availability !== 'in_stock' || entry.priceCents === null) return 0;
+      return entry.stockQty === null ? null : Math.max(entry.stockQty - entry.reservedQty, 0);
+    };
 
     return conflict(
       'INSUFFICIENT_STOCK',
@@ -227,7 +241,7 @@ export class CheckoutService {
       {
         items: error.shortItems.map((item) => ({
           ...item,
-          available: stockById.get(item.productId) ?? 0,
+          available: availableOf(item.catalogEntryId),
         })),
       },
     );
@@ -253,7 +267,7 @@ export class CheckoutService {
   // this method prevent same cartItem add to order twice
   private async claimCartItems(
     transaction: Prisma.TransactionClient,
-    cartItems: CartItemWithProduct[],
+    cartItems: CartItemWithEntry[],
   ): Promise<void> {
     // the number of cartItem delete from user cart
     const { count } = await transaction.cartItem.deleteMany({
@@ -270,46 +284,65 @@ export class CheckoutService {
   }
 
   /**
-   * Decrement stock for every cart item, or fail the whole order.
+   * Hold stock for every cart item, or fail the whole order (tracker.md §8).
    *
-   * `updateMany` rather than `update` because it returns a count instead of
-   * throwing when the WHERE matches nothing: "not enough stock" becomes a value
-   * to check, not an exception to catch. The condition lives inside the write,
-   * so a concurrent checkout cannot slip between the check and the decrement —
-   * after waiting on the row lock, Postgres re-evaluates `stock >= quantity`
-   * against the newly committed row.
+   * One conditional `UPDATE` a line: it adds the quantity to the listing's
+   * `reservedQty` only if the listing is in stock, priced, and — when the
+   * shop gives a count — has that many left to sell. The condition lives
+   * inside the write, so a concurrent checkout cannot slip between the check
+   * and the hold — after waiting on the row lock, Postgres re-evaluates it
+   * against the newly committed row. A listing with no count is held too:
+   * nothing caps it, but its cancel then has a hold to release, whatever
+   * the stock walk has written since.
+   *
+   * `RETURNING "priceCents"` is the price charged: read under the same lock,
+   * so a stock walk repricing the listing mid-checkout can't make the order
+   * total disagree with what was held. Raw SQL because Prisma's `updateMany`
+   * returns a count and no row.
    *
    * Every cart item is attempted before failing, so the error can list them all.
+   *
+   * @returns each line's price, as held
    */
-  // this method prevent last product order by multiple orders
-  private async takeStock(
+  // this method prevent last listing order by multiple orders
+  private async holdStock(
     transaction: Prisma.TransactionClient,
-    cartItems: CartItemWithProduct[],
-  ): Promise<void> {
-    // Lock ordering (see byProductId): two carts holding the same records in
-    // opposite order queue instead of deadlocking. Sequential on purpose —
-    // running these in parallel would throw that ordering away (and a
-    // transaction is one connection).
-    const cartItemsByProductId = [...cartItems].sort(byProductId);
+    cartItems: CartItemWithEntry[],
+  ): Promise<(line: { catalogEntryId: string }) => number> {
+    // Lock ordering (see byCatalogEntryId): two carts holding the same
+    // listings in opposite order queue instead of deadlocking. Sequential on
+    // purpose — running these in parallel would throw that ordering away (and
+    // a transaction is one connection).
+    const cartItemsByEntryId = [...cartItems].sort(byCatalogEntryId);
 
+    const prices = new Map<string, number>();
     const shortItems: Omit<InsufficientStockItem, 'available'>[] = [];
-    for (const cartItem of cartItemsByProductId) {
-      const { count } = await transaction.product.updateMany({
-        where: { id: cartItem.productId, stock: { gte: cartItem.quantity } },
-        data: { stock: { decrement: cartItem.quantity } },
-      });
+    const today = taipeiToday();
+    for (const cartItem of cartItemsByEntryId) {
+      const [held] = await transaction.$queryRaw<{ priceCents: number }[]>`
+        UPDATE "CatalogEntry"
+        SET "reservedQty" = "reservedQty" + ${cartItem.quantity}::int
+        WHERE "id" = ${cartItem.catalogEntryId}
+          AND "availability" = 'in_stock'
+          AND "priceCents" IS NOT NULL
+          AND ("stockQty" IS NULL OR "stockQty" - "reservedQty" >= ${cartItem.quantity}::int)
+        RETURNING "priceCents"
+      `;
 
-      if (count === 0) {
+      if (held) {
+        prices.set(cartItem.catalogEntryId, held.priceCents);
+      } else {
         shortItems.push({
-          productId: cartItem.productId,
-          title: cartItem.product.title,
+          catalogEntryId: cartItem.catalogEntryId,
+          title: readListingTitle(cartItem.catalogEntry.title, today).title,
           requested: cartItem.quantity,
         });
       }
     }
 
-    // Throwing rolls back the decrements that did succeed: the customer gets
+    // Throwing rolls back the holds that did succeed: the customer gets
     // every record or none, never a partial order.
     if (shortItems.length > 0) throw new ShortStockError(shortItems);
+    return ({ catalogEntryId }) => prices.get(catalogEntryId)!;
   }
 }

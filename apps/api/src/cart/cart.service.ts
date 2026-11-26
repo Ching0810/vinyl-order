@@ -1,7 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AddCartItemInput, Cart as CartContract } from '@vinyl-order/shared';
 
-import type { Offer, Prisma } from '../generated/prisma/client';
+import { CATALOG_CURRENCY } from '../catalog/catalog-currency';
+import { readListingTitle } from '../catalog/listing-title';
+import { taipeiToday } from '../catalog/supplier-adapter';
+import type { CatalogEntry, Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { isRecordNotFound } from '../prisma/record-not-found';
 
@@ -16,52 +19,50 @@ const outOfStock = (): ConflictException =>
 /** The cart's own per-line ceiling (the shared quantitySchema's). */
 const MAX_PER_LINE = 99;
 
+type Stock = Pick<CatalogEntry, 'stockQty' | 'reservedQty'>;
+
 /**
  * Copies left to sell (tracker.md §8): the shop's count less the demo's
  * holds, never below 0. Null when the shop gives no count.
  */
-const availableOf = (offer: Pick<Offer, 'stockQty' | 'reservedQty'>): number | null =>
-  offer.stockQty === null ? null : Math.max(offer.stockQty - offer.reservedQty, 0);
+const availableOf = (entry: Stock): number | null =>
+  entry.stockQty === null ? null : Math.max(entry.stockQty - entry.reservedQty, 0);
 
-/** The most a line of this offer may hold. */
-const lineCapOf = (offer: Pick<Offer, 'stockQty' | 'reservedQty'>): number =>
-  Math.min(availableOf(offer) ?? MAX_PER_LINE, MAX_PER_LINE);
+/** The most a line of this listing may hold. */
+const lineCapOf = (entry: Stock): number =>
+  Math.min(availableOf(entry) ?? MAX_PER_LINE, MAX_PER_LINE);
 
 /**
- * An offer the demo sells, or 404/409: in stock, with a copy left. Sold out
- * and pre-orders aren't sold (§8).
+ * A listing the demo sells, or 404/409: in stock, priced, with a copy left.
+ * Sold out, pre-orders and listings no walk has read aren't sold (§8).
  */
-const sellable = (offer: Offer | null): Offer => {
-  if (!offer) throw new NotFoundException('Offer not found');
-  if (offer.availability !== 'in_stock' || lineCapOf(offer) === 0) throw outOfStock();
-  return offer;
+const sellable = (entry: CatalogEntry | null): CatalogEntry => {
+  if (!entry) throw new NotFoundException('Listing not found');
+  if (entry.availability !== 'in_stock' || entry.priceCents === null || lineCapOf(entry) === 0) {
+    throw outOfStock();
+  }
+  return entry;
 };
 
-/** A cart row joined to everything needed to price and render it. */
+/** A cart row joined to the listings needed to price and render it. */
 const withItems = {
-  items: {
-    include: {
-      offer: true,
-      product: { select: { id: true, title: true, imageUrl: true, artistRef: true } },
-    },
-    orderBy: { createdAt: 'asc' },
-  },
+  items: { include: { catalogEntry: true }, orderBy: { createdAt: 'asc' } },
 } satisfies Prisma.CartInclude;
 
 type CartWithItems = Prisma.CartGetPayload<{ include: typeof withItems }>;
 
 /**
- * A customer's cart: a line an offer — one shop's version of a record
- * (tracker.md §5.6).
+ * A customer's cart: a line a listing in one shop's copied catalog
+ * (tracker.md §5.6, §8).
  *
  * Every method is scoped by `userId` rather than taking a cart id: the routes
  * are all "my cart", so a caller can never address someone else's by guessing
  * an identifier.
  *
- * Totals are computed on read from the offer's price as last read from the
- * shop (§8). The cart stores no money — it records what was chosen, and what
- * that costs is whatever the shop's page said. Freezing a price belongs at
- * checkout, on the order.
+ * Totals are computed on read from the listing's price as the shop's last
+ * stock walk read it (§8). The cart stores no money — it records what was
+ * chosen, and what that costs is whatever the shop's list pages said.
+ * Freezing a price belongs at checkout, on the order.
  */
 @Injectable()
 export class CartService {
@@ -83,34 +84,49 @@ export class CartService {
     });
   }
 
-  /** Shape a cart row for the wire, pricing each line from its offer. */
-  private toContract(cart: CartWithItems | null): CartContract {
-    const items = (cart?.items ?? []).map(({ id, offerId, quantity, offer, product }) => ({
-      id,
-      offerId,
-      quantity,
-      offer: {
-        id: offer.id,
-        supplier: offer.supplier,
-        sourceTitle: offer.sourceTitle,
-        url: offer.url,
-        imageUrl: offer.imageUrl,
-        priceCents: offer.priceCents,
-        currency: offer.currency,
-        availability: offer.availability,
-        available: availableOf(offer),
-        lastCheckedAt: offer.lastCheckedAt.toISOString(),
-      },
-      product: {
-        id: product.id,
-        title: product.title,
-        // Every record made from a catalog has one; the string column it
-        // replaces goes in step 5's contract migration.
-        artist: product.artistRef?.name ?? '',
-        imageUrl: product.imageUrl,
-      },
-      lineTotalCents: offer.priceCents * quantity,
-    }));
+  /**
+   * Shape a cart row for the wire, pricing each line from its listing, as
+   * of its shop's last stock walk.
+   */
+  private async toContract(cart: CartWithItems | null): Promise<CartContract> {
+    const lines = cart?.items ?? [];
+    const walkedAt = new Map(
+      (
+        await this.prisma.catalogStockRun.findMany({
+          where: {
+            supplier: { in: [...new Set(lines.map((line) => line.catalogEntry.supplier))] },
+          },
+        })
+      ).map((run) => [run.supplier, run.finishedAt]),
+    );
+    const today = taipeiToday();
+
+    const items = lines.map(({ id, catalogEntryId, quantity, catalogEntry: entry }) => {
+      const read = readListingTitle(entry.title, today);
+      return {
+        id,
+        catalogEntryId,
+        quantity,
+        listing: {
+          id: entry.id,
+          supplier: entry.supplier,
+          title: entry.title,
+          album: read.title,
+          artist: read.artist,
+          url: entry.url,
+          imageUrl: entry.imageUrl,
+          priceCents: entry.priceCents,
+          currency: CATALOG_CURRENCY,
+          availability: entry.availability,
+          available: availableOf(entry),
+          checkedAt:
+            entry.availability === null
+              ? null
+              : (walkedAt.get(entry.supplier)?.toISOString() ?? null),
+        },
+        lineTotalCents: (entry.priceCents ?? 0) * quantity,
+      };
+    });
 
     return {
       items,
@@ -133,25 +149,28 @@ export class CartService {
   }
 
   /**
-   * Add an offer, or increase it if already present. The composite unique on
-   * (cartId, offerId) is what lets this be one upsert instead of a read
-   * followed by a decision.
+   * Add a listing, or increase it if already present. The composite unique
+   * on (cartId, catalogEntryId) is what lets this be one upsert instead of a
+   * read followed by a decision.
    *
    * Asking for more copies than remain caps the line at what's left rather
    * than failing: every write answers with the whole cart, so the caller sees
-   * the quantity that was actually set. An offer that can't be bought is
+   * the quantity that was actually set. A listing that can't be bought is
    * different — there is no quantity to cap to — and is refused.
    */
-  async addItem(userId: string, { offerId, quantity }: AddCartItemInput): Promise<CartContract> {
-    const offer = sellable(await this.prisma.offer.findUnique({ where: { id: offerId } }));
+  async addItem(
+    userId: string,
+    { catalogEntryId, quantity }: AddCartItemInput,
+  ): Promise<CartContract> {
+    const entry = sellable(await this.findEntry(catalogEntryId));
     const cart = await this.ensureCart(userId);
 
     await this.prisma.cartItem.upsert({
-      where: { cartId_offerId: { cartId: cart.id, offerId } },
-      create: { cartId: cart.id, offerId, productId: offer.productId, quantity },
+      where: { cartId_catalogEntryId: { cartId: cart.id, catalogEntryId } },
+      create: { cartId: cart.id, catalogEntryId, quantity },
       update: { quantity: { increment: quantity } },
     });
-    await this.capToStock(cart.id, offerId, lineCapOf(offer));
+    await this.capToStock(cart.id, catalogEntryId, lineCapOf(entry));
 
     return this.find(userId);
   }
@@ -160,34 +179,46 @@ export class CartService {
    * Set an absolute quantity on a line, so a retry lands on the same result.
    * Capped at what's left, like addItem.
    */
-  async updateItem(userId: string, offerId: string, quantity: number): Promise<CartContract> {
+  async updateItem(
+    userId: string,
+    catalogEntryId: string,
+    quantity: number,
+  ): Promise<CartContract> {
     const cart = await this.prisma.cart.findUnique({ where: { userId } });
     if (!cart) throw new NotFoundException('Cart not found');
 
-    const offer = sellable(await this.prisma.offer.findUnique({ where: { id: offerId } }));
+    const entry = sellable(await this.findEntry(catalogEntryId));
 
     try {
       await this.prisma.cartItem.update({
-        where: { cartId_offerId: { cartId: cart.id, offerId } },
-        data: { quantity: Math.min(quantity, lineCapOf(offer)) },
+        where: { cartId_catalogEntryId: { cartId: cart.id, catalogEntryId } },
+        data: { quantity: Math.min(quantity, lineCapOf(entry)) },
       });
     } catch (error) {
       // No such line in this cart.
-      if (isRecordNotFound(error)) throw new NotFoundException('That offer is not in your cart');
+      if (isRecordNotFound(error)) throw new NotFoundException('That listing is not in your cart');
       throw error;
     }
 
     return this.find(userId);
   }
 
-  async removeItem(userId: string, offerId: string): Promise<CartContract> {
+  async removeItem(userId: string, catalogEntryId: string): Promise<CartContract> {
     const cart = await this.prisma.cart.findUnique({ where: { userId } });
     if (!cart) throw new NotFoundException('Cart not found');
 
     // deleteMany rather than delete: removing something already gone is the
     // outcome the caller wanted, so it shouldn't be an error.
-    await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id, offerId } });
+    await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id, catalogEntryId } });
     return this.find(userId);
+  }
+
+  /**
+   * A listing by id. A malformed id finds nothing rather than failing:
+   * `CatalogEntry.id` is text, so any string is a key that isn't there.
+   */
+  private findEntry(id: string): Promise<CatalogEntry | null> {
+    return this.prisma.catalogEntry.findUnique({ where: { id } });
   }
 
   /**
@@ -198,9 +229,9 @@ export class CartService {
    * one, this corrects it. It is housekeeping, not a guarantee — stock can
    * fall a moment later, and only checkout's conditional hold decides.
    */
-  private async capToStock(cartId: string, offerId: string, cap: number): Promise<void> {
+  private async capToStock(cartId: string, catalogEntryId: string, cap: number): Promise<void> {
     await this.prisma.cartItem.updateMany({
-      where: { cartId, offerId, quantity: { gt: cap } },
+      where: { cartId, catalogEntryId, quantity: { gt: cap } },
       data: { quantity: cap },
     });
   }

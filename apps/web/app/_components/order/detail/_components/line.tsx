@@ -2,14 +2,16 @@ import { HStack, Stack, Text } from '@chakra-ui/react';
 import type { OrderItem } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 
+import SupplierBadge from '@/components/supplier-order/supplier-badge';
 import Cover from '@/components/ui/cover';
 import { formatPrice } from '@/lib/utils/currency';
 /**
  * One line of a placed order, rendered only from what was copied at checkout.
  *
- * The title links to the record while it still exists; `productId` is null
- * once it has been deleted, and the line still reads the same from its
- * snapshot.
+ * The shop it was "bought" from, when the order says. The title links to
+ * the record on orders from before checkout sold the shops' catalogs, while
+ * it still exists; `productId` is null otherwise, and the line still reads
+ * the same from its snapshot.
  *
  * @param item - the order line
  * @param currency - the order's currency; every line shares it
@@ -39,9 +41,16 @@ export default function Line({ item, currency }: { item: OrderItem; currency: st
             {item.title}
           </Text>
         )}
-        <Text fontSize="sm" color="fg.muted" lineClamp={1}>
-          {item.artist}
-        </Text>
+        {item.artist ? (
+          <Text fontSize="sm" color="fg.muted" lineClamp={1}>
+            {item.artist}
+          </Text>
+        ) : null}
+        {item.supplier ? (
+          <HStack>
+            <SupplierBadge supplier={item.supplier} />
+          </HStack>
+        ) : null}
         <Text fontSize="xs" color="fg.subtle">
           {formatPrice(item.unitPriceCents, currency)} × {item.quantity}
         </Text>

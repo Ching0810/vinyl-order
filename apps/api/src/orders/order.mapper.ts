@@ -43,11 +43,12 @@ export const withLineCount = {
 
 type OrderWithLineCount = Prisma.OrderGetPayload<{ include: typeof withLineCount }>;
 
-/** Shape an order row for the wire. Nothing here reads a live product. */
+/** Shape an order row for the wire. Nothing here reads a live listing. */
 export const toOrderContract = (order: OrderWithItems): OrderContract => {
   const items = order.items.map((item) => ({
     id: item.id,
     productId: item.productId,
+    supplier: item.supplier,
     quantity: item.quantity,
     unitPriceCents: item.unitPriceCents,
     title: item.title,

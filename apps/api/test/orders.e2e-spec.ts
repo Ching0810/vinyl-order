@@ -25,7 +25,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
  *
  * These guarantees come from row locking and conditional writes, so a mocked
  * Prisma would pass every test here while proving nothing. Each test builds its
- * own users and products rather than cleaning up, so tests can't see each
+ * own users and listings rather than cleaning up, so tests can't see each
  * other's rows and the order they run in doesn't matter.
  */
 describe('Orders (e2e)', () => {
@@ -49,29 +49,30 @@ describe('Orders (e2e)', () => {
   });
 
   /**
-   * A product with the given stock, and one offer for cart lines to point
-   * at. Everything else is filler.
+   * An in-stock listing in a shop's copied catalog, with the given count left
+   * to sell (tracker.md §8). Its album is what checkout copies onto the order
+   * line, read from its title. Everything else is filler.
    */
-  const createProduct = (stock: number, priceCents = 1_000) =>
-    prisma.product.create({
+  const createEntry = async (stockQty: number | null, priceCents = 1_000) => {
+    const album = `Album ${randomUUID().replaceAll('-', '')}`;
+    const title = `Test Artist - ${album} LP`;
+    const entry = await prisma.catalogEntry.create({
       data: {
-        title: `Album ${randomUUID()}`,
-        artist: 'Test Artist',
+        supplier: 'tht',
+        externalId: randomUUID(),
+        url: 'https://www.thtrecords.com/products/test',
+        title,
+        searchTitle: title.toLowerCase(),
         priceCents,
-        stock,
-        offers: {
-          create: {
-            supplier: 'tht',
-            externalId: randomUUID(),
-            url: 'https://www.thtrecords.com/products/test',
-            sourceTitle: 'Test Album',
-            priceCents,
-            availability: 'in_stock',
-            lastCheckedAt: new Date(),
-          },
-        },
+        availability: 'in_stock',
+        stockQty,
+        isVinyl: true,
+        isUsed: false,
+        syncedAt: new Date(),
       },
     });
+    return { ...entry, album };
+  };
 
   /**
    * A signed-in customer whose cart holds `lines`, in that order.
@@ -80,26 +81,13 @@ describe('Orders (e2e)', () => {
    * /auth and /cart: those have tests of their own, and doing it here would
    * make a checkout test fail for reasons that have nothing to do with checkout.
    */
-  const createBuyer = async (lines: { productId: string; quantity: number }[]) => {
-    // Each product's one offer: a cart line is an offer.
-    const offers = await prisma.offer.findMany({
-      where: { productId: { in: lines.map((line) => line.productId) } },
-      select: { id: true, productId: true },
-    });
-    const offerOf = (productId: string) =>
-      offers.find((offer) => offer.productId === productId)!.id;
+  const createBuyer = async (lines: { catalogEntryId: string; quantity: number }[]) => {
     const user = await prisma.user.create({
       data: {
         email: `buyer-${randomUUID()}@test.local`,
         // Never logged into with a password; the token below is the session.
         passwordHash: 'unused',
-        cart: {
-          create: {
-            items: {
-              create: lines.map((line) => ({ ...line, offerId: offerOf(line.productId) })),
-            },
-          },
-        },
+        cart: { create: { items: { create: lines } } },
       },
     });
     const payload: JwtPayload = { sub: user.id, email: user.email, role: user.role };
@@ -126,18 +114,25 @@ describe('Orders (e2e)', () => {
       .set('Authorization', `Bearer ${token}`);
 
   /**
-   * A customer with a real placed order, so stock was actually taken and a
-   * cancel has something to give back.
+   * A customer with a real placed order, so stock was actually held and a
+   * cancel has something to release.
    */
   const placeOrder = async (stock: number, quantity: number) => {
-    const product = await createProduct(stock);
-    const buyer = await createBuyer([{ productId: product.id, quantity }]);
+    const entry = await createEntry(stock);
+    const buyer = await createBuyer([{ catalogEntryId: entry.id, quantity }]);
     const placed = await checkout(buyer.token).expect(201);
-    return { ...buyer, product, order: placed.body as Order };
+    return { ...buyer, entry, order: placed.body as Order };
   };
 
-  const stockOf = async (productId: string) =>
-    (await prisma.product.findUniqueOrThrow({ where: { id: productId } })).stock;
+  /** The demo's holds on a listing. */
+  const heldOf = async (catalogEntryId: string) =>
+    (await prisma.catalogEntry.findUniqueOrThrow({ where: { id: catalogEntryId } })).reservedQty;
+
+  /** Copies left to sell: the shop's count less the demo's holds. */
+  const leftOf = async (catalogEntryId: string) => {
+    const entry = await prisma.catalogEntry.findUniqueOrThrow({ where: { id: catalogEntryId } });
+    return entry.stockQty! - entry.reservedQty;
+  };
 
   /**
    * The test the design doc calls "the one that matters": ten buyers, one
@@ -147,9 +142,9 @@ describe('Orders (e2e)', () => {
   it.each([1, 2, 3, 4, 5])(
     'sells the last copy exactly once under concurrent checkout (round %i)',
     async () => {
-      const product = await createProduct(1);
+      const entry = await createEntry(1);
       const buyers = await Promise.all(
-        Array.from({ length: 10 }, () => createBuyer([{ productId: product.id, quantity: 1 }])),
+        Array.from({ length: 10 }, () => createBuyer([{ catalogEntryId: entry.id, quantity: 1 }])),
       );
 
       const responses = await Promise.all(buyers.map(({ token }) => checkout(token)));
@@ -162,13 +157,12 @@ describe('Orders (e2e)', () => {
         const body = res.body as InsufficientStockError;
         expect(body.code).toBe('INSUFFICIENT_STOCK');
         expect(body.items).toEqual([
-          { productId: product.id, title: product.title, requested: 1, available: 0 },
+          { catalogEntryId: entry.id, title: entry.album, requested: 1, available: 0 },
         ]);
       }
 
-      const after = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
-      expect(after.stock).toBe(0);
-      expect(await prisma.orderItem.count({ where: { productId: product.id } })).toBe(1);
+      expect(await heldOf(entry.id)).toBe(1);
+      expect(await prisma.orderItem.count({ where: { catalogEntryId: entry.id } })).toBe(1);
 
       // The losers rolled back, so their carts are untouched and they can
       // adjust and retry.
@@ -183,31 +177,27 @@ describe('Orders (e2e)', () => {
   /**
    * Opposite cart orders are the textbook deadlock: A locks X then wants Y, B
    * locks Y then wants X. With enough stock both must succeed; without the sort
-   * in takeStock, Postgres would abort one of them.
+   * in holdStock, Postgres would abort one of them.
    */
   it.each([1, 2, 3, 4, 5])(
     'does not deadlock when carts hold the same records in opposite order (round %i)',
     async () => {
-      const [x, y] = await Promise.all([createProduct(10), createProduct(10)]);
+      const [x, y] = await Promise.all([createEntry(10), createEntry(10)]);
       const [a, b] = await Promise.all([
         createBuyer([
-          { productId: x.id, quantity: 1 },
-          { productId: y.id, quantity: 1 },
+          { catalogEntryId: x.id, quantity: 1 },
+          { catalogEntryId: y.id, quantity: 1 },
         ]),
         createBuyer([
-          { productId: y.id, quantity: 1 },
-          { productId: x.id, quantity: 1 },
+          { catalogEntryId: y.id, quantity: 1 },
+          { catalogEntryId: x.id, quantity: 1 },
         ]),
       ]);
 
       const responses = await Promise.all([checkout(a.token), checkout(b.token)]);
 
       expect(responses.map((res) => res.status)).toEqual([201, 201]);
-      const stock = await prisma.product.findMany({
-        where: { id: { in: [x.id, y.id] } },
-        select: { stock: true },
-      });
-      expect(stock).toEqual([{ stock: 8 }, { stock: 8 }]);
+      expect([await leftOf(x.id), await leftOf(y.id)]).toEqual([8, 8]);
     },
   );
 
@@ -216,8 +206,8 @@ describe('Orders (e2e)', () => {
    * the same cart lines; only the one that deletes them may order.
    */
   it('places one order when the same cart is submitted twice at once', async () => {
-    const product = await createProduct(5);
-    const { user, token } = await createBuyer([{ productId: product.id, quantity: 2 }]);
+    const entry = await createEntry(5);
+    const { user, token } = await createBuyer([{ catalogEntryId: entry.id, quantity: 2 }]);
 
     const responses = await Promise.all([checkout(token), checkout(token)]);
 
@@ -229,21 +219,26 @@ describe('Orders (e2e)', () => {
     const loser = responses.find((res) => res.status === 409)!;
     expect(['CART_CHANGED', 'CART_EMPTY']).toContain((loser.body as { code: string }).code);
 
-    const after = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
-    expect(after.stock).toBe(3);
+    expect(await leftOf(entry.id)).toBe(3);
     expect(await prisma.order.count({ where: { userId: user.id } })).toBe(1);
   });
 
-  it('lists every short line at once, and takes no stock from the lines that fit', async () => {
-    const [plenty, short, gone] = await Promise.all([
-      createProduct(10),
-      createProduct(1),
-      createProduct(0),
+  it('lists every short line at once, and holds nothing for the lines that fit', async () => {
+    const [plenty, short, gone, soldOut] = await Promise.all([
+      createEntry(10),
+      createEntry(1),
+      createEntry(0),
+      createEntry(4),
     ]);
+    await prisma.catalogEntry.update({
+      where: { id: soldOut.id },
+      data: { availability: 'sold_out' },
+    });
     const { token } = await createBuyer([
-      { productId: plenty.id, quantity: 2 },
-      { productId: short.id, quantity: 3 },
-      { productId: gone.id, quantity: 1 },
+      { catalogEntryId: plenty.id, quantity: 2 },
+      { catalogEntryId: short.id, quantity: 3 },
+      { catalogEntryId: gone.id, quantity: 1 },
+      { catalogEntryId: soldOut.id, quantity: 1 },
     ]);
 
     const res = await checkout(token).expect(409);
@@ -252,14 +247,15 @@ describe('Orders (e2e)', () => {
     expect(body.code).toBe('INSUFFICIENT_STOCK');
     expect(body.items).toEqual(
       expect.arrayContaining([
-        { productId: short.id, title: short.title, requested: 3, available: 1 },
-        { productId: gone.id, title: gone.title, requested: 1, available: 0 },
+        { catalogEntryId: short.id, title: short.album, requested: 3, available: 1 },
+        { catalogEntryId: gone.id, title: gone.album, requested: 1, available: 0 },
+        // Its count says 4, but the shop no longer sells it.
+        { catalogEntryId: soldOut.id, title: soldOut.album, requested: 1, available: 0 },
       ]),
     );
-    expect(body.items).toHaveLength(2);
-    // All or nothing: the line that had stock was decremented, then rolled back.
-    const after = await prisma.product.findUniqueOrThrow({ where: { id: plenty.id } });
-    expect(after.stock).toBe(10);
+    expect(body.items).toHaveLength(3);
+    // All or nothing: the line that had stock was held, then rolled back.
+    expect(await heldOf(plenty.id)).toBe(0);
   });
 
   it('refuses an empty cart', async () => {
@@ -270,17 +266,39 @@ describe('Orders (e2e)', () => {
     expect((res.body as { code: string }).code).toBe('CART_EMPTY');
   });
 
-  it('refuses a cart that mixes currencies', async () => {
-    const [twd, usd] = await Promise.all([createProduct(5), createProduct(5)]);
-    await prisma.product.update({ where: { id: usd.id }, data: { currency: 'USD' } });
-    const { token } = await createBuyer([
-      { productId: twd.id, quantity: 1 },
-      { productId: usd.id, quantity: 1 },
+  /**
+   * No count to hold against (Rotten Blues): sold on availability alone, but
+   * held all the same, so the cancel has a hold to release (tracker.md §8).
+   */
+  it('sells a listing with no count, and holds it', async () => {
+    const entry = await createEntry(null);
+    const { token } = await createBuyer([{ catalogEntryId: entry.id, quantity: 3 }]);
+
+    const order = (await checkout(token).expect(201)).body as Order;
+    expect(await heldOf(entry.id)).toBe(3);
+
+    // A stock walk finds a count since; the cancel releases what was held.
+    await prisma.catalogEntry.update({ where: { id: entry.id }, data: { stockQty: 1 } });
+    await cancel(token, order.id).expect(200);
+    expect(await heldOf(entry.id)).toBe(0);
+  });
+
+  /**
+   * The walk lowering the shop's count under what the demo holds: nothing
+   * more can be sold, and the holds stand until their orders end.
+   */
+  it('sells nothing more once the shop’s count falls under the holds', async () => {
+    const { token, entry, order } = await placeOrder(5, 2);
+    await prisma.catalogEntry.update({ where: { id: entry.id }, data: { stockQty: 1 } });
+    const late = await createBuyer([{ catalogEntryId: entry.id, quantity: 1 }]);
+
+    const res = await checkout(late.token).expect(409);
+
+    expect((res.body as InsufficientStockError).items).toEqual([
+      { catalogEntryId: entry.id, title: entry.album, requested: 1, available: 0 },
     ]);
-
-    const res = await checkout(token).expect(409);
-
-    expect((res.body as { code: string }).code).toBe('MIXED_CURRENCY');
+    await cancel(token, order.id).expect(200);
+    expect(await heldOf(entry.id)).toBe(0);
   });
 
   it('requires a signed-in user', async () => {
@@ -288,12 +306,12 @@ describe('Orders (e2e)', () => {
   });
 
   /**
-   * An order is a fact: repricing or deleting a product afterwards must not
-   * change what was bought or what it cost.
+   * An order is a fact: the shop repricing or taking the listing down
+   * afterwards must not change what was bought or what it cost.
    */
-  it('snapshots price and title, surviving a reprice and a delete', async () => {
-    const product = await createProduct(5, 1_500);
-    const { token } = await createBuyer([{ productId: product.id, quantity: 2 }]);
+  it('snapshots price, title and shop, surviving a reprice and a delete', async () => {
+    const entry = await createEntry(5, 1_500);
+    const { token } = await createBuyer([{ catalogEntryId: entry.id, quantity: 2 }]);
 
     const res = await checkout(token).expect(201);
     const order = res.body as Order;
@@ -305,20 +323,21 @@ describe('Orders (e2e)', () => {
       lineCount: 1,
       items: [
         {
-          productId: product.id,
+          productId: null,
+          supplier: 'tht',
           quantity: 2,
           unitPriceCents: 1_500,
           lineTotalCents: 3_000,
-          title: product.title,
-          artist: product.artist,
+          title: entry.album,
+          artist: 'Test Artist',
         },
       ],
     });
     // The server cleared the cart it ordered from.
-    expect(await prisma.cartItem.count({ where: { productId: product.id } })).toBe(0);
+    expect(await prisma.cartItem.count({ where: { catalogEntryId: entry.id } })).toBe(0);
 
-    await prisma.product.update({ where: { id: product.id }, data: { priceCents: 9_999 } });
-    await prisma.product.delete({ where: { id: product.id } });
+    await prisma.catalogEntry.update({ where: { id: entry.id }, data: { priceCents: 9_999 } });
+    await prisma.catalogEntry.delete({ where: { id: entry.id } });
 
     const stored = await prisma.order.findUniqueOrThrow({
       where: { id: order.id },
@@ -328,9 +347,10 @@ describe('Orders (e2e)', () => {
     expect(stored.items).toEqual([
       expect.objectContaining({
         // Link nulled by the delete; the snapshot is what's left to render.
-        productId: null,
+        catalogEntryId: null,
+        supplier: 'tht',
         unitPriceCents: 1_500,
-        title: product.title,
+        title: entry.album,
       }),
     ]);
   });
@@ -342,8 +362,8 @@ describe('Orders (e2e)', () => {
    */
   describe('idempotency key', () => {
     it('answers a repeat with the order the first request placed', async () => {
-      const product = await createProduct(5);
-      const { user, token } = await createBuyer([{ productId: product.id, quantity: 2 }]);
+      const entry = await createEntry(5);
+      const { user, token } = await createBuyer([{ catalogEntryId: entry.id, quantity: 2 }]);
       const key = randomUUID();
 
       const first = await checkout(token, key).expect(201);
@@ -353,22 +373,20 @@ describe('Orders (e2e)', () => {
       expect((repeat.body as Order).id).toBe((first.body as Order).id);
       expect(await prisma.order.count({ where: { userId: user.id } })).toBe(1);
       // Stock moved once, for the first request only.
-      const after = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
-      expect(after.stock).toBe(3);
+      expect(await leftOf(entry.id)).toBe(3);
     });
 
     it.each([1, 2, 3])(
       'places one order when the same key arrives twice at once (round %i)',
       async () => {
-        const product = await createProduct(5);
-        const { user, token } = await createBuyer([{ productId: product.id, quantity: 1 }]);
+        const entry = await createEntry(5);
+        const { user, token } = await createBuyer([{ catalogEntryId: entry.id, quantity: 1 }]);
         const key = randomUUID();
 
         const responses = await Promise.all([checkout(token, key), checkout(token, key)]);
 
         expect(await prisma.order.count({ where: { userId: user.id } })).toBe(1);
-        const after = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
-        expect(after.stock).toBe(4);
+        expect(await leftOf(entry.id)).toBe(4);
 
         // One request created the order; the other either reads it back, or —
         // in the window before the winner commits — is asked to retry.
@@ -385,8 +403,8 @@ describe('Orders (e2e)', () => {
     );
 
     it('treats a different key as a new attempt', async () => {
-      const product = await createProduct(5);
-      const { token } = await createBuyer([{ productId: product.id, quantity: 1 }]);
+      const entry = await createEntry(5);
+      const { token } = await createBuyer([{ catalogEntryId: entry.id, quantity: 1 }]);
 
       await checkout(token, randomUUID()).expect(201);
       // A new attempt against a cart the first one consumed.
@@ -396,10 +414,10 @@ describe('Orders (e2e)', () => {
     });
 
     it('scopes keys to the customer', async () => {
-      const product = await createProduct(5);
+      const entry = await createEntry(5);
       const key = 'shared-key-not-a-uuid';
-      const alice = await createBuyer([{ productId: product.id, quantity: 1 }]);
-      const bob = await createBuyer([{ productId: product.id, quantity: 1 }]);
+      const alice = await createBuyer([{ catalogEntryId: entry.id, quantity: 1 }]);
+      const bob = await createBuyer([{ catalogEntryId: entry.id, quantity: 1 }]);
 
       const first = await checkout(alice.token, key).expect(201);
       // Bob's checkout is untouched by Alice having used the same string.
@@ -410,12 +428,12 @@ describe('Orders (e2e)', () => {
 
     /** A failed attempt writes no order, so its key is free to try again. */
     it('does not consume the key when the checkout failed', async () => {
-      const product = await createProduct(1);
-      const { user, token } = await createBuyer([{ productId: product.id, quantity: 5 }]);
+      const entry = await createEntry(1);
+      const { user, token } = await createBuyer([{ catalogEntryId: entry.id, quantity: 5 }]);
       const key = randomUUID();
 
       await checkout(token, key).expect(409);
-      await prisma.product.update({ where: { id: product.id }, data: { stock: 5 } });
+      await prisma.catalogEntry.update({ where: { id: entry.id }, data: { stockQty: 5 } });
       const retry = await checkout(token, key).expect(201);
 
       expect((retry.body as Order).lineCount).toBe(1);
@@ -423,23 +441,22 @@ describe('Orders (e2e)', () => {
     });
 
     it('refuses an over-long key without ordering anything', async () => {
-      const product = await createProduct(5);
-      const { user, token } = await createBuyer([{ productId: product.id, quantity: 1 }]);
+      const entry = await createEntry(5);
+      const { user, token } = await createBuyer([{ catalogEntryId: entry.id, quantity: 1 }]);
 
       await checkout(token, 'k'.repeat(IDEMPOTENCY_KEY_MAX_LENGTH + 1)).expect(400);
 
       expect(await prisma.order.count({ where: { userId: user.id } })).toBe(0);
-      const after = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
-      expect(after.stock).toBe(5);
+      expect(await leftOf(entry.id)).toBe(5);
     });
   });
 
   describe('cancelling', () => {
     type NotPendingError = { code: string; status: string };
 
-    it('cancels a pending order and returns its stock', async () => {
-      const { token, product, order } = await placeOrder(5, 2);
-      expect(await stockOf(product.id)).toBe(3);
+    it('cancels a pending order and releases its hold', async () => {
+      const { token, entry, order } = await placeOrder(5, 2);
+      expect(await leftOf(entry.id)).toBe(3);
 
       const res = await cancel(token, order.id).expect(200);
 
@@ -447,11 +464,11 @@ describe('Orders (e2e)', () => {
       expect(body.status).toBe('cancelled');
       expect(body.cancelReason).toBe('customer');
       expect(body.cancelledAt).not.toBeNull();
-      expect(await stockOf(product.id)).toBe(5);
+      expect(await leftOf(entry.id)).toBe(5);
     });
 
-    it('refuses a second cancel and returns the stock only once', async () => {
-      const { token, product, order } = await placeOrder(5, 2);
+    it('refuses a second cancel and releases the hold only once', async () => {
+      const { token, entry, order } = await placeOrder(5, 2);
 
       await cancel(token, order.id).expect(200);
       const second = await cancel(token, order.id).expect(409);
@@ -459,7 +476,7 @@ describe('Orders (e2e)', () => {
       expect(second.body as NotPendingError).toEqual(
         expect.objectContaining({ code: 'ORDER_NOT_PENDING', status: 'cancelled' }),
       );
-      expect(await stockOf(product.id)).toBe(5);
+      expect(await leftOf(entry.id)).toBe(5);
     });
 
     /**
@@ -468,29 +485,30 @@ describe('Orders (e2e)', () => {
      * reason as the checkout races.
      */
     it.each([1, 2, 3, 4, 5])(
-      'returns the stock once when two cancels race (round %i)',
+      'releases the hold once when two cancels race (round %i)',
       async () => {
-        const { token, product, order } = await placeOrder(5, 2);
+        const { token, entry, order } = await placeOrder(5, 2);
 
         const responses = await Promise.all([cancel(token, order.id), cancel(token, order.id)]);
 
         expect(responses.map((res) => res.status).sort()).toEqual([200, 409]);
-        expect(await stockOf(product.id)).toBe(5);
+        expect(await leftOf(entry.id)).toBe(5);
       },
     );
 
-    it('skips a line whose product was deleted and restocks the rest', async () => {
-      const [kept, deleted] = await Promise.all([createProduct(5), createProduct(5)]);
+    /** The shop took a listing down, and the sync deleted it, holds and all. */
+    it('skips a line whose listing was deleted and releases the rest', async () => {
+      const [kept, deleted] = await Promise.all([createEntry(5), createEntry(5)]);
       const { token } = await createBuyer([
-        { productId: kept.id, quantity: 2 },
-        { productId: deleted.id, quantity: 1 },
+        { catalogEntryId: kept.id, quantity: 2 },
+        { catalogEntryId: deleted.id, quantity: 1 },
       ]);
       const order = (await checkout(token).expect(201)).body as Order;
-      await prisma.product.delete({ where: { id: deleted.id } });
+      await prisma.catalogEntry.delete({ where: { id: deleted.id } });
 
       await cancel(token, order.id).expect(200);
 
-      expect(await stockOf(kept.id)).toBe(5);
+      expect(await leftOf(kept.id)).toBe(5);
     });
 
     it("hides another customer's order and leaves it pending", async () => {
@@ -503,8 +521,8 @@ describe('Orders (e2e)', () => {
       expect(after.status).toBe('pending');
     });
 
-    it('refuses to cancel a paid order and keeps its stock taken', async () => {
-      const { token, product, order } = await placeOrder(5, 2);
+    it('refuses to cancel a paid order and keeps its hold', async () => {
+      const { token, entry, order } = await placeOrder(5, 2);
       await prisma.order.update({
         where: { id: order.id },
         data: { status: 'paid', paidAt: new Date() },
@@ -515,7 +533,7 @@ describe('Orders (e2e)', () => {
       expect(res.body as NotPendingError).toEqual(
         expect.objectContaining({ code: 'ORDER_NOT_PENDING', status: 'paid' }),
       );
-      expect(await stockOf(product.id)).toBe(3);
+      expect(await leftOf(entry.id)).toBe(3);
     });
   });
 
@@ -542,8 +560,8 @@ describe('Orders (e2e)', () => {
     const orderRow = (orderId: string) =>
       prisma.order.findUniqueOrThrow({ where: { id: orderId } });
 
-    it('cancels an order past its deadline and returns its stock', async () => {
-      const { product, order } = await placeOrder(5, 2);
+    it('cancels an order past its deadline and releases its hold', async () => {
+      const { entry, order } = await placeOrder(5, 2);
       await expire(order.id);
 
       await expiry.sweep();
@@ -552,20 +570,20 @@ describe('Orders (e2e)', () => {
       expect(after.status).toBe('cancelled');
       expect(after.cancelReason).toBe('expired');
       expect(after.cancelledAt).not.toBeNull();
-      expect(await stockOf(product.id)).toBe(5);
+      expect(await leftOf(entry.id)).toBe(5);
     });
 
     it('leaves an order alone before its deadline', async () => {
-      const { product, order } = await placeOrder(5, 2);
+      const { entry, order } = await placeOrder(5, 2);
 
       await expiry.sweep();
 
       expect((await orderRow(order.id)).status).toBe('pending');
-      expect(await stockOf(product.id)).toBe(3);
+      expect(await leftOf(entry.id)).toBe(3);
     });
 
     it('leaves a paid order alone even past its deadline', async () => {
-      const { product, order } = await placeOrder(5, 2);
+      const { entry, order } = await placeOrder(5, 2);
       await prisma.order.update({
         where: { id: order.id },
         data: { status: 'paid', paidAt: new Date(), expiresAt: new Date(Date.now() - 1_000) },
@@ -574,20 +592,20 @@ describe('Orders (e2e)', () => {
       await expiry.sweep();
 
       expect((await orderRow(order.id)).status).toBe('paid');
-      expect(await stockOf(product.id)).toBe(3);
+      expect(await leftOf(entry.id)).toBe(3);
     });
 
     /** What running on several instances looks like: overlapping sweeps. */
     it.each([1, 2, 3, 4, 5])(
-      'returns the stock once when two sweeps overlap (round %i)',
+      'releases the hold once when two sweeps overlap (round %i)',
       async () => {
-        const { product, order } = await placeOrder(5, 2);
+        const { entry, order } = await placeOrder(5, 2);
         await expire(order.id);
 
         await Promise.all([expiry.sweep(), expiry.sweep()]);
 
         expect((await orderRow(order.id)).status).toBe('cancelled');
-        expect(await stockOf(product.id)).toBe(5);
+        expect(await leftOf(entry.id)).toBe(5);
       },
     );
 
@@ -596,9 +614,9 @@ describe('Orders (e2e)', () => {
      * the order says which, and the copies come back once.
      */
     it.each([1, 2, 3, 4, 5])(
-      'returns the stock once when the customer and the sweep race (round %i)',
+      'releases the hold once when the customer and the sweep race (round %i)',
       async () => {
-        const { token, product, order } = await placeOrder(5, 2);
+        const { token, entry, order } = await placeOrder(5, 2);
         await expire(order.id);
 
         const [res] = await Promise.all([cancel(token, order.id), expiry.sweep()]);
@@ -606,7 +624,7 @@ describe('Orders (e2e)', () => {
         const after = await orderRow(order.id);
         expect(after.status).toBe('cancelled');
         expect(after.cancelReason).toBe(res.status === 200 ? 'customer' : 'expired');
-        expect(await stockOf(product.id)).toBe(5);
+        expect(await leftOf(entry.id)).toBe(5);
       },
     );
   });

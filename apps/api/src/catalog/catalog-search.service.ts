@@ -10,6 +10,7 @@ import { Prisma } from '../generated/prisma/client';
 import type { Availability } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { groupIntoAlbums, type Listing } from './album-grouping';
+import { CATALOG_CURRENCY } from './catalog-currency';
 import { containsPattern, readListingTitle, searchTitleOf } from './listing-title';
 import { taipeiToday } from './supplier-adapter';
 
@@ -148,9 +149,6 @@ interface OfferRead {
   stockQty: number | null;
   lastCheckedAt: Date;
 }
-
-/** The catalogs' prices are the shops' own, all in TWD (§4). */
-const CATALOG_CURRENCY = 'TWD';
 
 /**
  * A listing's price and stock as far as search knows (§7.2, §12.3): the

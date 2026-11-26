@@ -82,29 +82,25 @@ model CartItem {
   cartId String
   cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
 
-  /// The offer's record, written alongside it until step 5's contract
-  /// migration drops the column (tracker.md §14); nothing reads it.
-  productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  /// The shop's offer this line buys (tracker.md §5.6). Cascade: a line for
-  /// an offer that's gone can't be bought.
-  offerId String
-  offer   Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  /// The listing this line buys, in a shop's copied catalog (tracker.md
+  /// §8). Cascade: a listing the shop took down, and the sync deleted,
+  /// can't be bought.
+  catalogEntryId String
+  catalogEntry   CatalogEntry @relation(fields: [catalogEntryId], references: [id], onDelete: Cascade)
 
   quantity Int @default(1)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// Adding an offer already in the cart must bump its quantity rather than
-  /// create a second line, so the pair is unique. The same record from two
-  /// shops is two lines.
-  @@unique([cartId, offerId])
+  /// Adding a listing already in the cart must bump its quantity rather
+  /// than create a second line, so the pair is unique. The same album from
+  /// two shops is two lines.
+  @@unique([cartId, catalogEntryId])
   @@index([cartId])
-  /// Postgres doesn't index foreign keys itself; deleting an offer looks up
-  /// its cart lines by this.
-  @@index([offerId])
+  /// Postgres doesn't index foreign keys itself; the sync deleting a
+  /// listing looks up its cart lines by this.
+  @@index([catalogEntryId])
 }
 
 /// A placed order: a record of what was bought, never recalculated.
@@ -173,21 +169,27 @@ model OrderItem {
   orderId String
   order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  /// A link back to the product while it exists. SetNull on delete: the copy
-  /// below is what the order renders from, so the line outlives the product.
+  /// A link back to the product, on orders from before checkout moved onto
+  /// the shops' catalogs (tracker.md step 5); null on later ones. SetNull on
+  /// delete: the copy below is what the order renders from, so the line
+  /// outlives the product.
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
-  /// The offer bought, while it exists — SetNull for the same reason as
-  /// productId. `supplier` is copied, so a past order still says which shop
-  /// it was "bought" from after the offer is gone. Both null on orders placed
-  /// before checkout moved onto offers (tracker.md step 5).
-  offerId  String?
-  offer    Offer?    @relation(fields: [offerId], references: [id], onDelete: SetNull)
-  supplier Supplier?
+  /// Never written; step 5's contract migration drops it.
+  offerId String?
+  offer   Offer?  @relation(fields: [offerId], references: [id], onDelete: SetNull)
+
+  /// The listing bought, while the shop still lists it — SetNull for the
+  /// same reason as productId: a cancel skips a line whose listing is gone
+  /// (tracker.md §8). `supplier` is copied, so a past order still says which
+  /// shop it was "bought" from. Both null on orders from before step 5.
+  catalogEntryId String?
+  catalogEntry   CatalogEntry? @relation(fields: [catalogEntryId], references: [id], onDelete: SetNull)
+  supplier       Supplier?
 
   quantity       Int
-  /// Copied from Product at checkout and never read from it again.
+  /// Copied at checkout and never read from the listing again.
   unitPriceCents Int
   title          String
   artist         String
@@ -281,7 +283,6 @@ model Product {
   /// store rather than read off the record.
   categories Category[]
 
-  cartItems  CartItem[]
   /// Lines of past orders. Deleting a product nulls their link, not the line.
   orderItems OrderItem[]
 
@@ -424,7 +425,6 @@ model Offer {
   snapshots          OfferSnapshot[]
   /// The users tracking this listing.
   watches            OfferWatch[]
-  cartItems          CartItem[]
   orderItems         OrderItem[]
   supplierOrderItems SupplierOrderItem[]
 
@@ -496,6 +496,14 @@ model CatalogEntry {
   /// Its place among the records the shop's home page features, 1 first,
   /// as the last sync read it (§7.2); null when it isn't featured.
   popularRank     Int?
+  /// The demo checkout's holds (tracker.md §8), kept apart from stockQty so
+  /// the stock walk can't overwrite them; no sync writes it. CHECK (>= 0)
+  /// in the migration SQL.
+  reservedQty     Int           @default(0)
+
+  /// The demo store's cart lines buying it, and order lines that bought it.
+  cartItems  CartItem[]
+  orderItems OrderItem[]
 
   /// A listing is copied once per shop; sync upserts on it.
   @@unique([supplier, externalId])
