@@ -8,7 +8,6 @@ import {
   NotFoundException,
   Param,
   Patch,
-  Post,
   Query,
   UseGuards,
   UsePipes,
@@ -20,7 +19,6 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { toPageArgs } from '../common/pagination';
-import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
 
@@ -70,13 +68,6 @@ export class ProductsController {
   }
 
   // ---- Admin-only write routes ----
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
-  @Post()
-  create(@Body() dto: CreateProductDto): Promise<Product> {
-    return this.products.create(dto);
-  }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

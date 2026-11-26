@@ -95,7 +95,7 @@ describe('Records from the catalog (e2e)', () => {
     await prisma.catalogEntry.deleteMany();
     // Tracked records (offers and snapshots cascade), then artists: an artist
     // left by another test would own the names these tests resolve.
-    await prisma.product.deleteMany({ where: { artistId: { not: null } } });
+    await prisma.product.deleteMany();
     await prisma.artist.deleteMany();
     admin = await createUser('admin');
   });
@@ -231,13 +231,6 @@ describe('Records from the catalog (e2e)', () => {
       expect(await snapshotsOf(product.offers[0].id)).toEqual([
         expect.objectContaining({ priceCents: 150_000, availability: 'in_stock', stockQty: 3 }),
       ]);
-      // The demo store's columns, filled until step 5.
-      expect(await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({
-        artist: '坂本龍一',
-        priceCents: 150_000,
-        currency: 'TWD',
-        stock: 0,
-      });
     });
 
     it('keeps an expected date as the day the shop wrote', async () => {
@@ -406,10 +399,6 @@ describe('Records from the catalog (e2e)', () => {
       expect(new Date(refreshed.offers[1].lastCheckedAt).getTime()).toBeGreaterThan(
         new Date('2026-11-01T00:00:00Z').getTime(),
       );
-      // The demo store's price follows the first offer.
-      expect(
-        (await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).priceCents,
-      ).toBe(130_000);
     });
 
     it('a date or availability moving is a change too', async () => {
@@ -454,12 +443,7 @@ describe('Records from the catalog (e2e)', () => {
       expect(refreshed.offers[0]).toMatchObject({ lastError: null, lastErrorAt: null });
     });
 
-    it('404 for a record that isn’t tracked, or isn’t there', async () => {
-      const demo = await prisma.product.create({
-        data: { title: 'Demo', artist: 'Demo Artist', priceCents: 100_000 },
-      });
-
-      await refresh(demo.id).expect(404);
+    it('404 for a record that isn’t there', async () => {
       await refresh(randomUUID()).expect(404);
     });
   });
@@ -633,18 +617,11 @@ describe('Records from the catalog (e2e)', () => {
       const cosmic = await listing('cosmic', { priceCents: 140_000 });
       const attached = (await attach(product.id, { catalogEntryId: cosmic.entryId }).expect(201))
         .body as AttachOfferResult;
-      const [thtOffer, cosmicOffer] = attached.product.offers;
+      const [, cosmicOffer] = attached.product.offers;
 
       await detach(cosmicOffer.id).expect(204);
       expect(await prisma.offer.findUnique({ where: { id: cosmicOffer.id } })).toBeNull();
       expect(await snapshotsOf(cosmicOffer.id)).toEqual([]);
-
-      // With the first one gone, the demo store's price is the next one's.
-      await attach(product.id, { catalogEntryId: cosmic.entryId }).expect(201);
-      await detach(thtOffer.id).expect(204);
-      expect(
-        (await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).priceCents,
-      ).toBe(140_000);
     });
 
     it('keeps a record’s last offer, and 404s an offer that isn’t there', async () => {
@@ -696,9 +673,6 @@ describe('Records from the catalog (e2e)', () => {
 
       expect(result.name).toBe('Ryuichi Sakamoto');
       expect(namesOf(result)).toEqual(sorted(['坂本龍一', 'Ryuichi Sakamoto']));
-      expect((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).artist).toBe(
-        'Ryuichi Sakamoto',
-      );
     });
 
     it('removes a wrong name', async () => {
@@ -997,12 +971,7 @@ describe('Records from the catalog (e2e)', () => {
       expect(read.offers[0].imageUrl).toBe('https://cdn.example-shop.test/red.jpg');
     });
 
-    it('404 for a record that isn’t tracked, or isn’t there', async () => {
-      const demo = await prisma.product.create({
-        data: { title: 'Demo', artist: 'Demo Artist', priceCents: 100_000 },
-      });
-
-      await offersOf(demo.id).expect(404);
+    it('404 for a record that isn’t there', async () => {
       await offersOf(randomUUID()).expect(404);
     });
 

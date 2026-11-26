@@ -7,7 +7,6 @@ import { usePathname } from 'next/navigation';
 /** Admin destinations, in the order they appear. */
 const LINKS = [
   { href: '/admin/products', label: 'Products' },
-  { href: '/admin/products/new', label: 'Add product' },
   { href: '/admin/categories', label: 'Categories' },
 ];
 /**

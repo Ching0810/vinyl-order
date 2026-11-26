@@ -176,10 +176,6 @@ model OrderItem {
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
-  /// Never written; step 5's contract migration drops it.
-  offerId String?
-  offer   Offer?  @relation(fields: [offerId], references: [id], onDelete: SetNull)
-
   /// The listing bought, while the shop still lists it — SetNull for the
   /// same reason as productId: a cancel skips a line whose listing is gone
   /// (tracker.md §8). `supplier` is copied, so a past order still says which
@@ -253,28 +249,22 @@ model PaymentEvent {
   receivedAt DateTime @default(now())
 }
 
-/// A vinyl product the store sells. Money is stored as integer cents to avoid
-/// floating-point rounding.
+/// A record, tracked from a shop's listing: what the shops' offers of it are
+/// compared on (tracker.md §5.1). It has no price of its own — a price
+/// belongs to a shop's offer.
 model Product {
-  id         String   @id @default(uuid())
-  title      String
-  artist     String
-  year       Int?
-  format     String[]
-  imageUrl   String?
-  priceCents Int
-  currency   String   @default("TWD")
-  stock      Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(uuid())
+  title     String
+  format    String[]
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  /// Who made the record, under all their names. Null until products are
-  /// created from a shop's catalog (tracker.md step 8), which also drops the
-  /// `artist` string. Restrict: an artist with records can't vanish.
-  artistId    String?
-  artistRef   Artist?   @relation(fields: [artistId], references: [id], onDelete: Restrict)
+  /// Who made the record, under all their names. Restrict: an artist with
+  /// records can't vanish.
+  artistId    String
+  artist      Artist    @relation(fields: [artistId], references: [id], onDelete: Restrict)
   /// Often unknown: shops give a date for pre-orders and rarely otherwise.
-  /// Replaces `year` in step 8.
   releaseDate DateTime? @db.Date
   /// What tells pressings of one album apart, e.g. "日版", "限量彩膠".
   edition     String?
@@ -409,9 +399,6 @@ model Offer {
   /// The supplier's count; only a refresh writes it. Null: the shop doesn't
   /// say. CHECK (>= 0) in the migration SQL.
   stockQty     Int?
-  /// The demo checkout's holds, kept apart from stockQty so a refresh can't
-  /// overwrite them (tracker.md §8). CHECK (>= 0) in the migration SQL.
-  reservedQty  Int          @default(0)
   /// Expected release or shipping date, when the shop gives one.
   expectedAt   DateTime?    @db.Date
 
@@ -425,7 +412,6 @@ model Offer {
   snapshots          OfferSnapshot[]
   /// The users tracking this listing.
   watches            OfferWatch[]
-  orderItems         OrderItem[]
   supplierOrderItems SupplierOrderItem[]
 
   createdAt DateTime @default(now())

@@ -3,7 +3,6 @@ import type { AttachOfferInput, AttachOfferResult } from '@vinyl-order/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { uniqueByNormalized } from './artist-resolver';
-import { syncDemoPrice } from './demo-price';
 import { ListingReader, offerCreateOf } from './listing-reader';
 import { offerConflict } from './offer.errors';
 import { findProductWithOffers } from './product-with-offers.mapper';
@@ -31,9 +30,9 @@ export class OffersService {
   async attach(productId: string, input: AttachOfferInput): Promise<AttachOfferResult> {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
-      select: { artistRef: { select: { aliases: { select: { normalized: true } } } } },
+      select: { artist: { select: { aliases: { select: { normalized: true } } } } },
     });
-    if (!product?.artistRef) throw new NotFoundException('Product not found');
+    if (!product) throw new NotFoundException('Product not found');
 
     const { adapter, url } = await this.listingToRead(input);
     const parsed = await this.listings.read(adapter, url);
@@ -46,7 +45,7 @@ export class OffersService {
         this.listings.rethrowIfTracked(error, adapter.supplier, parsed.externalId),
       );
 
-    const known = new Set(product.artistRef.aliases.map((alias) => alias.normalized));
+    const known = new Set(product.artist.aliases.map((alias) => alias.normalized));
     const attached = await findProductWithOffers(this.prisma, productId);
     if (!attached) throw new NotFoundException('Product not found');
     return {
@@ -74,7 +73,6 @@ export class OffersService {
         throw offerConflict('LAST_OFFER', 'A record keeps at least one offer.');
       }
       await tx.offer.delete({ where: { id: offerId } });
-      await syncDemoPrice(tx, offer.productId);
     });
   }
 

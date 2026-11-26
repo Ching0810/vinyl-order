@@ -140,8 +140,7 @@ export class WatchesService {
                 id: true,
                 title: true,
                 imageUrl: true,
-                artist: true,
-                artistRef: { select: { name: true } },
+                artist: { select: { name: true } },
                 offers: {
                   select: {
                     id: true,
@@ -172,7 +171,7 @@ export class WatchesService {
         offerId: offer.id,
         productId: product.id,
         title: product.title,
-        artist: product.artistRef?.name ?? product.artist,
+        artist: product.artist.name,
         imageUrl: offer.imageUrl ?? product.imageUrl,
         sourceTitle: offer.sourceTitle,
         supplier: offer.supplier,

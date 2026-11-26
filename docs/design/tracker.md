@@ -151,17 +151,17 @@ SupplierOrder      an order I placed at a shop
 
 ### 5.1 `Product`: only what the shops share
 
-| Column                            | Change    | Note                                                        |
-| --------------------------------- | --------- | ----------------------------------------------------------- |
-| `title`, `imageUrl`               | kept      | prefilled from the first shop, editable                     |
-| `artist` → `artistId`             | changed   | an `Artist` row with all its names (§5.7)                   |
-| `releaseDate`                     | new, null | replaces `year`; often unknown (§6.2)                       |
-| `format`                          | kept      | e.g. `2LP`                                                  |
-| `edition`                         | new, null | "歐美版", "日版", "限量彩膠" — what tells pressings apart   |
-| `priceCents`, `currency`, `stock` | dropped   | a price belongs to a shop, not to the record                |
-| `discogsReleaseId`, `genres`      | dropped   | Discogs's fields                                            |
-| `isHot`, `slideOrder`             | dropped   | the carousel and hot list give way to the dashboard (§12.2) |
-| categories                        | kept      | tabs for the visitors' list                                 |
+| Column                            | Change    | Note                                                                                                 |
+| --------------------------------- | --------- | ---------------------------------------------------------------------------------------------------- |
+| `title`, `imageUrl`               | kept      | prefilled from the first shop, editable                                                              |
+| `artist` → `artistId`             | changed   | an `Artist` row with all its names (§5.7)                                                            |
+| `releaseDate`                     | new, null | replaces `year`; often unknown (§6.2)                                                                |
+| `format`                          | kept      | e.g. `2LP`                                                                                           |
+| `edition`                         | new, null | "歐美版", "日版", "限量彩膠" — what tells pressings apart                                            |
+| `priceCents`, `currency`, `stock` | dropped   | a price belongs to a shop, not to the record; the API reads "from NT$…" off the offers in stock (§8) |
+| `discogsReleaseId`, `genres`      | dropped   | Discogs's fields                                                                                     |
+| `isHot`, `slideOrder`             | dropped   | the carousel and hot list give way to the dashboard (§12.2)                                          |
+| categories                        | kept      | tabs for the visitors' list                                                                          |
 
 ### 5.2 `Offer`: the same columns for every supplier
 
@@ -1611,13 +1611,14 @@ Each step is its own PR.
    the cart on offers (#112, merged while checkout still read
    `Product.stock`, so the demo couldn't place an order until 5.3).
    **Changed 2026-11-26**: the demo sells catalog entries, not offers (§8),
-   so 5.2b replaces 5.2 — the cart on `CatalogEntry`, from the search
-   results and the comparison. Then 5.3 checkout's guard on
-   `CatalogEntry.reservedQty`, and cancel and expiry releasing it; 5.4 the
-   e2e tests; 5.5 the contract migration (the columns above,
-   `Offer.reservedQty`, `OrderItem.offerId`, `syncDemoPrice`), "from NT$"
-   cards and the admin edit form; 5.6 progress here. 5.2b–5.3 go in one PR,
-   so the demo can order again when it merges.
+   so 5.2b replaces 5.2. _(Done: 5.2b–5.4 #113 — the cart on
+   `CatalogEntry`, from the search results and the comparison; checkout's
+   guard on `CatalogEntry.reservedQty`, and cancel and expiry releasing it;
+   their e2e tests. 5.5–5.6 in one PR — the contract migration (the columns
+   above, `Offer.reservedQty`, `OrderItem.offerId`, `syncDemoPrice`; records
+   without an artist deleted, none on Neon), "from NT$" cards, the admin
+   edit form without "Add product", and the record page the comparison
+   alone, the old detail view gone with nothing left to show it.)_
 6. EasyStore and Shopify adapters, with fixtures — THT, Cosmic and Rotten
    Blues:
    - **6a.** One fetcher for every adapter, with §6.4's guard (https, the

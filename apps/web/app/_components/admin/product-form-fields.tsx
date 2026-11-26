@@ -8,20 +8,22 @@ import CategoryFields from '@/components/admin/category-fields';
 import Panel from '@/components/ui/panel';
 
 /**
- * Product form state. Numbers/lists are edited as UI-friendly shapes (price in
- * major units, format as comma-separated text) and mapped to
- * CreateProductInput on submit — the API owns the real contract (priceCents,
- * string[]). Shared with the page that orchestrates the form.
+ * Product form state. Lists and blanks are edited as UI-friendly shapes
+ * (format as comma-separated text, an empty date or edition as '') and
+ * mapped to UpdateProductInput on submit — the API owns the real contract
+ * (string[], null). Shared with the page that orchestrates the form.
+ *
+ * What was read from a shop's listing, to correct, and the categories to
+ * file it under. No price, stock or artist: a price belongs to a shop's
+ * offer, and an artist is edited as an artist (tracker.md §8).
  */
 export interface ProductFormValues {
   title: string;
-  artist: string;
-  year: number | null;
+  /** `YYYY-MM-DD`, or '' when unknown. */
+  releaseDate: string;
+  edition: string;
   formatText: string;
   imageUrl: string | null;
-  price: number;
-  currency: string;
-  stock: number;
   categoryIds: string[];
 }
 
@@ -51,51 +53,18 @@ export default function ProductFormFields({
           <Field.ErrorText>{errors.title?.message}</Field.ErrorText>
         </Field.Root>
 
-        <Field.Root invalid={Boolean(errors.artist)} required>
-          <Field.Label>Artist</Field.Label>
-          <Input {...register('artist', { required: 'Artist is required' })} />
-          <Field.ErrorText>{errors.artist?.message}</Field.ErrorText>
-        </Field.Root>
-
         <SimpleGrid columns={{ base: 1, sm: 2 }} gap="4">
           <Field.Root>
-            <Field.Label>Year</Field.Label>
-            <Input
-              type="number"
-              {...register('year', { setValueAs: (v) => (v === '' ? null : Number(v)) })}
-            />
+            <Field.Label>Release date</Field.Label>
+            <Input type="date" {...register('releaseDate')} />
+          </Field.Root>
+          <Field.Root>
+            <Field.Label>Edition</Field.Label>
+            <Input {...register('edition')} placeholder="日版, 限量彩膠" />
           </Field.Root>
           <Field.Root>
             <Field.Label>Format (comma-separated)</Field.Label>
-            <Input {...register('formatText')} placeholder="Vinyl, LP, Album" />
-          </Field.Root>
-        </SimpleGrid>
-      </Panel>
-
-      <Panel title="Pricing & stock">
-        <SimpleGrid columns={{ base: 1, sm: 3 }} gap="4">
-          <Field.Root invalid={Boolean(errors.price)} required>
-            <Field.Label>Price</Field.Label>
-            <Input
-              type="number"
-              step="1"
-              {...register('price', {
-                setValueAs: (v) => (v === '' ? NaN : Number(v)),
-                validate: (v) => (Number.isFinite(v) && v >= 0) || 'Enter a valid price',
-              })}
-            />
-            <Field.ErrorText>{errors.price?.message}</Field.ErrorText>
-          </Field.Root>
-          <Field.Root>
-            <Field.Label>Currency</Field.Label>
-            <Input {...register('currency', { required: true })} />
-          </Field.Root>
-          <Field.Root>
-            <Field.Label>Stock</Field.Label>
-            <Input
-              type="number"
-              {...register('stock', { setValueAs: (v) => (v === '' ? 0 : Number(v)) })}
-            />
+            <Input {...register('formatText')} placeholder="LP, 2LP" />
           </Field.Root>
         </SimpleGrid>
       </Panel>

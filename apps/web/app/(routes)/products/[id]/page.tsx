@@ -6,10 +6,8 @@ import { useParams } from 'next/navigation';
 
 import PageShell from '@/components/layout/page-shell';
 import Comparison from '@/components/product/comparison';
-import Detail from '@/components/product/detail';
 import { HttpError } from '@/lib/core/http';
 import { useProductOffers } from '@/services/queries/offers/useProductOffers';
-import { useProduct } from '@/services/queries/products/useProduct';
 
 /** Placeholder matching the detail layout so nothing shifts when data lands. */
 const DetailSkeleton = () => (
@@ -31,20 +29,18 @@ const DetailSkeleton = () => (
 );
 /**
  * `/products/:id` — a tracked record's comparison of every version at every
- * shop (tracker.md §12.3); the demo store's own records, which have no
- * offers, as before.
+ * shop (tracker.md §12.3). Every record is tracked from a shop's listing and
+ * keeps at least one offer, so the comparison is the record's page.
  */
 export default function ProductDetailPage() {
   const params = useParams<{ id: string }>();
-  const comparison = useProductOffers(params.id);
-  const { data: product, isPending, error } = useProduct(params.id);
+  const { data: product, isPending, error } = useProductOffers(params.id);
 
   const notFound = error instanceof HttpError && error.status === 404;
 
   const renderBody = () => {
-    if (comparison.data) return <Comparison product={comparison.data} />;
-    // The comparison decides the layout: wait for it, as for the record.
-    if (comparison.isPending || isPending) return <DetailSkeleton />;
+    if (product) return <Comparison product={product} />;
+    if (isPending) return <DetailSkeleton />;
 
     if (notFound) {
       return (
@@ -65,15 +61,11 @@ export default function ProductDetailPage() {
       );
     }
 
-    if (error || !product) {
-      return (
-        <Text color="fg.error" py="16">
-          Couldn&apos;t load this record. Please retry.
-        </Text>
-      );
-    }
-
-    return <Detail product={product} />;
+    return (
+      <Text color="fg.error" py="16">
+        Couldn&apos;t load this record. Please retry.
+      </Text>
+    );
   };
 
   return (

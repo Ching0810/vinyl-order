@@ -44,11 +44,6 @@ export class ProductFromCatalogService {
             format: parsed.format ? [parsed.format] : [],
             edition: parsed.edition,
             artistId: artist.id,
-            // The demo store's columns, read until step 5 drops them (§14).
-            artist: artist.name,
-            priceCents: offer.priceCents,
-            currency: offer.currency,
-            stock: 0,
             offers: { create: offer },
           },
           select: { id: true },

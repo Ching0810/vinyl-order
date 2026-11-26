@@ -52,8 +52,6 @@ export class ArtistsService {
       });
       if (input.name !== undefined && input.name !== artist.name) {
         await tx.artist.update({ where: { id }, data: { name } });
-        // The demo store's artist string, read until step 5 drops it (§14).
-        await tx.product.updateMany({ where: { artistId: id }, data: { artist: name } });
       }
 
       const updated = await tx.artist.findUniqueOrThrow({

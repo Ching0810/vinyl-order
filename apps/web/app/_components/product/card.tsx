@@ -5,8 +5,12 @@ import NextLink from 'next/link';
 
 import { formatPrice } from '@/lib/utils/currency';
 /**
- * One catalog tile: cover art + title/artist + year·format + price, linking to
- * the product's detail page. Server-renderable — no client state.
+ * One catalog tile: cover art + title/artist + year·format + "from" price,
+ * linking to the record's comparison. Server-renderable — no client state.
+ *
+ * The price is the lowest among the record's versions in stock, as "from
+ * NT$…" (tracker.md §8); a record none of whose versions can be bought shows
+ * none.
  *
  * The cover is the only saturated element, so the frame around it stays flat
  * until hover, when the card lifts and the art scales inside its fixed square.
@@ -69,10 +73,12 @@ export default function Card({ product, eager = false }: { product: Product; eag
             {product.artist}
           </Text>
           <Text fontSize="2xs" color="fg.subtle" letterSpacing="label" textTransform="uppercase">
-            {[product.year, product.format[0]].filter(Boolean).join(' · ')}
+            {[product.releaseDate?.slice(0, 4), product.format[0]].filter(Boolean).join(' · ')}
           </Text>
           <Text fontWeight="bold" fontSize="lg" pt="1" mt="auto">
-            {formatPrice(product.priceCents, product.currency)}
+            {product.fromPriceCents === null
+              ? null
+              : `from ${formatPrice(product.fromPriceCents, product.currency)}`}
           </Text>
         </Stack>
       </NextLink>

@@ -7,8 +7,8 @@ import NextLink from 'next/link';
 import { formatPrice } from '@/lib/utils/currency';
 
 /**
- * One catalogue row: what an editor scans (cover, release, price, stock) and
- * the two things they can do to it.
+ * One catalogue row: what an editor scans (cover, release, the lowest price
+ * in stock) and the two things they can do to it.
  *
  * @param product - the product to show
  * @param deleting - its delete request is in flight
@@ -31,8 +31,11 @@ const Row = ({
     </Table.Cell>
     <Table.Cell truncate>{product.title}</Table.Cell>
     <Table.Cell truncate>{product.artist}</Table.Cell>
-    <Table.Cell>{formatPrice(product.priceCents, product.currency)}</Table.Cell>
-    <Table.Cell>{product.stock}</Table.Cell>
+    <Table.Cell>
+      {product.fromPriceCents === null
+        ? '—'
+        : formatPrice(product.fromPriceCents, product.currency)}
+    </Table.Cell>
     <Table.Cell>
       <HStack gap="2" justify="start">
         <Button asChild size="xs" variant="outline">
@@ -55,7 +58,7 @@ const Row = ({
 /**
  * The admin catalogue table.
  *
- * Six fixed-width columns can't compress onto a phone, so the table keeps its
+ * Five fixed-width columns can't compress onto a phone, so the table keeps its
  * natural width and scrolls sideways inside its box rather than squeezing the
  * cells illegibly.
  *
@@ -86,8 +89,7 @@ export default function ProductTable({
             <Table.ColumnHeader w="20">Cover</Table.ColumnHeader>
             <Table.ColumnHeader w="35">Title</Table.ColumnHeader>
             <Table.ColumnHeader w="30">Artist</Table.ColumnHeader>
-            <Table.ColumnHeader w="35">Price</Table.ColumnHeader>
-            <Table.ColumnHeader w="30">Stock</Table.ColumnHeader>
+            <Table.ColumnHeader w="35">From</Table.ColumnHeader>
             <Table.ColumnHeader w="44">Actions</Table.ColumnHeader>
           </Table.Row>
         </Table.Header>
