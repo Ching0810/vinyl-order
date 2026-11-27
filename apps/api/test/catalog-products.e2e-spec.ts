@@ -29,6 +29,7 @@ import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import type { JwtPayload } from '../src/auth/jwt.strategy';
 import { SUPPLIER_ADAPTERS, type SupplierAdapters } from '../src/catalog/adapters';
+import { OfferRefreshService } from '../src/catalog/offer-refresh.service';
 import { normalizeName, searchTitleOf } from '../src/catalog/listing-title';
 import { ShopFetchError } from '../src/catalog/shop-fetcher';
 import type { ParsedOffer, SupplierAdapter } from '../src/catalog/supplier-adapter';
@@ -1304,6 +1305,86 @@ describe('Records from the catalog (e2e)', () => {
       await server().get('/notifications').expect(401);
       await server().get('/notifications/unread-count').expect(401);
       await server().post('/notifications/read').expect(401);
+    });
+  });
+
+  describe('the nightly re-read', () => {
+    const refreshTracked = () => app.get(OfferRefreshService).refreshTracked();
+
+    /**
+     * An album at three shops' listings, one record: THT's and Cosmic's
+     * tracked, Rotten Blues' only held for the comparison.
+     */
+    const album = async () => {
+      const tht = await listing('tht', { priceCents: 150_000 });
+      const cosmic = await listing('cosmic', { priceCents: 140_000 });
+      const rotten = await listing('rotten_blues', { priceCents: 160_000 });
+      const ids = [tht.entryId, cosmic.entryId, rotten.entryId];
+      const thtMember = await createUser('customer');
+      const cosmicMember = await createUser('customer');
+      for (const [member, picked] of [
+        [thtMember, tht],
+        [cosmicMember, cosmic],
+      ] as const) {
+        await server()
+          .post('/watches')
+          .set(auth(member))
+          .send({ catalogEntryId: picked.entryId, catalogEntryIds: ids })
+          .expect(201);
+      }
+      return { tht, cosmic, rotten, thtMember, cosmicMember };
+    };
+
+    const dropsOf = async (token: string) =>
+      (
+        (await server().get('/notifications').set(auth(token)).expect(200))
+          .body as Connection<Notification>
+      ).edges.map(({ node }) => [node.fromPriceCents, node.toPriceCents]);
+
+    it('reads only the offers someone tracks, and tells a drop to whoever tracks it', async () => {
+      const { tht, cosmic, rotten, thtMember, cosmicMember } = await album();
+      pages.set(tht.url, { ...tht.offer, priceCents: 120_000 });
+      pages.set(cosmic.url, { ...cosmic.offer, stockQty: 1 });
+      pages.set(rotten.url, { ...rotten.offer, priceCents: 100_000 });
+      fetched.length = 0;
+
+      const report = await refreshTracked();
+
+      expect(fetched.sort()).toEqual([tht.url, cosmic.url].sort());
+      expect(report).toMatchObject({ offers: 2, changed: 2, drops: 1, failed: 0 });
+      expect(await dropsOf(thtMember)).toEqual([[150_000, 120_000]]);
+      expect(await dropsOf(cosmicMember)).toEqual([]);
+      // Untracked: not read, so its price is the one from before.
+      const untracked = await prisma.offer.findUniqueOrThrow({
+        where: {
+          supplier_externalId: { supplier: 'rotten_blues', externalId: rotten.offer.externalId },
+        },
+      });
+      expect(untracked.priceCents).toBe(160_000);
+    });
+
+    it('a page that fails is counted and kept; the others are still read', async () => {
+      const { tht, cosmic, cosmicMember } = await album();
+      pages.set(tht.url, new ShopFetchError('failed', 'answered 503', true));
+      pages.set(cosmic.url, { ...cosmic.offer, priceCents: 130_000 });
+
+      const report = await refreshTracked();
+
+      expect(report).toMatchObject({ offers: 2, changed: 1, drops: 1, failed: 1 });
+      expect(await dropsOf(cosmicMember)).toEqual([[140_000, 130_000]]);
+      const thtOffer = await prisma.offer.findUniqueOrThrow({
+        where: { supplier_externalId: { supplier: 'tht', externalId: tht.offer.externalId } },
+      });
+      expect(thtOffer).toMatchObject({ priceCents: 150_000, lastError: 'answered 503' });
+    });
+
+    it('reads nothing when nothing is tracked', async () => {
+      const tht = await listing('tht');
+      await created({ catalogEntryId: tht.entryId });
+      fetched.length = 0;
+
+      expect(await refreshTracked()).toMatchObject({ offers: 0, changed: 0, failed: 0 });
+      expect(fetched).toEqual([]);
     });
   });
 

@@ -1,7 +1,10 @@
 # Copies the shops' catalogs into the production database every night: their
 # sitemaps, then their list pages for price and stock (docs/design/tracker.md
 # §7.2, step 12a). The same command as by hand, `catalog:sync all`, so a run
-# here and one on a laptop do the same thing.
+# here and one on a laptop do the same thing. Then every offer some member
+# tracks is read again from its product page, and a price drop told to whoever
+# tracks it (§10, §5.10, step 12b): `offers:refresh`, in the same run, so one
+# schedule and one run at a time cover both.
 name: Catalog sync
 
 on:
@@ -22,8 +25,9 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    # ~28 minutes on a laptop (§7.2); the margin is for a slow shop, not a hang
-    # — the fetcher times out each request at 30 s.
+    # ~28 minutes on a laptop (§7.2), and a page a tracked offer after; the
+    # margin is for a slow shop, not a hang — the fetcher times out each
+    # request at 30 s.
     timeout-minutes: 90
     # The production database's secret is readable only from this environment.
     environment: production
@@ -56,9 +60,22 @@ jobs:
       # Direct, not pooled: one long batch of writes (deploy.md §7).
       # verify-full spelled out, as everywhere the pg driver connects.
       - name: Sync the catalogs
+        id: sync
         working-directory: apps/api
         env:
           NEON_URL: ${{ secrets.NEON_VINYL_DIRECT }}
         run: |
           export DATABASE_URL="${NEON_URL/sslmode=require/sslmode=verify-full}"
           pnpm catalog:sync all
+      # Even when the sync failed: the tracked offers are read from their own
+      # pages, not from the catalog, so a shop's sitemap failing doesn't stale
+      # them. Not when the run was cancelled, or the sync never started — a
+      # setup step failed, and this would fail the same way.
+      - name: Read the tracked offers again
+        if: ${{ !cancelled() && steps.sync.outcome != 'skipped' }}
+        working-directory: apps/api
+        env:
+          NEON_URL: ${{ secrets.NEON_VINYL_DIRECT }}
+        run: |
+          export DATABASE_URL="${NEON_URL/sslmode=require/sslmode=verify-full}"
+          pnpm offers:refresh
