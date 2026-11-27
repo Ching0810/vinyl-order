@@ -67,6 +67,11 @@ export const catalogAlbumListingSchema = catalogSearchHitSchema.extend({
   stockQty: z.number().int().nullable(),
   /** When the values were read; null when nothing has read them. */
   checkedAt: z.iso.datetime().nullable(),
+  /**
+   * The admin split it out of its album (§7.3): it is an album of its own,
+   * and can be put back.
+   */
+  split: z.boolean(),
 });
 export type CatalogAlbumListing = z.infer<typeof catalogAlbumListingSchema>;
 
@@ -91,6 +96,15 @@ export const catalogAlbumSchema = z.object({
   productId: z.uuid().nullable(),
 });
 export type CatalogAlbum = z.infer<typeof catalogAlbumSchema>;
+
+/**
+ * POST /admin/album-splits — take a listing out of its album, for everyone
+ * (§7.3, §5.9). Put back with DELETE /admin/album-splits/:catalogEntryId.
+ */
+export const albumSplitSchema = z.object({
+  catalogEntryId: z.uuid(),
+});
+export type AlbumSplitInput = z.infer<typeof albumSplitSchema>;
 
 /**
  * A listing popular at its shop (GET /catalog/popular): among what its

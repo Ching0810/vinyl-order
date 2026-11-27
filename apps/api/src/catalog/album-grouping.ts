@@ -25,12 +25,17 @@ export interface AlbumGroup<T extends Listing = Listing> {
  * its OKNOTOK box — different records. A title with no artist read stays an
  * album of its own: "Greatest Hits" alone says nothing.
  *
+ * A listing the admin split out (§5.9) is an album of its own too: it joins
+ * no album, and none joins it.
+ *
  * @param listings - best first; albums keep that order, by their best listing
  * @param today - `YYYY-MM-DD` in Taipei, for reading a title's dates
+ * @param isSplit - whether the admin split a listing out of its album
  */
 export const groupIntoAlbums = <T extends Listing>(
   listings: T[],
   today: string,
+  isSplit: (listing: T) => boolean = () => false,
 ): AlbumGroup<T>[] => {
   const read = listings.map((listing) => {
     const title = readListingTitle(listing.title, today);
@@ -40,6 +45,7 @@ export const groupIntoAlbums = <T extends Listing>(
         ? splitArtistNames(title.artist).map(normalizeName).filter(Boolean)
         : [],
       album: normalizeName(title.title),
+      split: isSplit(listing),
     };
   });
 
@@ -49,6 +55,8 @@ export const groupIntoAlbums = <T extends Listing>(
     const group = groups.find(({ first }) => {
       const best = read[first];
       return (
+        !listing.split &&
+        !best.split &&
         listing.album !== '' &&
         listing.album === best.album &&
         listing.artists.some((artist) => best.artists.includes(artist))

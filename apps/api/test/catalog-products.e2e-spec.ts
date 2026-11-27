@@ -93,6 +93,7 @@ describe('Records from the catalog (e2e)', () => {
     pages.clear();
     fetched.length = 0;
     await prisma.catalogEntry.deleteMany();
+    await prisma.albumSplit.deleteMany();
     // Tracked records (offers and snapshots cascade), then artists: an artist
     // left by another test would own the names these tests resolve.
     await prisma.product.deleteMany();
@@ -532,12 +533,9 @@ describe('Records from the catalog (e2e)', () => {
     });
   });
 
-  describe('attaching and detaching offers', () => {
+  describe('attaching offers', () => {
     const attach = (productId: string, body: object) =>
       server().post(`/admin/products/${productId}/offers`).set(auth(admin)).send(body);
-
-    const detach = (offerId: string) =>
-      server().delete(`/admin/offers/${offerId}`).set(auth(admin));
 
     it('attaches a confirmed candidate, and proposes the names its shop wrote', async () => {
       const { entryId } = await listing('tht', { artistNames: ['坂本龍一'] });
@@ -610,28 +608,152 @@ describe('Records from the catalog (e2e)', () => {
       await attach(product.id, { catalogEntryId: cosmic.entryId }).expect(502);
       expect(await prisma.offer.count({ where: { productId: product.id } })).toBe(1);
     });
+  });
 
-    it('detaches a wrong match, its history with it, and the demo price follows', async () => {
-      const { entryId } = await listing('tht');
-      const product = await created({ catalogEntryId: entryId });
-      const cosmic = await listing('cosmic', { priceCents: 140_000 });
-      const attached = (await attach(product.id, { catalogEntryId: cosmic.entryId }).expect(201))
-        .body as AttachOfferResult;
-      const [, cosmicOffer] = attached.product.offers;
+  /** The admin's corrections to search's albums (tracker.md §7.3, §5.9). */
+  describe('splitting a listing out of its album', () => {
+    const split = (catalogEntryId: string, token = admin) =>
+      server().post('/admin/album-splits').set(auth(token)).send({ catalogEntryId });
 
-      await detach(cosmicOffer.id).expect(204);
-      expect(await prisma.offer.findUnique({ where: { id: cosmicOffer.id } })).toBeNull();
-      expect(await snapshotsOf(cosmicOffer.id)).toEqual([]);
+    const putBack = (catalogEntryId: string, token = admin) =>
+      server().delete(`/admin/album-splits/${catalogEntryId}`).set(auth(token));
+
+    const offerAt = (url: string) => prisma.offer.findFirstOrThrow({ where: { url } });
+
+    /** A record holding THT's listing and Cosmic's, Cosmic's tracked by a member. */
+    const recordOfTwo = async () => {
+      const tht = await listing('tht');
+      const product = await created({ catalogEntryId: tht.entryId });
+      const cosmic = await listing('cosmic', {
+        sourceTitle: '坂本龍一 - 1996 (黑膠唱片 LP)',
+        priceCents: 140_000,
+      });
+      await server()
+        .post(`/admin/products/${product.id}/offers`)
+        .set(auth(admin))
+        .send({ catalogEntryId: cosmic.entryId })
+        .expect(201);
+      const cosmicOffer = await offerAt(cosmic.url);
+      const member = await prisma.user.create({
+        data: { email: `member-${randomUUID()}@test.local`, passwordHash: 'unused' },
+      });
+      await prisma.offerWatch.create({ data: { userId: member.id, offerId: cosmicOffer.id } });
+      return { product, tht, cosmic, cosmicOffer, memberId: member.id };
+    };
+
+    it('moves its offer to a record of its own, with its history and its trackers', async () => {
+      const { product, cosmic, cosmicOffer, memberId } = await recordOfTwo();
+
+      await split(cosmic.entryId).expect(204);
+
+      const moved = await prisma.offer.findUniqueOrThrow({
+        where: { id: cosmicOffer.id },
+        include: { product: true, snapshots: true, watches: true },
+      });
+      expect(moved.productId).not.toBe(product.id);
+      expect(moved.product).toMatchObject({
+        title: '1996',
+        artistId: product.artist.id,
+        format: ['LP'],
+      });
+      expect(moved.snapshots).toHaveLength(1);
+      expect(moved.watches.map((watch) => watch.userId)).toEqual([memberId]);
+      // The comparison it was wrongly in no longer lists it.
+      const left = (await server().get(`/products/${product.id}/offers`).expect(200))
+        .body as ProductWithOffers;
+      expect(left.offers.map((offer) => offer.supplier)).toEqual(['tht']);
     });
 
-    it('keeps a record’s last offer, and 404s an offer that isn’t there', async () => {
-      const { entryId } = await listing('tht');
-      const product = await created({ catalogEntryId: entryId });
+    it('leaves a record’s only offer where it is', async () => {
+      const tht = await listing('tht');
+      const product = await created({ catalogEntryId: tht.entryId });
 
-      expect((await detach(product.offers[0].id).expect(409)).body).toMatchObject({
-        code: 'LAST_OFFER',
-      });
-      await detach(randomUUID()).expect(404);
+      await split(tht.entryId).expect(204);
+
+      expect((await offerAt(tht.url)).productId).toBe(product.id);
+      expect(
+        await prisma.albumSplit.findFirstOrThrow({ where: { externalId: tht.offer.externalId } }),
+      ).toMatchObject({ fromProductId: null });
+    });
+
+    it('puts it back: its offer goes home, and its own record goes', async () => {
+      const { product, cosmic, cosmicOffer } = await recordOfTwo();
+      await split(cosmic.entryId).expect(204);
+      const own = (await offerAt(cosmic.url)).productId;
+
+      await putBack(cosmic.entryId).expect(204);
+
+      expect((await offerAt(cosmic.url)).productId).toBe(product.id);
+      expect(await prisma.product.findUnique({ where: { id: own } })).toBeNull();
+      expect(
+        await prisma.albumSplit.count({ where: { externalId: cosmic.offer.externalId } }),
+      ).toBe(0);
+      expect(await prisma.offerWatch.count({ where: { offerId: cosmicOffer.id } })).toBe(1);
+    });
+
+    /** Its own record holds another listing since: moving it would leave that alone. */
+    it('puts back without moving an offer whose record holds more now', async () => {
+      const { cosmic } = await recordOfTwo();
+      await split(cosmic.entryId).expect(204);
+      const own = (await offerAt(cosmic.url)).productId;
+      const other = await listing('rotten_blues');
+      await server()
+        .post(`/admin/products/${own}/offers`)
+        .set(auth(admin))
+        .send({ catalogEntryId: other.entryId })
+        .expect(201);
+
+      await putBack(cosmic.entryId).expect(204);
+
+      expect((await offerAt(cosmic.url)).productId).toBe(own);
+    });
+
+    it('is no error twice over, and 404s a listing that isn’t there', async () => {
+      const { product, cosmic } = await recordOfTwo();
+
+      await split(cosmic.entryId).expect(204);
+      const own = (await offerAt(cosmic.url)).productId;
+      await split(cosmic.entryId).expect(204);
+      expect((await offerAt(cosmic.url)).productId).toBe(own);
+
+      await putBack(cosmic.entryId).expect(204);
+      await putBack(cosmic.entryId).expect(204);
+      expect((await offerAt(cosmic.url)).productId).toBe(product.id);
+
+      await split(randomUUID()).expect(404);
+      await putBack(randomUUID()).expect(404);
+    });
+
+    it('is the admin’s alone', async () => {
+      const { entryId } = await listing('tht');
+      const customer = await createUser('customer');
+
+      await split(entryId, customer).expect(403);
+      await putBack(entryId, customer).expect(403);
+      await server().post('/admin/album-splits').send({ catalogEntryId: entryId }).expect(401);
+      expect(await prisma.albumSplit.count()).toBe(0);
+    });
+
+    /** A page open since before the split still sends the old album. */
+    it('keeps tracking from attaching a split listing, or a split one’s companions', async () => {
+      const tht = await listing('tht');
+      const cosmic = await listing('cosmic');
+      const rottenBlues = await listing('rotten_blues');
+      const member = await createUser('customer');
+      await split(cosmic.entryId).expect(204);
+      const shopsTracked = async (catalogEntryId: string, catalogEntryIds: string[]) => {
+        const response = await server()
+          .post('/watches')
+          .set(auth(member))
+          .send({ catalogEntryId, catalogEntryIds })
+          .expect(201);
+        return (response.body as TrackListingResult).product.offers.map((offer) => offer.supplier);
+      };
+
+      expect(await shopsTracked(tht.entryId, [tht.entryId, cosmic.entryId])).toEqual(['tht']);
+      expect(await shopsTracked(cosmic.entryId, [cosmic.entryId, rottenBlues.entryId])).toEqual([
+        'cosmic',
+      ]);
     });
   });
 

@@ -26,7 +26,7 @@ const byBestBuy = (a: Offer, b: Offer): number =>
  * availability, count and expected date, and how old they are. The lowest
  * price that can be bought is marked; the versions the user tracks are
  * highlighted, and tracked or let go from here. Anyone signed in reads the
- * record again; the admin also takes a wrong match off. A version in stock
+ * record again. A wrong match is corrected in search (§7.3). A version in stock
  * goes into the demo store's cart from its row, as from search: the cart
  * buys the shop's listing (tracker.md §8).
  *
@@ -74,13 +74,11 @@ export default function Comparison({ product }: { product: ProductWithOffers }) 
           {offers.map((offer) => (
             <OfferRow
               key={offer.id}
-              productId={product.id}
               fallbackImageUrl={product.imageUrl}
               offer={offer}
               lowest={isBuyable(offer) && offer.priceCents === lowest}
               watched={watched.has(offer.id)}
               signedIn={!!user}
-              isAdmin={user?.role === 'admin'}
             />
           ))}
         </Stack>

@@ -17,30 +17,24 @@ import OfferActions from './offer-actions';
  * availability, count and expected date, and how old they are. A version
  * the user tracks is highlighted.
  *
- * @param productId - the record, for detaching
  * @param fallbackImageUrl - the record's cover, for an offer read before covers were kept
  * @param offer - the offer
  * @param lowest - its price is the lowest that can be bought
  * @param watched - the user tracks it
  * @param signedIn - whether tracking is offered
- * @param isAdmin - whether detaching is offered
  */
 export default function OfferRow({
-  productId,
   fallbackImageUrl,
   offer,
   lowest,
   watched,
   signedIn,
-  isAdmin,
 }: {
-  productId: string;
   fallbackImageUrl: string | null;
   offer: Offer;
   lowest: boolean;
   watched: boolean;
   signedIn: boolean;
-  isAdmin: boolean;
 }) {
   const badge = AVAILABILITY_BADGE[offer.availability];
 
@@ -73,12 +67,10 @@ export default function OfferRow({
           <OfferFacts offer={offer} />
         </Stack>
         <OfferActions
-          productId={productId}
           offerId={offer.id}
           catalogEntryId={offer.availability === 'in_stock' ? offer.catalogEntryId : null}
           watched={watched}
           signedIn={signedIn}
-          isAdmin={isAdmin}
         />
       </HStack>
     </chakra.li>

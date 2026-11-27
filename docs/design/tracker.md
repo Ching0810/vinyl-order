@@ -359,6 +359,18 @@ First built as `ProductWatch` — a user and an album, one listing a shop —
 then replaced the same day: the pressing the first member picked was fixed
 for everyone after.
 
+### 5.9 `AlbumSplit`: a listing the admin took out of its album
+
+`supplier`, `externalId` — the key, a listing as both `CatalogEntry` and
+`Offer` know it — `fromProductId` (null, SetNull) and `createdAt`. A row
+says **this listing is an album of its own**: search never groups it with
+another, nor another with it (§7.3). `fromProductId` is the record its offer
+was moved out of, for an undo to move it back.
+
+Keyed by the listing, not by `CatalogEntry.id`: a listing the shop takes
+down and puts back is deleted and copied again under a new id (§7.2), and
+the correction should outlast that.
+
 ## 6. Supplier adapters
 
 ### 6.1 The interface
@@ -684,6 +696,52 @@ said so. The listing picked must be read; then it goes on the member's
 list (§5.8). A version a record lacks is added the next time anyone tracks
 the album.
 
+**Correcting an album** (2026-11-26, the admin's). Grouping by title is
+right almost always and wrong in the cases that matter (§7.3's measure; a
+reissue under the same name, a different record with the same title). The
+admin corrects it where it shows — **in the search results**, on the
+listing: **"Not this album"** takes the listing out of its album, for
+everyone, at once.
+
+- **What is stored is a split** (`AlbumSplit`, §5.9): the listing is an
+  album of its own from then on. Grouping applies the splits before it
+  compares titles, so a split listing heads its own album and nothing
+  joins it.
+- **A record already holding it gives it up.** If the listing is an offer
+  of a record that has other offers, the offer moves to a **new record of
+  its own** — same artist, its title read from the offer's own title —
+  with its snapshots and every member's tracking of it. Nothing a member
+  tracks is lost; the comparison it was wrongly in no longer lists it. An
+  offer that is already its record's only one stays where it is.
+- **Tracking respects it** server-side: `POST /watches` attaches none of a
+  split listing's would-be companions, whatever the client sent — a page
+  open since before the split still sends the old album.
+- **Undo** ("Put back", on the split listing) deletes the split; the
+  listing groups by title again at the next search. If its offer was moved
+  out and its new record still holds only it, the offer moves back to
+  `fromProductId` (if that record still exists) and the emptied record is
+  deleted.
+- Admin-only (`RolesGuard`), as matching a record's offers always was
+  (§5.8): it changes what every member sees.
+
+**⚖️ Decision: split a listing, not a pair.** A split says "this listing is
+alone", not "these two aren't the same". One stored fact a correction, one
+button, and grouping stays a single pass. What it can't express: an album
+wrongly merged two against two — two shops' original and two shops'
+reissue under one title — where splitting one listing also parts it from
+its true partner. Splitting all four leaves four albums of one; a "join"
+would be the fix, if it ever happens often. Weighed and not chosen: **pairs
+of listings that aren't the same album** (cannot-link constraints) — exact,
+but grouping becomes constraint solving and the admin a pair at a time;
+**a group key the admin sets** — exact and simple to group by, but needs a
+way to name and pick groups in the UI.
+
+**⚖️ Decision: move the offer out, don't delete it.** The record's detach
+(below, step 4) deleted the offer with its history and every member's
+tracking of it. A listing wrongly grouped is still a real listing someone
+may track; it was the album that was wrong. So it keeps its history and
+its trackers, in a record of its own.
+
 Adding a record by hand, the admin's way:
 
 1. Search one supplier — the "primary" — and pick an entry.
@@ -728,9 +786,12 @@ Adding a record by hand, the admin's way:
    pasted link's, the shop known by its host — is fetched into an offer
    with its first snapshot, and the artist names in its title the artist
    lacks are **proposed** as new aliases (§5.7), not added: a wrong match
-   would otherwise teach the artist a stranger's name. A wrong match is
+   would otherwise teach the artist a stranger's name. A wrong match was
    detached, its history with it; **a record keeps at least one offer**
    (409 `LAST_OFFER`) — the record itself is what's deleted then.
+   **Changed 2026-11-26**: wrong matches are corrected in search, by
+   splitting the listing (above); the comparison's "Not this album" and
+   `DELETE /admin/offers/:id` are removed.
 
 **⚖️ Decision: confirm, don't auto-attach.** The cases that matter are the
 hard ones: "歐美版" against "日版", a colour variant, a reissue. Similar
@@ -1432,7 +1493,9 @@ orders, which any signed-in user has for their own (§12.1).
 | `POST /admin/products/from-catalog`             | create a product and its first offer from an entry                   |
 | `GET /admin/products/:id/candidates`            | candidates at the other suppliers                                    |
 | `POST /admin/products/:id/offers`               | attach a confirmed candidate (or a pasted URL)                       |
-| `DELETE /admin/offers/:id`                      | detach a wrong match                                                 |
+| `DELETE /admin/offers/:id`                      | removed 2026-11-26: a wrong match is split in search (§7.3)          |
+| `POST /admin/album-splits`                      | take a listing out of its album, for everyone (§7.3, §5.9)           |
+| `DELETE /admin/album-splits/:catalogEntryId`    | put it back                                                          |
 | `POST /admin/products/:id/refresh`              | re-fetch the product's offers                                        |
 | `PATCH /admin/artists/:id`                      | rename; add or remove aliases                                        |
 | `GET /products/:id/offers`                      | a tracked record and every offer; public, 404 if not tracked         |
@@ -1512,7 +1575,9 @@ The carousel, the hot list and the admin hero page go (step 1).
   title, its price, availability, count when the shop keeps one, and how
   old they are, and its own "Track", which puts that version on my list
   and opens the album's product page; an artist the API can't tell asks
-  who. A version I track says so, and opens the page instead.
+  who. A version I track says so, and opens the page instead. **The admin
+  also sees "Not this album"** on each listing of an album of two or more,
+  and "Put back" on a listing split before (§7.3); members see neither.
   Price and stock are **the newer of a record's offer** — read from the
   product page — **and the catalog**, read from the list pages as of the
   shop's last stock walk (§7.2). A listing neither has read (one added
@@ -1527,8 +1592,8 @@ The carousel, the hot list and the admin hero page go (step 1).
   The versions I track are highlighted, tracked or let go from here.
   **Anyone signed in refreshes it** — every offer read again, live — but a
   record at most every ten minutes, so many pressing it read the shops once;
-  a read that failed counts. The admin also takes a wrong match off ("Not
-  this album"). A version in stock goes into the demo store's cart from
+  a read that failed counts. A wrong match is corrected in search, not
+  here (§7.3). A version in stock goes into the demo store's cart from
   its row, as from search (§8). Later: the
   candidates and aliases for the admin, "record an order" per offer, and
   "ordered at THT · preparing" when a supplier order holds it.
@@ -1656,6 +1721,11 @@ Each step is its own PR.
    search, tracking (9a-1, _done_); the search page, with tracking moved to
    listings, `OfferWatch` (9a-2, _done_); the product page's
    comparison (9b); each member's tracked records on the home page (9c).
+   **9d (2026-11-26): the admin corrects albums in search** (§7.3, §5.9),
+   one PR: the `AlbumSplit` table; grouping applying it and tracking
+   respecting it; split and put back, moving an offer out and back; their
+   e2e tests; the search page's buttons for the admin, and the
+   comparison's "Not this album" and `DELETE /admin/offers/:id` removed.
 10. Cosmic — folded into steps 6–7: it is on THT's platform, so it is the
     same adapter configured twice, and the only shop that fills barcodes,
     which matching ranks first (§7.3).

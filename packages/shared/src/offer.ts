@@ -134,7 +134,7 @@ export const attachOfferResultSchema = z.object({
 export type AttachOfferResult = z.infer<typeof attachOfferResultSchema>;
 
 /**
- * Why creating a record, or attaching or detaching an offer, was refused — a
+ * Why creating a record, or attaching an offer, was refused — a
  * code so the page can branch without matching on text.
  *
  * - `OFFER_ALREADY_TRACKED` (409): the listing is already an offer; the body
@@ -145,8 +145,6 @@ export type AttachOfferResult = z.infer<typeof attachOfferResultSchema>;
  *   `artistName`.
  * - `SHOP_NOT_SUPPORTED` (422): no adapter reads this shop yet.
  * - `SHOP_PAGE_UNREADABLE` (502): the shop's page couldn't be fetched or read.
- * - `LAST_OFFER` (409): a record keeps at least one offer; delete the record
- *   instead.
  * - `ARTIST_NAME_ALIAS` (422): the alias that is the artist's name can't be
  *   removed; rename the artist first.
  * - `REFRESH_TOO_SOON` (429): a record is read again at most every ten
@@ -158,7 +156,6 @@ export const offerErrorCodeSchema = z.enum([
   'ARTIST_UNREAD',
   'SHOP_NOT_SUPPORTED',
   'SHOP_PAGE_UNREADABLE',
-  'LAST_OFFER',
   'ARTIST_NAME_ALIAS',
   'REFRESH_TOO_SOON',
 ]);

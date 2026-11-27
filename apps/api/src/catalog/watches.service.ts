@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import type { TrackListingInput, TrackListingResult, WatchedOffer } from '@vinyl-order/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { splitsAmong } from './album-splits';
 import { offerErrorBodyOf, shopPageUnreadable } from './offer.errors';
 import { OffersService } from './offers.service';
 import { ProductFromCatalogService } from './product-from-catalog.service';
@@ -34,6 +35,11 @@ export class WatchesService {
    * page that can't be read, is skipped and said so — except the one being
    * tracked, which must be read; one another record holds is tracked there.
    *
+   * A listing the admin split out of its album (§7.3) has no companions: if
+   * it's the one tracked, none of the others is attached; if it's among the
+   * others, it isn't — whatever the client sent, as a page open since before
+   * the split still sends the old album.
+   *
    * @throws 404 - a listing that isn't in the catalog
    * @throws 409 ARTIST_AMBIGUOUS; 422 ARTIST_UNREAD, SHOP_NOT_SUPPORTED;
    *   502 SHOP_PAGE_UNREADABLE — the tracked listing's page couldn't be read
@@ -47,8 +53,10 @@ export class WatchesService {
     ];
     const found = await this.prisma.catalogEntry.findMany({ where: { id: { in: ids } } });
     if (found.length !== ids.length) throw new NotFoundException('Catalog entry not found');
-    const entries = ids.map((id) => found.find((entry) => entry.id === id)!);
-    const [chosen] = entries;
+    const album = ids.map((id) => found.find((entry) => entry.id === id)!);
+    const [chosen] = album;
+    const isSplit = await splitsAmong(this.prisma, album);
+    const entries = isSplit(chosen) ? [chosen] : album.filter((entry) => !isSplit(entry));
 
     const tracked = await this.prisma.offer.findMany({
       where: { OR: entries.map(({ supplier, externalId }) => ({ supplier, externalId })) },

@@ -10,16 +10,30 @@ import { formatPrice } from '@/lib/utils/currency';
 import { formatTimeAgo } from '@/lib/utils/date';
 
 /**
+ * The admin's corrections to an album, for everyone (tracker.md §7.3): take
+ * a listing out of it, or put one split before back.
+ */
+export interface AlbumCorrections {
+  /** The listing whose split or put-back is running, if any. */
+  pendingId: string | null;
+  onSplit: (listing: CatalogAlbumListing) => void;
+  onPutBack: (listing: CatalogAlbumListing) => void;
+}
+
+/**
  * One album: artist and title, then each listing of it — a version at a
  * shop, with its own cover and the shop's own title, a link there, "Add to
- * cart" when it's in stock, and its own "Track". Two pressings at a shop are two rows: different records,
- * different covers and prices, tracked one at a time.
+ * cart" when it's in stock, and its own "Track". Two pressings at a shop are
+ * two rows: different records, different covers and prices, tracked one at
+ * a time. For the admin, each listing of an album of two or more also has
+ * "Not this album", and a listing split before has "Put back".
  *
  * @param album - the album
  * @param trackingId - the listing whose track is running, if any
  * @param disabled - a track is running
- * @param failure - the listing whose last track failed, and why
+ * @param failure - the listing whose last track or correction failed, and why
  * @param onTrack - track a listing
+ * @param corrections - the admin's, or null for anyone else
  */
 export default function AlbumCard({
   album,
@@ -27,12 +41,14 @@ export default function AlbumCard({
   disabled,
   failure,
   onTrack,
+  corrections,
 }: {
   album: CatalogAlbum;
   trackingId: string | null;
   disabled: boolean;
   failure: { listingId: string; message: string } | null;
   onTrack: (listing: CatalogAlbumListing) => void;
+  corrections: AlbumCorrections | null;
 }) {
   return (
     <Stack as="li" gap="3" py="4" borderBottomWidth="1px" borderColor="border.muted">
@@ -56,6 +72,7 @@ export default function AlbumCard({
             disabled={disabled}
             failure={failure?.listingId === listing.id ? failure.message : null}
             onTrack={() => onTrack(listing)}
+            correction={correctionOf(listing, album, corrections)}
           />
         ))}
       </Stack>
@@ -63,11 +80,37 @@ export default function AlbumCard({
   );
 }
 
+/** An admin's button on a listing: its label, and what it does. */
+interface Correction {
+  label: 'Not this album' | 'Put back';
+  pending: boolean;
+  onClick: () => void;
+}
+
+/**
+ * The admin's button on a listing, if any: "Put back" on one split before;
+ * "Not this album" on one in an album with others, as alone it has nothing
+ * to be taken out of.
+ */
+const correctionOf = (
+  listing: CatalogAlbumListing,
+  album: CatalogAlbum,
+  corrections: AlbumCorrections | null,
+): Correction | null => {
+  if (!corrections) return null;
+  const pending = corrections.pendingId === listing.id;
+  if (listing.split) {
+    return { label: 'Put back', pending, onClick: () => corrections.onPutBack(listing) };
+  }
+  if (album.listings.length < 2) return null;
+  return { label: 'Not this album', pending, onClick: () => corrections.onSplit(listing) };
+};
+
 /**
  * One version at one shop: its cover, shop, whether it can be bought as far
  * as search knows, its own title, "Add to cart" when it's in stock and
- * priced — the demo store sells the shop's listing (tracker.md §8) — and
- * "Track" or "Tracking".
+ * priced — the demo store sells the shop's listing (tracker.md §8) —
+ * "Track" or "Tracking", and the admin's correction.
  */
 const ListingRow = ({
   listing,
@@ -76,6 +119,7 @@ const ListingRow = ({
   disabled,
   failure,
   onTrack,
+  correction,
 }: {
   listing: CatalogAlbumListing;
   productId: string | null;
@@ -83,6 +127,7 @@ const ListingRow = ({
   disabled: boolean;
   failure: string | null;
   onTrack: () => void;
+  correction: Correction | null;
 }) => (
   <Stack as="li" gap="1">
     <HStack gap="3" align="center">
@@ -124,6 +169,18 @@ const ListingRow = ({
             Track
           </Button>
         )}
+        {correction ? (
+          <Button
+            size="xs"
+            variant="ghost"
+            color="fg.muted"
+            borderRadius="full"
+            loading={correction.pending}
+            onClick={correction.onClick}
+          >
+            {correction.label}
+          </Button>
+        ) : null}
       </Stack>
     </HStack>
     {failure ? (
