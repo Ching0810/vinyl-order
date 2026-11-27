@@ -203,7 +203,8 @@ One row per refresh that **changed** something: `offerId`, `priceCents`,
 `availability`, `stockQty`, `expectedAt`, `takenAt`. Writing only changes
 keeps the table small (most refreshes find nothing new) and makes each row
 an event: "dropped to 1300", "back in stock", "date moved to January".
-Alerts (step 12) read these; nothing else does yet. **The first is written
+A price drop also tells whoever tracks the offer (§5.10), written in the
+same transaction as its snapshot. **The first is written
 when the offer is**, so history starts at the first price known and the
 first change has something to be a change from.
 
@@ -370,6 +371,39 @@ was moved out of, for an undo to move it back.
 Keyed by the listing, not by `CatalogEntry.id`: a listing the shop takes
 down and puts back is deleted and copied again under a new id (§7.2), and
 the correction should outlast that.
+
+### 5.10 `Notification`: a price drop, told to whoever tracks it
+
+`id`, `userId`, `offerId` (both Cascade), `kind` (enum, `price_drop` only
+for now), `fromPriceCents`, `toPriceCents`, `currency`, `createdAt`,
+`readAt` (null until read). Indexed `(userId, createdAt desc)` for "my
+notifications, newest first", and partially on `userId WHERE readAt IS
+NULL` for the unread count.
+
+**A row is written when a read of an offer finds a lower price than the
+last good one** — any drop, by any amount — **one for each member tracking
+that offer** (`OfferWatch`) at that moment, in the transaction that writes
+the offer and its snapshot. Whoever caused the read doesn't matter: the
+nightly re-read (§10), a member's refresh, the admin's. A failed read keeps
+the old price (§5.2), so it never looks like a drop; a price going back up
+tells no one; going down again tells again.
+
+- **Only the version tracked.** A member tracking THT's red vinyl hears
+  of THT's red vinyl, not of the album's other versions or shops (§5.8) —
+  the comparison is where those are seen.
+- **The amount is stored, not recomputed:** `fromPriceCents` and
+  `toPriceCents` as read then, so "NT$1,500 → NT$1,350, NT$150 less"
+  stays true after the price moves again.
+- **Kept after tracking stops**: it happened; deleted with the offer or the
+  user.
+
+**⚖️ Decision (2026-11-27): a row per member at the drop, not worked out
+when read.** Weighed and not chosen: **deriving notifications from
+`OfferSnapshot`** at read time — each member's tracked offers' snapshots
+since they began tracking, where the price fell. No table, but "read"
+still needs one per member, and every page view becomes a scan over
+history. A drop is rare and a watch list small, so writing a row each is
+cheap and the page is a plain indexed read.
 
 ## 6. Supplier adapters
 
@@ -1487,6 +1521,14 @@ The token can do more now, so two rows join §9.4's table:
   Render sleeps (deploy.md §6.3), and a job inside it would also keep Neon
   awake. A run a few times a day over my tracked offers and a nightly catalog
   sync cost Neon minutes, not hours.
+- **The nightly re-read (12b)** reads again **every offer some member
+  tracks** — not every offer of a record, nor the catalog — one after
+  another through each shop's fetcher (§6.4), right after the catalog sync
+  in the same workflow: one schedule, one run at a time. A command,
+  `pnpm --filter api offers:refresh`, as `catalog:sync` is. An offer that
+  can't be read keeps its last good values and says why, as a member's
+  refresh does; the others go on. It ignores the members' ten-minute limit
+  (§12.3), which is there to spare the shops many clicks, not one run.
 - Covers are the shops' image URLs; nothing is uploaded, so deploy.md's step
   11 (object storage) is no longer needed. `next.config.ts` allows the shops'
   image hosts (`img.cloudimg.in`, `cdn.store-assets.com`, `cdn.shopify.com`)
@@ -1513,6 +1555,9 @@ orders, which any signed-in user has for their own (§12.1).
 | `GET /catalog/popular`                          | what's popular at the shops, by their own lists; public              |
 | `POST /products/:id/refresh`                    | any member; a record at most every ten minutes (429)                 |
 | `PUT /watches/:offerId`                         | track a version from its record's comparison                         |
+| `GET /notifications?first=&after=`              | my notifications, newest first, a page at a time (§5.10)             |
+| `GET /notifications/unread-count`               | how many I haven't read, for the header                              |
+| `POST /notifications/read`                      | mark all mine read                                                   |
 | `GET /admin/dashboard`                          | the home page's three sections (§12.2)                               |
 | `GET /products/hot`, `GET /products/slides`     | removed, with the carousel                                           |
 | `POST /cart/items`                              | takes `offerId`                                                      |
@@ -1626,6 +1671,20 @@ The carousel, the hot list and the admin hero page go (step 1).
   too obscure to draw anyone in. Now the shops' own popular lists, from
   their public pages alone.
 
+- **Notifications (`/notifications`, any member):** a bell in the header
+  with the number unread; the page lists my notifications newest first,
+  each the version's cover, the album and the shop, **"NT$1,500 →
+  NT$1,350 · NT$150 less"**, when it was seen, and a link to the album's
+  comparison. Unread ones are marked; **opening the page marks them all
+  read**. None yet says so and leads to `/tracking`.
+
+  **⚖️ Decision (2026-11-27): on the site, not by email or LINE.** Nothing
+  outside to set up, sign in to or pay for, and nothing that can leak an
+  address. Weighed and not chosen: **email** — a sending service, a
+  verified domain, unsubscribe; **LINE** — Notify has shut down, and the
+  Messaging API needs a bot and each member linking it. Either can read the
+  same table later.
+
 - **Supplier orders (`/supplier-orders`):** §9.2.
 
 **⚖️ Decision (2026-11-27): no categories.** The header's tabs listed the
@@ -1660,6 +1719,11 @@ to keep these.
   cancel.
 - **Adapters' network side** is checked by hand against the live shops before
   each adapter merges.
+- **Price drops (§5.10):** a lower price read tells each member tracking that
+  offer, with both prices, and no one else — not a member tracking another
+  version of the album; the same price, a higher one or a failed read tells
+  no one; the nightly re-read reads only tracked offers; read marks are a
+  member's own.
 
 ## 14. Implementation order
 
@@ -1762,6 +1826,11 @@ Each step is its own PR.
     03:00 Taipei, `catalog:sync all` against production) — pulled ahead
     once the list pages brought prices, which go stale without it; **12b**,
     every tracked offer's page read again nightly, and the alerts.
+    **12b decided 2026-11-27** (§5.10, §10, §12.3): price drops only, any
+    amount, told on the site to the members tracking that version. Three
+    PRs: the `Notification` table, written by every offer read that finds
+    a drop, and its API (12b-1); `offers:refresh` and the workflow step
+    (12b-2); the header's bell and `/notifications` (12b-3).
 13. Supplier orders from email — **pulled ahead to follow step 4**, once
     typing orders in had shown what it costs: confirmations from THT, Cosmic
     and Rotten Blues (§9.4). _(Done: API #74 — parsers, import token,
@@ -1791,8 +1860,8 @@ then drops them all together, with nothing left reading them.
 1. ~~How is an artist stored when shops write the name differently ("坂本龍一"
    vs "Ryuichi Sakamoto")?~~ An `Artist` with a display name and any number
    of aliases, not a column per language (§5.7).
-2. ⚖️ Where do alerts go — email, LINE Notify's successor, a page of
-   changes? Decide with step 12.
+2. ~~Where do alerts go — email, LINE Notify's successor, a page of
+   changes?~~ A page on the site (§12.3), price drops only for now (§5.10).
 3. ~~Does THT's catalog include non-vinyl items, and how are they named?~~
    Hardly: 36 of its 12 992 listings aren't flagged vinyl, and 80 are used.
    Cosmic's and Rotten Blues' are where the flag matters: only 10 559 of

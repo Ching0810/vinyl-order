@@ -10,6 +10,7 @@ import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { OrdersModule } from './orders/orders.module';
 import { mockPayAllowed } from './payments/mockpay-allowed';
 import { PaymentsModule } from './payments/payments.module';
@@ -52,6 +53,7 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
     ProductsModule,
     CartModule,
     OrdersModule,
+    NotificationsModule,
     PaymentsModule,
     // A fake payment provider. It takes no real money, so it must not be
     // reachable where real orders are: left out of production unless
