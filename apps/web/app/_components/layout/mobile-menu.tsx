@@ -10,7 +10,13 @@ import { CloseIcon, MenuIcon } from '@/components/ui/icons';
 import { useLogout } from '@/services/queries/auth/useLogout';
 
 /** Account section: the signed-in user's links and Logout, or Login when signed out. */
-const AccountItems = ({ user }: { user: PublicUser | null | undefined }) => {
+const AccountItems = ({
+  user,
+  unreadCount,
+}: {
+  user: PublicUser | null | undefined;
+  unreadCount: number;
+}) => {
   const router = useRouter();
   const logoutMutation = useLogout();
 
@@ -32,6 +38,16 @@ const AccountItems = ({ user }: { user: PublicUser | null | undefined }) => {
       <Menu.ItemGroupLabel truncate>{user.name ?? user.email}</Menu.ItemGroupLabel>
       <Menu.Item value="tracking" asChild>
         <NextLink href="/tracking">Tracking</NextLink>
+      </Menu.Item>
+      <Menu.Item value="notifications" asChild>
+        <NextLink href="/notifications">
+          Notifications
+          {unreadCount > 0 ? (
+            <Badge ms="auto" borderRadius="full" colorPalette="brand" fontSize="2xs">
+              {unreadCount}
+            </Badge>
+          ) : null}
+        </NextLink>
       </Menu.Item>
       <Menu.Item value="orders" asChild>
         <NextLink href="/orders">Orders</NextLink>
@@ -65,15 +81,18 @@ const AccountItems = ({ user }: { user: PublicUser | null | undefined }) => {
  * @param user - the signed-in user, or null/undefined when signed out
  * @param userPending - true while the session check is still in flight
  * @param cartCount - items in the cart, shown beside the Cart entry
+ * @param unreadCount - unread notifications, shown beside their entry
  */
 export default function MobileMenu({
   user,
   userPending,
   cartCount,
+  unreadCount,
 }: {
   user: PublicUser | null | undefined;
   userPending: boolean;
   cartCount: number;
+  unreadCount: number;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -105,7 +124,7 @@ export default function MobileMenu({
             {userPending ? null : (
               <>
                 <Menu.Separator />
-                <AccountItems user={user} />
+                <AccountItems user={user} unreadCount={unreadCount} />
               </>
             )}
           </Menu.Content>

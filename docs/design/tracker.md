@@ -1830,7 +1830,9 @@ Each step is its own PR.
     amount, told on the site to the members tracking that version. Three
     PRs: the `Notification` table, written by every offer read that finds
     a drop, and its API (12b-1); `offers:refresh` and the workflow step
-    (12b-2); the header's bell and `/notifications` (12b-3).
+    (12b-2); the header's bell and `/notifications` (12b-3). _(Done: 12b-1
+    #119; 12b-3 next, ahead of 12b-2, so a drop a refresh finds can be seen
+    end to end.)_
 13. Supplier orders from email — **pulled ahead to follow step 4**, once
     typing orders in had shown what it costs: confirmations from THT, Cosmic
     and Rotten Blues (§9.4). _(Done: API #74 — parsers, import token,

@@ -5,14 +5,17 @@ import NextLink from 'next/link';
 
 import MobileMenu from '@/components/layout/mobile-menu';
 import UserMenu from '@/components/layout/user-menu';
-import { CartIcon, DiscIcon } from '@/components/ui/icons';
+import { BellIcon, CartIcon, DiscIcon } from '@/components/ui/icons';
 import { useMe } from '@/services/queries/auth/useMe';
 import { useCart } from '@/services/queries/cart/useCart';
+import { useUnreadCount } from '@/services/queries/notifications/useUnreadCount';
 /**
  * Storefront banner. A client island over the (server-rendered) catalog:
  * - `useMe` decides the auth slot — Login link when logged out, the account
  *   dropdown (UserMenu) when logged in.
  * - the cart icon shows the server cart's item count, and links to /cart.
+ * - signed in, a bell shows how many notifications are unread, and links to
+ *   /notifications (tracker.md §12.3).
  *
  * The row is the logo, then the actions at the far end. On narrow screens the
  * account and cart collapse into a hamburger dropdown (MobileMenu).
@@ -25,6 +28,8 @@ export default function Header() {
   const { data: user, isPending } = useMe();
   const { data: cart } = useCart();
   const cartCount = cart?.itemCount ?? 0;
+  const { data: unread } = useUnreadCount();
+  const unreadCount = unread?.count ?? 0;
 
   return (
     <Flex
@@ -82,6 +87,32 @@ export default function Header() {
             </Button>
           )}
 
+          {user ? (
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              position="relative"
+              aria-label="Notifications"
+            >
+              <NextLink href="/notifications">
+                <BellIcon />
+                {unreadCount > 0 ? (
+                  <Badge
+                    position="absolute"
+                    top="0"
+                    insetEnd="0"
+                    borderRadius="full"
+                    colorPalette="brand"
+                    fontSize="2xs"
+                  >
+                    {unreadCount}
+                  </Badge>
+                ) : null}
+              </NextLink>
+            </Button>
+          ) : null}
+
           <Button asChild variant="ghost" size="sm" position="relative" aria-label="Cart">
             <NextLink href="/cart">
               <CartIcon />
@@ -102,7 +133,12 @@ export default function Header() {
         </HStack>
 
         <Box gridArea="actions" justifySelf="end" display={{ base: 'block', md: 'none' }}>
-          <MobileMenu user={user} userPending={isPending} cartCount={cartCount} />
+          <MobileMenu
+            user={user}
+            userPending={isPending}
+            cartCount={cartCount}
+            unreadCount={unreadCount}
+          />
         </Box>
       </Grid>
     </Flex>
