@@ -834,7 +834,7 @@ available to sell  = max(stockQty − reservedQty, 0)
 
 - **Checkout** keeps checkout-orders.md §7's guard, on the entry's row:
   `UPDATE "CatalogEntry" SET "reservedQty" = "reservedQty" + n WHERE id = ?
-AND availability = 'in_stock' AND "priceCents" IS NOT NULL AND ("stockQty"
+AND availability IN ('in_stock', 'pre_order') AND "priceCents" IS NOT NULL AND ("stockQty"
 IS NULL OR "stockQty" - "reservedQty" >= n) RETURNING "priceCents"` — lines
   sorted by `catalogEntryId`. The concurrency argument is unchanged; the
   stock walk's `UPDATE` of the same row waits on the same lock. The price
@@ -844,8 +844,8 @@ IS NULL OR "stockQty" - "reservedQty" >= n) RETURNING "priceCents"` — lines
   against: nothing caps the guard but availability and a price. **The hold
   is still taken**, so a cancel always has one to release — had it been
   skipped, a walk that later found a count would make the cancel release
-  a hold that was never taken, someone else's. Pre-orders aren't sold by
-  the demo.
+  a hold that was never taken, someone else's. THT's pre-orders are like
+  this: the shop keeps no count of them.
 - **When the walk drops `stockQty` below `reservedQty`,** available reads 0;
   the holds stand until their orders are cancelled or expire. They are
   practice orders; there's nothing to take back.
@@ -880,12 +880,21 @@ uses. Weighed and not chosen for now: **a refresh writing its values into
 the entry** — one source for both, but the entry's "as of" is the shop's,
 kept once a shop, and would no longer be true of every row.
 
+**⚖️ Decision (2026-11-27): a pre-order is sold.** `pre_order` means the
+shop takes orders for it now and ships it later; a pre-order it has closed
+is read as `sold_out` (§6.2). So the cart, checkout's guard and a card's
+"from NT$…" treat it as in stock: held like any listing, capped by the
+shop's count when it keeps one, released on cancel and expiry. Weighed and
+not chosen: **keeping pre-orders out** — what the first version of this
+section did, which left a listing the shop sells unbuyable here. Not done
+yet: the cart and the order don't say a line ships later.
+
 The rest of the cart follows the same rules as checkout:
 
 - **A line is a listing.** Adding the same listing again raises the
   quantity; the same album from two shops is two lines (§5.6).
-- **Only `in_stock` with a price can be added.** Sold out, pre-order and
-  unread are refused with 409 `OUT_OF_STOCK`.
+- **Only `in_stock` or `pre_order` with a price can be added** (shared
+  `isBuyable`). Sold out and unread are refused with 409 `OUT_OF_STOCK`.
 - **The quantity is capped at what's left to sell**,
   `max(stockQty − reservedQty, 0)`, as the cart capped at `Product.stock`
   before. With no `stockQty` there's no count to cap at, only the 99 a line
@@ -906,7 +915,8 @@ The rest of the cart follows the same rules as checkout:
 **Records without a price of their own.** `Product` loses `priceCents`,
 `currency`, `stock`, `year` and the `artist` string in step 5, and `Offer`
 loses `reservedQty`. A storefront card shows "from NT$…", the lowest price
-among its `in_stock` offers, or no price when none can be bought.
+among its offers that can be ordered (`in_stock` or `pre_order`), or no
+price when none can be bought.
 
 **⚖️ Decision (2026-11-26): the admin edits records, doesn't create them.**
 Records come from the catalog (§12.1); one made by hand would have no offer

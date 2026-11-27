@@ -1,7 +1,7 @@
 'use client';
 
 import { Button, HStack, IconButton, Link, Stack, Text } from '@chakra-ui/react';
-import type { CartItem } from '@vinyl-order/shared';
+import { type CartItem, isBuyable } from '@vinyl-order/shared';
 
 import SupplierBadge from '@/components/supplier-order/supplier-badge';
 import Cover from '@/components/ui/cover';
@@ -18,11 +18,7 @@ const MAX_PER_LINE = 99;
  * than the line holds.
  */
 const stockWarningOf = ({ listing, quantity }: CartItem): string | null => {
-  if (
-    listing.availability !== 'in_stock' ||
-    listing.priceCents === null ||
-    listing.available === 0
-  ) {
+  if (!isBuyable(listing.availability) || listing.priceCents === null || listing.available === 0) {
     return 'No longer in stock — this line can’t be ordered.';
   }
   if (listing.available !== null && quantity > listing.available) {

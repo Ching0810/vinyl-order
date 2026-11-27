@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import type { AddCartItemInput, Cart as CartContract } from '@vinyl-order/shared';
+import { type AddCartItemInput, type Cart as CartContract, isBuyable } from '@vinyl-order/shared';
 
 import { CATALOG_CURRENCY } from '../catalog/catalog-currency';
 import { readListingTitle } from '../catalog/listing-title';
@@ -33,12 +33,13 @@ const lineCapOf = (entry: Stock): number =>
   Math.min(availableOf(entry) ?? MAX_PER_LINE, MAX_PER_LINE);
 
 /**
- * A listing the demo sells, or 404/409: in stock, priced, with a copy left.
- * Sold out, pre-orders and listings no walk has read aren't sold (§8).
+ * A listing the demo sells, or 404/409: in stock or open for pre-order,
+ * priced, with a copy left. Sold out and listings no walk has read aren't
+ * sold (§8).
  */
 const sellable = (entry: CatalogEntry | null): CatalogEntry => {
   if (!entry) throw new NotFoundException('Listing not found');
-  if (entry.availability !== 'in_stock' || entry.priceCents === null || lineCapOf(entry) === 0) {
+  if (!isBuyable(entry.availability) || entry.priceCents === null || lineCapOf(entry) === 0) {
     throw outOfStock();
   }
   return entry;

@@ -163,20 +163,20 @@ describe('Products (e2e)', () => {
     const read = async (id: string) =>
       (await request(app.getHttpServer()).get(`/products/${id}`).expect(200)).body as Product;
 
-    it('is priced from its cheapest offer in stock, with its artist’s name', async () => {
+    it('is priced from its cheapest offer that can be ordered, with its artist’s name', async () => {
       const record = await createRecord([
         { priceCents: 160_000, availability: 'in_stock' },
-        { priceCents: 140_000, availability: 'in_stock' },
+        // A pre-order the shop still takes can be ordered.
+        { priceCents: 100_000, availability: 'pre_order' },
         // Cheaper, but can't be bought: not a "from" price.
         { priceCents: 90_000, availability: 'sold_out' },
-        { priceCents: 100_000, availability: 'pre_order' },
       ]);
 
       expect(await read(record.id)).toMatchObject({
         artist: record.artist.name,
         releaseDate: '1996-06-21',
         edition: '日版',
-        fromPriceCents: 140_000,
+        fromPriceCents: 100_000,
         currency: 'TWD',
       });
     });
