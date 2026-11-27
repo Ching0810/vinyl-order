@@ -24,6 +24,7 @@
     "test:e2e": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json --runInBand",
     "typecheck": "tsc --noEmit",
     "catalog:sync": "nest build && node dist/catalog/sync-cli.js",
+    "offers:refresh": "nest build && node dist/catalog/refresh-cli.js",
     "postinstall": "prisma generate"
   },
   "dependencies": {

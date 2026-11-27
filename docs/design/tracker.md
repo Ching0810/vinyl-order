@@ -1529,6 +1529,16 @@ The token can do more now, so two rows join §9.4's table:
   can't be read keeps its last good values and says why, as a member's
   refresh does; the others go on. It ignores the members' ten-minute limit
   (§12.3), which is there to spare the shops many clicks, not one run.
+  - **Oldest read first**, so a run cut short leaves the freshest for the
+    next.
+  - **It runs even when the catalog sync failed** — tracked offers are read
+    from their own pages, not the catalog — but not when the sync never
+    started.
+  - **It logs counts only** — offers read, changed, price drops told, pages
+    that failed — never a title: the workflow's log is public.
+  - **The run fails only when every read did**: a shop down or its pages
+    changed. A few pages failing is a night like any other, kept on each
+    offer as `lastError`.
 - Covers are the shops' image URLs; nothing is uploaded, so deploy.md's step
   11 (object storage) is no longer needed. `next.config.ts` allows the shops'
   image hosts (`img.cloudimg.in`, `cdn.store-assets.com`, `cdn.shopify.com`)
@@ -1831,8 +1841,8 @@ Each step is its own PR.
     PRs: the `Notification` table, written by every offer read that finds
     a drop, and its API (12b-1); `offers:refresh` and the workflow step
     (12b-2); the header's bell and `/notifications` (12b-3). _(Done: 12b-1
-    #119; 12b-3 next, ahead of 12b-2, so a drop a refresh finds can be seen
-    end to end.)_
+    #119; 12b-3 #120, ahead of 12b-2, so a drop a refresh finds could be
+    seen end to end; then 12b-2.)_
 13. Supplier orders from email — **pulled ahead to follow step 4**, once
     typing orders in had shown what it costs: confirmations from THT, Cosmic
     and Rotten Blues (§9.4). _(Done: API #74 — parsers, import token,
