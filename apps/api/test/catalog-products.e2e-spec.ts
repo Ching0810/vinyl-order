@@ -18,6 +18,10 @@ import {
   type PopularListing,
   popularListingSchema,
   type Supplier,
+  type Connection,
+  type Notification,
+  notificationSchema,
+  type UnreadCount,
 } from '@vinyl-order/shared';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -1157,6 +1161,149 @@ describe('Records from the catalog (e2e)', () => {
       expect(await watched()).toEqual([]);
       await server().put(`/watches/${randomUUID()}`).set(auth(member)).expect(404);
       await server().put(`/watches/${offer.id}`).expect(401);
+    });
+  });
+
+  describe('price drops', () => {
+    const track = async (token: string, body: object) =>
+      (await server().post('/watches').set(auth(token)).send(body).expect(201))
+        .body as TrackListingResult;
+
+    const notificationsOf = async (token: string, query = '') =>
+      (await server().get(`/notifications${query}`).set(auth(token)).expect(200))
+        .body as Connection<Notification>;
+
+    const unreadOf = async (token: string) =>
+      (
+        (await server().get('/notifications/unread-count').set(auth(token)).expect(200))
+          .body as UnreadCount
+      ).count;
+
+    const pricesOf = async (token: string) =>
+      (await notificationsOf(token)).edges.map(({ node }) => [
+        node.fromPriceCents,
+        node.toPriceCents,
+      ]);
+
+    /**
+     * One album at THT and Cosmic: a member tracking THT's, another
+     * Cosmic's, and a third tracking nothing.
+     */
+    const album = async () => {
+      const tht = await listing('tht', { priceCents: 150_000 });
+      const cosmic = await listing('cosmic', { priceCents: 140_000 });
+      const ids = [tht.entryId, cosmic.entryId];
+      const thtMember = await createUser('customer');
+      const cosmicMember = await createUser('customer');
+      const bystander = await createUser('customer');
+      const { product } = await track(thtMember, {
+        catalogEntryId: tht.entryId,
+        catalogEntryIds: ids,
+      });
+      await track(cosmicMember, { catalogEntryId: cosmic.entryId, catalogEntryIds: ids });
+      return { tht, cosmic, productId: product.id, thtMember, cosmicMember, bystander };
+    };
+
+    it('tells each member tracking that version, with both prices, and no one else', async () => {
+      const { tht, productId, thtMember, cosmicMember, bystander } = await album();
+      const secondThtMember = await createUser('customer');
+      const thtOffer = await prisma.offer.findUniqueOrThrow({
+        where: { supplier_externalId: { supplier: 'tht', externalId: tht.offer.externalId } },
+      });
+      await server().put(`/watches/${thtOffer.id}`).set(auth(secondThtMember)).expect(204);
+      pages.set(tht.url, { ...tht.offer, priceCents: 135_000 });
+
+      await refresh(productId).expect(200);
+
+      for (const member of [thtMember, secondThtMember]) {
+        const [notification] = (await notificationsOf(member)).edges.map(({ node }) => node);
+        expect(notificationSchema.parse(notification)).toEqual(notification);
+        expect(notification).toMatchObject({
+          kind: 'price_drop',
+          offerId: thtOffer.id,
+          productId,
+          title: '1996',
+          supplier: 'tht',
+          sourceTitle: tht.offer.sourceTitle,
+          fromPriceCents: 150_000,
+          toPriceCents: 135_000,
+          currency: 'TWD',
+          readAt: null,
+        });
+      }
+      // Another version of the album, and nothing tracked: no one told.
+      expect(await pricesOf(cosmicMember)).toEqual([]);
+      expect(await pricesOf(bystander)).toEqual([]);
+    });
+
+    it('the same price, a rise or a failed read tells no one; another drop tells again', async () => {
+      const { tht, productId, thtMember } = await album();
+
+      await refresh(productId).expect(200);
+      pages.set(tht.url, { ...tht.offer, priceCents: 160_000 });
+      await refresh(productId).expect(200);
+      pages.set(tht.url, new ShopFetchError('failed', 'answered 404'));
+      await refresh(productId).expect(200);
+      expect(await pricesOf(thtMember)).toEqual([]);
+
+      pages.set(tht.url, { ...tht.offer, priceCents: 140_000 });
+      await refresh(productId).expect(200);
+      pages.set(tht.url, { ...tht.offer, priceCents: 150_000 });
+      await refresh(productId).expect(200);
+      pages.set(tht.url, { ...tht.offer, priceCents: 120_000 });
+      await refresh(productId).expect(200);
+
+      // Newest first, each from the price before it.
+      expect(await pricesOf(thtMember)).toEqual([
+        [150_000, 120_000],
+        [160_000, 140_000],
+      ]);
+    });
+
+    it('counts my unread, marks them read, and keeps them after I stop tracking', async () => {
+      const { tht, productId, thtMember } = await album();
+      const other = await createUser('customer');
+      const thtOffer = await prisma.offer.findUniqueOrThrow({
+        where: { supplier_externalId: { supplier: 'tht', externalId: tht.offer.externalId } },
+      });
+      await server().put(`/watches/${thtOffer.id}`).set(auth(other)).expect(204);
+      for (const priceCents of [140_000, 150_000, 130_000]) {
+        pages.set(tht.url, { ...tht.offer, priceCents });
+        await refresh(productId).expect(200);
+      }
+      expect(await unreadOf(thtMember)).toBe(2);
+
+      await server().post('/notifications/read').set(auth(thtMember)).expect(204);
+
+      expect(await unreadOf(thtMember)).toBe(0);
+      expect((await notificationsOf(thtMember)).edges.every(({ node }) => node.readAt)).toBe(true);
+      // Read marks are each member's own.
+      expect(await unreadOf(other)).toBe(2);
+
+      await server().delete(`/watches/${thtOffer.id}`).set(auth(thtMember)).expect(204);
+      expect((await notificationsOf(thtMember)).totalCount).toBe(2);
+    });
+
+    it('pages my notifications, newest first', async () => {
+      const { tht, productId, thtMember } = await album();
+      for (const priceCents of [140_000, 150_000, 130_000, 150_000, 120_000]) {
+        pages.set(tht.url, { ...tht.offer, priceCents });
+        await refresh(productId).expect(200);
+      }
+
+      const first = await notificationsOf(thtMember, '?first=2');
+      const next = await notificationsOf(thtMember, `?first=2&after=${first.pageInfo.endCursor}`);
+
+      expect(first.totalCount).toBe(3);
+      expect(first.edges.map(({ node }) => node.toPriceCents)).toEqual([120_000, 130_000]);
+      expect(next.edges.map(({ node }) => node.toPriceCents)).toEqual([140_000]);
+      expect(next.pageInfo.hasNextPage).toBe(false);
+    });
+
+    it('is for members only', async () => {
+      await server().get('/notifications').expect(401);
+      await server().get('/notifications/unread-count').expect(401);
+      await server().post('/notifications/read').expect(401);
     });
   });
 

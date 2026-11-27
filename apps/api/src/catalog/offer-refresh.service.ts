@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { ProductWithOffers } from '@vinyl-order/shared';
 
-import type { Offer } from '../generated/prisma/client';
+import type { Offer, Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SUPPLIER_ADAPTERS, type SupplierAdapters } from './adapters';
 import { refreshTooSoon } from './offer.errors';
@@ -55,8 +55,11 @@ export class OfferRefreshService {
 
   /**
    * One offer read again. A snapshot only when what it keeps changed (§5.3).
-   * A page that can't be fetched or read keeps the last good values and
-   * says why; one shop failing doesn't stop the others.
+   * A lower price than the last good one tells each member tracking the
+   * offer (§5.10), in the same transaction, so a drop is never recorded
+   * without its notifications or told twice. A page that can't be fetched or
+   * read keeps the last good values and says why — never a drop; one shop
+   * failing doesn't stop the others.
    */
   private async refreshOffer(offer: Offer): Promise<void> {
     const adapter = this.adapters[offer.supplier];
@@ -66,15 +69,32 @@ export class OfferRefreshService {
       const now = new Date();
       const changed = !sameSnapshot(snapshotOf(values), snapshotOf(offer));
 
-      await this.prisma.offer.update({
-        where: { id: offer.id },
-        data: {
-          ...values,
-          lastCheckedAt: now,
-          lastErrorAt: null,
-          lastError: null,
-          ...(changed ? { snapshots: { create: { ...snapshotOf(values), takenAt: now } } } : {}),
-        },
+      await this.prisma.$transaction(async (tx) => {
+        // The price as it stands, under the row's lock: a read running
+        // alongside (the nightly one and a member's) waits here, then sees
+        // this one's price, so a drop is told once.
+        const [current] = await tx.$queryRaw<{ priceCents: number }[]>`
+          SELECT "priceCents" FROM "Offer" WHERE "id" = ${offer.id} FOR UPDATE
+        `;
+        await tx.offer.update({
+          where: { id: offer.id },
+          data: {
+            ...values,
+            lastCheckedAt: now,
+            lastErrorAt: null,
+            lastError: null,
+            ...(changed ? { snapshots: { create: { ...snapshotOf(values), takenAt: now } } } : {}),
+          },
+        });
+        if (current && values.priceCents < current.priceCents) {
+          await notifyPriceDrop(tx, {
+            offerId: offer.id,
+            fromPriceCents: current.priceCents,
+            toPriceCents: values.priceCents,
+            currency: values.currency,
+            now,
+          });
+        }
       });
     } catch (error) {
       if (!(error instanceof ShopFetchError || error instanceof ShopPageUnreadable)) throw error;
@@ -85,6 +105,35 @@ export class OfferRefreshService {
     }
   }
 }
+
+/** A notification for each member tracking the offer now (§5.10). */
+const notifyPriceDrop = async (
+  tx: Prisma.TransactionClient,
+  drop: {
+    offerId: string;
+    fromPriceCents: number;
+    toPriceCents: number;
+    currency: string;
+    now: Date;
+  },
+): Promise<void> => {
+  const watches = await tx.offerWatch.findMany({
+    where: { offerId: drop.offerId },
+    select: { userId: true },
+  });
+  if (watches.length === 0) return;
+  await tx.notification.createMany({
+    data: watches.map(({ userId }) => ({
+      userId,
+      offerId: drop.offerId,
+      kind: 'price_drop' as const,
+      fromPriceCents: drop.fromPriceCents,
+      toPriceCents: drop.toPriceCents,
+      currency: drop.currency,
+      createdAt: drop.now,
+    })),
+  });
+};
 
 type Snapshot = ReturnType<typeof snapshotOf>;
 

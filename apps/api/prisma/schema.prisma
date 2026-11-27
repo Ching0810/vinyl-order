@@ -57,6 +57,8 @@ model User {
   supplierOrderImportToken SupplierOrderImportToken?
   /// The listings this user tracks: their home page list.
   watches                  OfferWatch[]
+  /// Price drops of what they track (tracker.md §5.10).
+  notifications            Notification[]
 }
 
 /// A customer's shopping cart. One per user, created lazily on first add.
@@ -387,6 +389,7 @@ model Offer {
   snapshots          OfferSnapshot[]
   /// The users tracking this listing.
   watches            OfferWatch[]
+  notifications      Notification[]
   supplierOrderItems SupplierOrderItem[]
 
   createdAt DateTime @default(now())
@@ -558,6 +561,36 @@ model SupplierOrderImportToken {
   createdAt  DateTime  @default(now())
   /// When the script last used it: shows whether the daily import runs.
   lastUsedAt DateTime?
+}
+
+/// What a notification tells (tracker.md §5.10). Price drops only for now.
+enum NotificationKind {
+  price_drop
+}
+
+/// A price drop of a listing a user tracks, told on the site (tracker.md
+/// §5.10): one row per user tracking it when a read found the lower price.
+/// Both prices are kept as read then, so the amount stays true after the
+/// price moves again.
+model Notification {
+  id      String @id @default(uuid())
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offerId String
+  offer   Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  kind           NotificationKind
+  fromPriceCents Int
+  toPriceCents   Int
+  currency       String
+
+  createdAt DateTime  @default(now())
+  /// Null until the user has seen it.
+  readAt    DateTime?
+
+  /// "My notifications, newest first"; id breaks ties for paging. The unread
+  /// count's partial index (WHERE "readAt" IS NULL) is in the migration SQL.
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)])
 }
 
 /// A user tracking one listing — one version at one shop (tracker.md §5.8).

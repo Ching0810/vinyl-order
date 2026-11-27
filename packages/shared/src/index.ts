@@ -4,6 +4,7 @@
 export * from './auth';
 export * from './cart';
 export * from './catalog';
+export * from './notification';
 export * from './offer';
 export * from './order';
 export * from './pagination';
