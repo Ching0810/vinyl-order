@@ -2,9 +2,8 @@
 
 import { Field, Image, Input, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
-import type { Control, FieldErrors, UseFormRegister } from 'react-hook-form';
+import type { FieldErrors, UseFormRegister } from 'react-hook-form';
 
-import CategoryFields from '@/components/admin/category-fields';
 import Panel from '@/components/ui/panel';
 
 /**
@@ -13,8 +12,7 @@ import Panel from '@/components/ui/panel';
  * mapped to UpdateProductInput on submit — the API owns the real contract
  * (string[], null). Shared with the page that orchestrates the form.
  *
- * What was read from a shop's listing, to correct, and the categories to
- * file it under. No price, stock or artist: a price belongs to a shop's
+ * What was read from a shop's listing, to correct. No price, stock or artist: a price belongs to a shop's
  * offer, and an artist is edited as an artist (tracker.md §8).
  */
 export interface ProductFormValues {
@@ -24,12 +22,10 @@ export interface ProductFormValues {
   edition: string;
   formatText: string;
   imageUrl: string | null;
-  categoryIds: string[];
 }
 
 interface Props {
   register: UseFormRegister<ProductFormValues>;
-  control: Control<ProductFormValues>;
   errors: FieldErrors<ProductFormValues>;
   imageUrl: string | null;
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -38,7 +34,6 @@ interface Props {
 /** Presentational form fields — register/control/errors are wired by the parent form. */
 export default function ProductFormFields({
   register,
-  control,
   errors,
   imageUrl,
   onFileChange,
@@ -99,10 +94,6 @@ export default function ProductFormFields({
             ) : null}
           </Stack>
         </Field.Root>
-      </Panel>
-
-      <Panel title="Categories">
-        <CategoryFields control={control} />
       </Panel>
     </Stack>
   );

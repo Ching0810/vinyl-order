@@ -19,9 +19,6 @@ const toFormValues = (product: Product): ProductFormValues => {
     edition: product.edition ?? '',
     formatText: product.format.join(', '),
     imageUrl: product.imageUrl,
-    // The detail read embeds categories; list reads don't, which is why the
-    // edit form loads from GET /products/:id rather than a cached list row.
-    categoryIds: (product.categories ?? []).map((category) => category.id),
   };
 };
 

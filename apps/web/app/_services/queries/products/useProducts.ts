@@ -12,11 +12,9 @@ export const productsQueryKey = ['products'] as const;
  * One page of the catalog (cursor-based). `keepPreviousData` keeps the current
  * page on screen while the next/prev page loads, so the table doesn't flash empty.
  */
-export const useProducts = (args: PageArgs, category?: string) =>
+export const useProducts = (args: PageArgs) =>
   useQuery({
-    // category is part of the key, so switching tabs is a different cache
-    // entry rather than the same one being overwritten.
-    queryKey: [...productsQueryKey, 'page', category ?? null, args],
-    queryFn: () => getProducts(args, category),
+    queryKey: [...productsQueryKey, 'page', args],
+    queryFn: () => getProducts(args),
     placeholderData: keepPreviousData,
   });

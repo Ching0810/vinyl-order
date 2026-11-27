@@ -3,7 +3,6 @@
 import { Badge, Box, Button, Flex, Grid, HStack, Spinner, Text } from '@chakra-ui/react';
 import NextLink from 'next/link';
 
-import CategoryNav from '@/components/layout/category-nav';
 import MobileMenu from '@/components/layout/mobile-menu';
 import UserMenu from '@/components/layout/user-menu';
 import { CartIcon, DiscIcon } from '@/components/ui/icons';
@@ -11,17 +10,12 @@ import { useMe } from '@/services/queries/auth/useMe';
 import { useCart } from '@/services/queries/cart/useCart';
 /**
  * Storefront banner. A client island over the (server-rendered) catalog:
- * - the category tabs are the primary navigation, centred between the logo and
- *   the actions.
  * - `useMe` decides the auth slot — Login link when logged out, the account
  *   dropdown (UserMenu) when logged in.
  * - the cart icon shows the server cart's item count, and links to /cart.
  *
- * The row is a three-column grid with equal `1fr` sides, so the tabs sit on the
- * true centre of the page no matter how wide the logo or the actions are — a
- * flex row with auto margins would centre them in the leftover space instead.
- * On narrow screens there is no room for all three, so the tabs, account and
- * cart collapse into a hamburger dropdown (MobileMenu) beside the logo.
+ * The row is the logo, then the actions at the far end. On narrow screens the
+ * account and cart collapse into a hamburger dropdown (MobileMenu).
  *
  * Sticks to the top over a translucent, blurred backdrop so cover art scrolls
  * beneath it rather than colliding with a solid bar. The outer element spans
@@ -49,8 +43,8 @@ export default function Header() {
         maxW="7xl"
         mx="auto"
         px={{ base: '4', md: '8' }}
-        templateColumns={{ base: 'minmax(0, 1fr) auto', md: '1fr minmax(0, auto) 1fr' }}
-        templateAreas={{ base: '"logo actions"', md: '"logo nav actions"' }}
+        templateColumns="minmax(0, 1fr) auto"
+        templateAreas='"logo actions"'
         alignItems="center"
         columnGap="4"
       >
@@ -76,10 +70,6 @@ export default function Header() {
             </Text>
           </NextLink>
         </HStack>
-
-        <Box gridArea="nav" minW="0" display={{ base: 'none', md: 'block' }}>
-          <CategoryNav />
-        </Box>
 
         <HStack gridArea="actions" gap="1" justifySelf="end" display={{ base: 'none', md: 'flex' }}>
           {isPending ? (

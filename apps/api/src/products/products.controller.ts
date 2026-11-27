@@ -42,9 +42,8 @@ export class ProductsController {
     @Query('after') after?: string,
     @Query('last') last?: string,
     @Query('before') before?: string,
-    @Query('category') category?: string,
   ): Promise<Connection<Product>> {
-    return this.products.paginate(toPageArgs({ first, after, last, before }), category);
+    return this.products.paginate(toPageArgs({ first, after, last, before }));
   }
 
   /** GET /products/:id — a single product, 404 if not found. Public. */

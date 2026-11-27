@@ -161,7 +161,7 @@ SupplierOrder      an order I placed at a shop
 | `priceCents`, `currency`, `stock` | dropped   | a price belongs to a shop, not to the record; the API reads "from NT$…" off the offers in stock (§8) |
 | `discogsReleaseId`, `genres`      | dropped   | Discogs's fields                                                                                     |
 | `isHot`, `slideOrder`             | dropped   | the carousel and hot list give way to the dashboard (§12.2)                                          |
-| categories                        | kept      | tabs for the visitors' list                                                                          |
+| categories                        | dropped   | 2026-11-27: tabs for a visitors' list that no longer exists (§12.3)                                  |
 
 ### 5.2 `Offer`: the same columns for every supplier
 
@@ -923,7 +923,8 @@ Records come from the catalog (§12.1); one made by hand would have no offer
 and nothing to compare. "New product" goes; the edit form keeps title,
 format, edition, release date and categories, and loses price, stock, artist
 and year. Weighed and not chosen: **removing the edit form too** — then
-nothing would file records under categories.
+nothing would file records under categories. (Categories went too,
+2026-11-27, §12.3; the form keeps correcting what was read.)
 
 ## 9. My supplier orders
 
@@ -1565,7 +1566,7 @@ Three sections, in this order:
 2. **Arriving soon** — open supplier order lines (not delivered or
    cancelled), by expected date; the first few, linking to §9.2's page.
 3. **Tracked records** — each with its lowest price, where, and whether in
-   stock or on pre-order; categories as tabs.
+   stock or on pre-order.
 
 **⚖️ Decision: a dashboard, not a supplier's "hot" list.** None of the shops
 publishes sales, so "hot" isn't data we have; one shop's list would also
@@ -1626,6 +1627,17 @@ The carousel, the hot list and the admin hero page go (step 1).
   their public pages alone.
 
 - **Supplier orders (`/supplier-orders`):** §9.2.
+
+**⚖️ Decision (2026-11-27): no categories.** The header's tabs listed the
+records filed under each, `/products?category=`, filed by the admin by
+hand. They were for a visitors' list the home page no longer has, and with
+records made only by members tracking, a tab showed strangers what members
+track — what "a visitor sees the shops, not the members" rules out. Gone:
+the `Category` table, its admin page, the tabs, the form's field and the
+`/products` listing page; `GET /products` stays for the admin's table.
+Weighed and not chosen: **categories from the catalog** — the shops' own
+types, or vinyl and used, as search filters — a new feature, not a reason
+to keep these.
 
 ## 13. Testing
 
@@ -1736,6 +1748,9 @@ Each step is its own PR.
    respecting it; split and put back, moving an offer out and back; their
    e2e tests; the search page's buttons for the admin, and the
    comparison's "Not this album" and `DELETE /admin/offers/:id` removed.
+   _(Done #116.)_ **Then, 2026-11-27:** pre-orders sold (§8, #117), and
+   categories removed (§12.3): the table, its API and admin page, the
+   header's tabs and `/products`.
 10. Cosmic — folded into steps 6–7: it is on THT's platform, so it is the
     same adapter configured twice, and the only shop that fills barcodes,
     which matching ranks first (§7.3).

@@ -47,9 +47,6 @@ describe('Prisma errors as HTTP answers (e2e)', () => {
   const server = () => request(app.getHttpServer());
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
-  /** A slug no other test uses: lowercase letters, numbers and hyphens. */
-  const freshSlug = () => `cat-${randomUUID()}`;
-
   describe('already exists → 409', () => {
     it('registering an email that is taken', async () => {
       const { user } = await createUser('customer');
@@ -59,43 +56,9 @@ describe('Prisma errors as HTTP answers (e2e)', () => {
         .send({ email: user.email, password: 'long-enough' })
         .expect(409);
     });
-
-    it('creating a category with a slug that is taken', async () => {
-      const { token } = await createUser('admin');
-      const taken = await prisma.category.create({ data: { slug: freshSlug(), name: 'Taken' } });
-
-      await server()
-        .post('/categories')
-        .set(auth(token))
-        .send({ slug: taken.slug, name: 'Again' })
-        .expect(409);
-    });
-
-    it("renaming a category's slug to one that is taken", async () => {
-      const { token } = await createUser('admin');
-      const taken = await prisma.category.create({ data: { slug: freshSlug(), name: 'Taken' } });
-      const other = await prisma.category.create({ data: { slug: freshSlug(), name: 'Other' } });
-
-      await server()
-        .patch(`/categories/${other.id}`)
-        .set(auth(token))
-        .send({ slug: taken.slug })
-        .expect(409);
-    });
   });
 
   describe('not found → 404', () => {
-    it('updating or deleting a category that does not exist', async () => {
-      const { token } = await createUser('admin');
-
-      await server()
-        .patch(`/categories/${randomUUID()}`)
-        .set(auth(token))
-        .send({ name: 'x' })
-        .expect(404);
-      await server().delete(`/categories/${randomUUID()}`).set(auth(token)).expect(404);
-    });
-
     it('updating or deleting a product that does not exist', async () => {
       const { token } = await createUser('admin');
 

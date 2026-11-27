@@ -5,10 +5,7 @@ import NextLink from 'next/link';
 import { usePathname } from 'next/navigation';
 
 /** Admin destinations, in the order they appear. */
-const LINKS = [
-  { href: '/admin/products', label: 'Products' },
-  { href: '/admin/categories', label: 'Categories' },
-];
+const LINKS = [{ href: '/admin/products', label: 'Products' }];
 /**
  * Sub-navigation for the admin area, sitting under the storefront header.
  *

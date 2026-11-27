@@ -49,7 +49,7 @@ export default function AdminProductList() {
       <SectionHeading
         eyebrow="Catalogue"
         title="Products"
-        description="Every tracked record. Correct what was read from the shops, and file it under categories."
+        description="Every tracked record. Correct what was read from the shops."
       />
 
       {renderBody()}
