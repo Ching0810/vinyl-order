@@ -269,10 +269,6 @@ model Product {
   /// What tells pressings of one album apart, e.g. "日版", "限量彩膠".
   edition     String?
 
-  /// Storefront navigation tabs this record appears under, chosen by the
-  /// store rather than read off the record.
-  categories Category[]
-
   /// Lines of past orders. Deleting a product nulls their link, not the line.
   orderItems OrderItem[]
 
@@ -281,30 +277,6 @@ model Product {
 
   /// Listings split out of this record's album, whose offers it gave up.
   splitsFrom AlbumSplit[]
-}
-
-/// A storefront navigation tab.
-///
-/// Curated rather than derived. Deriving tabs from a string on each record
-/// would mean the tab bar changes shape whenever records change, has no order,
-/// and no stable identity — renaming the string would silently unassign every
-/// record and break any shared link. A row gives each tab a slug that outlives
-/// its label.
-model Category {
-  id        String @id @default(uuid())
-  /// URL identity, e.g. "mandarin". Stable across renames of `name`.
-  slug      String @unique
-  /// Display label, e.g. "華語".
-  name      String
-  /// Ascending order in the tab bar.
-  sortOrder Int    @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  products Product[]
-
-  @@index([sortOrder])
 }
 
 // ---- Supplier tracker (docs/design/tracker.md §5) ----

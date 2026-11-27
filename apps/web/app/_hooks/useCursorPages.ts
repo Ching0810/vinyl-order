@@ -38,7 +38,7 @@ export const pageCount = (totalCount: number, size: number): number =>
  * one; the items shown are still exactly right.
  *
  * @param size - items per page
- * @param resetKey - identifies the list (e.g. the category). When it changes
+ * @param resetKey - identifies the list (e.g. a filter). When it changes
  *   the reader starts over on page 1, since cursors from the old list point
  *   into a different result set.
  */

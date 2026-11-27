@@ -15,7 +15,7 @@ import { isRecordNotFound } from '../prisma/record-not-found';
 
 /**
  * What a product read joins: its artist's name, and its offers that can be
- * ordered, cheapest first — the first is a card's "from NT$…" (tracker.md §8).
+ * ordered, cheapest first — the first is its "from NT$…" (tracker.md §8).
  */
 const withCard = {
   artist: { select: { name: true } },
@@ -27,15 +27,7 @@ const withCard = {
   },
 } satisfies Prisma.ProductInclude;
 
-/** The single-product read adds its categories. */
-const withDetail = {
-  ...withCard,
-  categories: { orderBy: { sortOrder: 'asc' } },
-} satisfies Prisma.ProductInclude;
-
-type ProductRow = Prisma.ProductGetPayload<{ include: typeof withCard }> & {
-  categories?: Prisma.CategoryGetPayload<object>[];
-};
+type ProductRow = Prisma.ProductGetPayload<{ include: typeof withCard }>;
 
 /** Shape a product row for the wire. */
 const toContract = (product: ProductRow): ProductContract => {
@@ -51,7 +43,6 @@ const toContract = (product: ProductRow): ProductContract => {
     imageUrl: product.imageUrl,
     fromPriceCents: cheapest?.priceCents ?? null,
     currency: cheapest?.currency ?? CATALOG_CURRENCY,
-    ...(product.categories ? { categories: product.categories } : {}),
   };
 };
 
@@ -75,57 +66,40 @@ export class ProductsService {
   /**
    * Cursor-paginated catalog (Relay connection); see common/pagination.
    */
-  paginate(args: PageArgs, categorySlug?: string): Promise<Connection<ProductContract>> {
-    // `some` reads the join table: keep products having at least one matching
-    // category. Absent slug means the whole catalogue.
-    const where = categorySlug ? { categories: { some: { slug: categorySlug } } } : {};
-
+  paginate(args: PageArgs): Promise<Connection<ProductContract>> {
     return paginate(
       args,
       (window) =>
         this.prisma.product.findMany({
-          where,
           orderBy: this.pageOrder,
           include: withCard,
           ...window,
         }),
       toContract,
-      () => this.prisma.product.count({ where }),
+      () => this.prisma.product.count(),
     );
   }
 
-  /**
-   * One product, with its categories. Only this read embeds them: list reads
-   * would pay for the join on every page to render something the grid doesn't
-   * show.
-   */
   async findById(id: string): Promise<ProductContract | null> {
-    const product = await this.prisma.product.findUnique({ where: { id }, include: withDetail });
+    const product = await this.prisma.product.findUnique({ where: { id }, include: withCard });
     return product ? toContract(product) : null;
   }
 
   async update(id: string, data: UpdateProductInput): Promise<ProductContract> {
-    const { categoryIds, releaseDate, ...fields } = data;
-    // `set` replaces the whole membership rather than adding to it, so an
-    // absent categoryIds must leave the existing assignments alone — sending
-    // an empty array is how a caller clears them.
-    const categories = categoryIds
-      ? { categories: { set: categoryIds.map((categoryId) => ({ id: categoryId })) } }
-      : {};
+    const { releaseDate, ...fields } = data;
 
     try {
       const product = await this.prisma.product.update({
         where: { id },
         data: {
           ...fields,
-          ...categories,
           // Absent leaves it alone; null clears it. A `@db.Date` takes
           // midnight UTC, so the day stays the one written.
           ...(releaseDate === undefined
             ? {}
             : { releaseDate: releaseDate ? new Date(`${releaseDate}T00:00:00Z`) : null }),
         },
-        include: withDetail,
+        include: withCard,
       });
       return toContract(product);
     } catch (error) {

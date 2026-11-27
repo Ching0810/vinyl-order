@@ -64,7 +64,6 @@ export default function ProductForm({
       edition: values.edition.trim() || null,
       format: splitCsv(values.formatText),
       imageUrl: values.imageUrl,
-      categoryIds: values.categoryIds,
     });
   });
 
@@ -73,7 +72,6 @@ export default function ProductForm({
       <Stack gap="4">
         <ProductFormFields
           register={register}
-          control={control}
           errors={errors}
           imageUrl={imageUrl}
           onFileChange={onFileChange}

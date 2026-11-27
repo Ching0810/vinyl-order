@@ -8,7 +8,6 @@ import { useState } from 'react';
 
 import { CloseIcon, MenuIcon } from '@/components/ui/icons';
 import { useLogout } from '@/services/queries/auth/useLogout';
-import { useCategories } from '@/services/queries/categories/useCategories';
 
 /** Account section: the signed-in user's links and Logout, or Login when signed out. */
 const AccountItems = ({ user }: { user: PublicUser | null | undefined }) => {
@@ -52,9 +51,8 @@ const AccountItems = ({ user }: { user: PublicUser | null | undefined }) => {
   );
 };
 /**
- * The header's navigation on narrow screens: categories, cart and account
- * folded into one hamburger dropdown, since a phone-width row has no room for
- * the tabs beside the logo.
+ * The header's navigation on narrow screens: cart and account folded into one
+ * hamburger dropdown.
  *
  * Built on Chakra's Menu rather than a hand-rolled panel, so it gets focus
  * handling, arrow-key movement, Escape and outside-click to close, and closes
@@ -78,7 +76,6 @@ export default function MobileMenu({
   cartCount: number;
 }) {
   const [open, setOpen] = useState(false);
-  const { data: categories } = useCategories();
 
   return (
     <Menu.Root
@@ -94,22 +91,6 @@ export default function MobileMenu({
       <Portal>
         <Menu.Positioner>
           <Menu.Content minW="60" maxH="calc(100dvh - 5rem)" overflowY="auto">
-            {categories && categories.length > 0 ? (
-              <>
-                <Menu.ItemGroup>
-                  <Menu.ItemGroupLabel>Categories</Menu.ItemGroupLabel>
-                  {categories.map((category) => (
-                    <Menu.Item key={category.id} value={`category-${category.slug}`} asChild>
-                      <NextLink href={`/products?category=${category.slug}`}>
-                        {category.name}
-                      </NextLink>
-                    </Menu.Item>
-                  ))}
-                </Menu.ItemGroup>
-                <Menu.Separator />
-              </>
-            ) : null}
-
             <Menu.Item value="cart" asChild>
               <NextLink href="/cart">
                 Cart

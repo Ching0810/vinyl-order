@@ -4,9 +4,7 @@ import NextLink from 'next/link';
 
 /**
  * A record as a tile: cover, title and artist, a line saying which version
- * or where, a price, and a note under it. The storefront's card
- * (product/card.tsx) in look; the price here is a shop's, not the demo
- * store's own.
+ * or where, a price, and a note under it. The price is a shop's.
  *
  * @param open - a link to follow — a tracked record's comparison — or what
  *   pressing it does, such as searching for it on the page it's on

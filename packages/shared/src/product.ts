@@ -10,8 +10,6 @@
 // Zod v4: string formats are top-level validators (`z.url()`, `z.uuid()`).
 import { z } from 'zod';
 
-import { categorySchema } from './category';
-
 /** A product as returned by the API and shown in the catalog. */
 export const productSchema = z.object({
   id: z.uuid(),
@@ -32,12 +30,6 @@ export const productSchema = z.object({
   fromPriceCents: z.number().int().nullable(),
   /** ISO 4217 currency code of `fromPriceCents`, e.g. "TWD". */
   currency: z.string(),
-  /**
-   * Navigation tabs this record sits under. Present on the single-product read
-   * and omitted from list reads, which would otherwise pay for a join on every
-   * page of the catalogue to render information the grid doesn't show.
-   */
-  categories: z.array(categorySchema).optional(),
 });
 export type Product = z.infer<typeof productSchema>;
 
@@ -45,7 +37,7 @@ export type Product = z.infer<typeof productSchema>;
  * Admin "update product" body — every field optional, NO defaults (so a PATCH
  * only changes what's sent; an absent field is left untouched). Records are
  * made from a shop's listing, never by hand (§8): the admin corrects what was
- * read and files the record under categories. Price, stock and artist aren't
+ * read. Price, stock and artist aren't
  * here: a price belongs to an offer, an artist is edited as an artist.
  */
 export const updateProductSchema = z.object({
@@ -55,7 +47,5 @@ export const updateProductSchema = z.object({
   /** `YYYY-MM-DD`, or null when unknown. */
   releaseDate: z.iso.date().nullable().optional(),
   imageUrl: z.url().nullable().optional(),
-  /** Category ids to file this record under; replaces the full set when sent. */
-  categoryIds: z.array(z.uuid()).optional(),
 });
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
