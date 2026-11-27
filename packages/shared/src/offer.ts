@@ -13,6 +13,16 @@ import { supplierSchema } from './supplier-order';
 export const availabilitySchema = z.enum(['in_stock', 'pre_order', 'sold_out']);
 export type Availability = z.infer<typeof availabilitySchema>;
 
+/**
+ * What can be ordered now (§8): in stock, or a pre-order the shop still
+ * takes — a closed one is read as sold out (§6.2).
+ */
+export const BUYABLE_AVAILABILITY = ['in_stock', 'pre_order'] as const satisfies Availability[];
+
+/** Whether a listing or offer at this availability can be ordered now. */
+export const isBuyable = (availability: string | null): boolean =>
+  (BUYABLE_AVAILABILITY as readonly string[]).includes(availability ?? '');
+
 export const offerSchema = z.object({
   id: z.uuid(),
   supplier: supplierSchema,

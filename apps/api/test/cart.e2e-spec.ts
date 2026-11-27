@@ -162,6 +162,19 @@ describe('Cart (e2e)', () => {
     expect(lineOf(res, entry.id)?.listing.available).toBeNull();
   });
 
+  /** A pre-order the shop still takes is ordered now, shipped later (§8). */
+  it('adds a pre-order, capped at the shop’s count when it keeps one', async () => {
+    const uncounted = await createEntry({ availability: 'pre_order', stockQty: null });
+    const counted = await createEntry({ availability: 'pre_order', stockQty: 2 });
+    const { token } = await createShopper();
+
+    await add(token, uncounted.id, 5).expect(201);
+    const res = await add(token, counted.id, 5).expect(201);
+
+    expect(quantityOf(res, uncounted.id)).toBe(5);
+    expect(quantityOf(res, counted.id)).toBe(2);
+  });
+
   it('prices a line from its listing, as of the shop’s last stock walk', async () => {
     const entry = await createEntry({ supplier: 'cosmic' });
     const walkedAt = new Date('2026-11-25T19:30:00Z');
@@ -206,7 +219,6 @@ describe('Cart (e2e)', () => {
   /** No quantity can be capped to, so these are refused rather than adjusted. */
   it.each([
     ['sold out', { availability: 'sold_out' as const }],
-    ['a pre-order', { availability: 'pre_order' as const, stockQty: null }],
     ['held in full', { stockQty: 2, reservedQty: 2 }],
     ['not yet read', { availability: null, priceCents: null, stockQty: null }],
     ['shown without a price', { priceCents: null }],

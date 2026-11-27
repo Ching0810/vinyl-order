@@ -1,5 +1,5 @@
 import { Badge, Button, HStack, Link, Stack, Text } from '@chakra-ui/react';
-import type { CatalogAlbum, CatalogAlbumListing } from '@vinyl-order/shared';
+import { type CatalogAlbum, type CatalogAlbumListing, isBuyable } from '@vinyl-order/shared';
 import NextLink from 'next/link';
 
 import AddToCart from '@/components/cart/add-to-cart';
@@ -149,7 +149,7 @@ const ListingRow = ({
         <StockLine listing={listing} />
       </Stack>
       <Stack gap="2" flexShrink="0" align="end">
-        {listing.availability === 'in_stock' && listing.priceCents !== null ? (
+        {isBuyable(listing.availability) && listing.priceCents !== null ? (
           <AddToCart catalogEntryId={listing.id} />
         ) : null}
         {listing.watched && productId ? (
@@ -203,7 +203,7 @@ const StockLine = ({ listing }: { listing: CatalogAlbumListing }) => {
       {listing.priceCents === null ? null : (
         <Text fontWeight="semibold">{formatPrice(listing.priceCents, listing.currency)}</Text>
       )}
-      {listing.stockQty !== null && listing.availability === 'in_stock' ? (
+      {listing.stockQty !== null && isBuyable(listing.availability) ? (
         <Text fontSize="sm" color="fg.muted">
           {listing.stockQty} left
         </Text>

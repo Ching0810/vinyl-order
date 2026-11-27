@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type {
-  Connection,
-  PageArgs,
-  Product as ProductContract,
-  UpdateProductInput,
+import {
+  BUYABLE_AVAILABILITY,
+  type Connection,
+  type PageArgs,
+  type Product as ProductContract,
+  type UpdateProductInput,
 } from '@vinyl-order/shared';
 
 import { CATALOG_CURRENCY } from '../catalog/catalog-currency';
@@ -13,13 +14,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { isRecordNotFound } from '../prisma/record-not-found';
 
 /**
- * What a product read joins: its artist's name, and its offers in stock,
- * cheapest first — the first is a card's "from NT$…" (tracker.md §8).
+ * What a product read joins: its artist's name, and its offers that can be
+ * ordered, cheapest first — the first is a card's "from NT$…" (tracker.md §8).
  */
 const withCard = {
   artist: { select: { name: true } },
   offers: {
-    where: { availability: 'in_stock' },
+    where: { availability: { in: [...BUYABLE_AVAILABILITY] } },
     select: { priceCents: true, currency: true },
     orderBy: { priceCents: 'asc' },
     take: 1,

@@ -1,5 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { TrackListingInput, TrackListingResult, WatchedOffer } from '@vinyl-order/shared';
+import {
+  isBuyable,
+  type TrackListingInput,
+  type TrackListingResult,
+  type WatchedOffer,
+} from '@vinyl-order/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { splitsAmong } from './album-splits';
@@ -7,9 +12,6 @@ import { offerErrorBodyOf, shopPageUnreadable } from './offer.errors';
 import { OffersService } from './offers.service';
 import { ProductFromCatalogService } from './product-from-catalog.service';
 import { findProductWithOffers } from './product-with-offers.mapper';
-
-/** Availability an offer can be bought at: what "cheaper elsewhere" counts. */
-const BUYABLE = ['in_stock', 'pre_order'] as const;
 
 /**
  * Each user's list of the listings they track (tracker.md §5.8) — one version
@@ -171,7 +173,7 @@ export class WatchesService {
         .filter(
           (other) =>
             other.id !== offer.id &&
-            (BUYABLE as readonly string[]).includes(other.availability) &&
+            isBuyable(other.availability) &&
             other.priceCents < offer.priceCents,
         )
         .sort((a, b) => a.priceCents - b.priceCents);

@@ -6,6 +6,7 @@ import { Test } from '@nestjs/testing';
 import {
   IDEMPOTENCY_KEY_HEADER,
   IDEMPOTENCY_KEY_MAX_LENGTH,
+  type Availability,
   type Connection,
   type InsufficientStockError,
   type Order,
@@ -49,11 +50,16 @@ describe('Orders (e2e)', () => {
   });
 
   /**
-   * An in-stock listing in a shop's copied catalog, with the given count left
-   * to sell (tracker.md §8). Its album is what checkout copies onto the order
-   * line, read from its title. Everything else is filler.
+   * A listing in a shop's copied catalog, in stock unless said otherwise,
+   * with the given count left to sell (tracker.md §8). Its album is what
+   * checkout copies onto the order line, read from its title. Everything
+   * else is filler.
    */
-  const createEntry = async (stockQty: number | null, priceCents = 1_000) => {
+  const createEntry = async (
+    stockQty: number | null,
+    priceCents = 1_000,
+    availability: Availability = 'in_stock',
+  ) => {
     const album = `Album ${randomUUID().replaceAll('-', '')}`;
     const title = `Test Artist - ${album} LP`;
     const entry = await prisma.catalogEntry.create({
@@ -64,7 +70,7 @@ describe('Orders (e2e)', () => {
         title,
         searchTitle: title.toLowerCase(),
         priceCents,
-        availability: 'in_stock',
+        availability,
         stockQty,
         isVinyl: true,
         isUsed: false,
@@ -280,6 +286,35 @@ describe('Orders (e2e)', () => {
     // A stock walk finds a count since; the cancel releases what was held.
     await prisma.catalogEntry.update({ where: { id: entry.id }, data: { stockQty: 1 } });
     await cancel(token, order.id).expect(200);
+    expect(await heldOf(entry.id)).toBe(0);
+  });
+
+  /**
+   * A pre-order the shop still takes is ordered now and shipped later: sold
+   * and held like any listing, the hold released on cancel (§8).
+   */
+  it('sells a pre-order, and holds it', async () => {
+    const entry = await createEntry(null, 1_000, 'pre_order');
+    const { token } = await createBuyer([{ catalogEntryId: entry.id, quantity: 2 }]);
+
+    const order = (await checkout(token).expect(201)).body as Order;
+    expect(order.subtotalCents).toBe(2_000);
+    expect(await heldOf(entry.id)).toBe(2);
+
+    await cancel(token, order.id).expect(200);
+    expect(await heldOf(entry.id)).toBe(0);
+  });
+
+  /** A pre-order the shop has closed is read as sold out (§6.2): not sold. */
+  it('refuses a listing sold out since it was added', async () => {
+    const entry = await createEntry(null, 1_000, 'sold_out');
+    const { token } = await createBuyer([{ catalogEntryId: entry.id, quantity: 1 }]);
+
+    const res = await checkout(token).expect(409);
+
+    expect((res.body as InsufficientStockError).items).toEqual([
+      { catalogEntryId: entry.id, title: entry.album, requested: 1, available: 0 },
+    ]);
     expect(await heldOf(entry.id)).toBe(0);
   });
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { Badge, HStack, Link, Stack, Text, chakra } from '@chakra-ui/react';
-import type { Offer } from '@vinyl-order/shared';
+import { type Offer, isBuyable } from '@vinyl-order/shared';
 
 import SupplierBadge from '@/components/supplier-order/supplier-badge';
 import Cover from '@/components/ui/cover';
@@ -68,7 +68,7 @@ export default function OfferRow({
         </Stack>
         <OfferActions
           offerId={offer.id}
-          catalogEntryId={offer.availability === 'in_stock' ? offer.catalogEntryId : null}
+          catalogEntryId={isBuyable(offer.availability) ? offer.catalogEntryId : null}
           watched={watched}
           signedIn={signedIn}
         />
@@ -87,7 +87,7 @@ const OfferFacts = ({ offer }: { offer: Offer }) => (
       <Text fontSize="lg" fontWeight="bold">
         {formatPrice(offer.priceCents, offer.currency)}
       </Text>
-      {offer.stockQty !== null && offer.availability === 'in_stock' ? (
+      {offer.stockQty !== null && isBuyable(offer.availability) ? (
         <Text fontSize="sm" color="fg.muted">
           {offer.stockQty} left
         </Text>

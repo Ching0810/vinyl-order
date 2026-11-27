@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { InsufficientStockItem, Order as OrderContract } from '@vinyl-order/shared';
+import {
+  type InsufficientStockItem,
+  isBuyable,
+  type Order as OrderContract,
+} from '@vinyl-order/shared';
 
 import { CATALOG_CURRENCY } from '../catalog/catalog-currency';
 import { readListingTitle } from '../catalog/listing-title';
@@ -229,7 +233,7 @@ export class CheckoutService {
     const availableOf = (id: string): number | null => {
       const entry = entries.find((candidate) => candidate.id === id);
       // Gone, or no longer something the demo sells: nothing to order.
-      if (!entry || entry.availability !== 'in_stock' || entry.priceCents === null) return 0;
+      if (!entry || !isBuyable(entry.availability) || entry.priceCents === null) return 0;
       return entry.stockQty === null ? null : Math.max(entry.stockQty - entry.reservedQty, 0);
     };
 
@@ -287,7 +291,8 @@ export class CheckoutService {
    * Hold stock for every cart item, or fail the whole order (tracker.md §8).
    *
    * One conditional `UPDATE` a line: it adds the quantity to the listing's
-   * `reservedQty` only if the listing is in stock, priced, and — when the
+   * `reservedQty` only if the listing can be ordered (in stock, or open for
+   * pre-order — `BUYABLE_AVAILABILITY`), priced, and — when the
    * shop gives a count — has that many left to sell. The condition lives
    * inside the write, so a concurrent checkout cannot slip between the check
    * and the hold — after waiting on the row lock, Postgres re-evaluates it
@@ -323,7 +328,7 @@ export class CheckoutService {
         UPDATE "CatalogEntry"
         SET "reservedQty" = "reservedQty" + ${cartItem.quantity}::int
         WHERE "id" = ${cartItem.catalogEntryId}
-          AND "availability" = 'in_stock'
+          AND "availability" IN ('in_stock', 'pre_order')
           AND "priceCents" IS NOT NULL
           AND ("stockQty" IS NULL OR "stockQty" - "reservedQty" >= ${cartItem.quantity}::int)
         RETURNING "priceCents"

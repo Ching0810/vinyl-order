@@ -25,8 +25,9 @@ export const productSchema = z.object({
   edition: z.string().nullable(),
   imageUrl: z.url().nullable(),
   /**
-   * The lowest price among its offers in stock, in minor units, for a card's
-   * "from NT$…" (§8); null when none can be bought.
+   * The lowest price among its offers that can be ordered (`isBuyable`: in
+   * stock or pre-order), in minor units, for a card's "from NT$…" (§8); null
+   * when none can be bought.
    */
   fromPriceCents: z.number().int().nullable(),
   /** ISO 4217 currency code of `fromPriceCents`, e.g. "TWD". */
